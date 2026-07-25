@@ -22,7 +22,7 @@ deliberate actions.
       present.
 - [x] Run a purpose-built secret scanner over the candidate history and working
       tree.
-- [ ] Review every staged path before creating the initial commit.
+- [x] Review every staged path before creating the initial commit.
 
 Recommended validation:
 
@@ -49,8 +49,8 @@ gitleaks git .
 ## GitHub repository configuration
 
 - [x] Make `main` the default branch.
-- [ ] Require the CI workflow on pull requests.
-- [ ] Protect `main` from force pushes and deletion.
+- [x] Require the CI workflow on pull requests.
+- [x] Protect `main` from force pushes and deletion.
 - [ ] Require pull-request review once another trusted maintainer is available.
 - [x] Enable Dependabot alerts and security updates.
 - [x] Enable secret scanning and push protection when available.
