@@ -1,0 +1,79 @@
+name: Bug report
+description: Report reproducible behavior that does not match the documented contract.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the project. Remove private circuit data,
+        firmware, credentials, and proprietary files before attaching examples.
+
+  - type: input
+    id: version
+    attributes:
+      label: Project version
+      description: Include the release, commit, or branch you tested.
+      placeholder: v0.2.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: adapter
+    attributes:
+      label: Adapter or subsystem
+      options:
+        - Neutral electronics contract
+        - CRUMB Unity adapter
+        - CRUMB Godot adapter
+        - MCP server or client integration
+        - CLI
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest safe example and exact commands when possible.
+      placeholder: |
+        1. Run ...
+        2. Call ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the operating system, Node.js version, MCP host, and simulator version.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Paste redacted logs, diagnostics, or MCP responses.
+      render: text
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data-safety check
+      options:
+        - label: I removed secrets, private circuit data, firmware source, and files I cannot redistribute.
+          required: true

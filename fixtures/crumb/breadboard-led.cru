@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SaveData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <name>MCP Breadboard LED Fixture</name>
+  <components>
+    <SaveComponent>
+      <toolID>0</toolID>
+      <data>
+        <anyType xmlns:q1="http://microsoft.com/wsdl/types/" xsi:type="q1:guid">7f889f69-8140-493a-b1ef-6a519d869b1a</anyType>
+        <anyType xsi:type="Vector3S">
+          <x>0</x>
+          <y>0</y>
+          <z>0</z>
+        </anyType>
+        <anyType xsi:type="QuaternionS">
+          <w>1</w>
+          <x>0</x>
+          <y>0</y>
+          <z>0</z>
+        </anyType>
+      </data>
+    </SaveComponent>
+    <SaveComponent>
+      <toolID>6</toolID>
+      <data>
+        <anyType xmlns:q1="http://microsoft.com/wsdl/types/" xsi:type="q1:guid">3d43171c-bf55-44f9-9e95-dfa7cdd8ed38</anyType>
+        <anyType xsi:type="ArrayOfVector3S">
+          <Vector3S>
+            <x>-7.62000275</x>
+            <y>2</y>
+            <z>-11.43</z>
+          </Vector3S>
+          <Vector3S>
+            <x>-7.62000275</x>
+            <y>9.7</y>
+            <z>-11.43</z>
+          </Vector3S>
+          <Vector3S>
+            <x>2.540001</x>
+            <y>9.7</y>
+            <z>-11.43</z>
+          </Vector3S>
+          <Vector3S>
+            <x>2.540001</x>
+            <y>2</y>
+            <z>-11.43</z>
+          </Vector3S>
+        </anyType>
+        <anyType xsi:type="ArrayOfTiePointID">
+          <TiePointID>
+            <id>456</id>
+            <parentIdentifier>7f889f69-8140-493a-b1ef-6a519d869b1a</parentIdentifier>
+          </TiePointID>
+          <TiePointID>
+            <id>476</id>
+            <parentIdentifier>7f889f69-8140-493a-b1ef-6a519d869b1a</parentIdentifier>
+          </TiePointID>
+        </anyType>
+        <anyType xsi:type="xsd:double">2.2</anyType>
+        <anyType xsi:type="xsd:int">0</anyType>
+        <anyType xsi:type="xsd:double">0.03</anyType>
+      </data>
+    </SaveComponent>
+  </components>
+  <imageData>iVBORw0KGgoAAAANSUhEUgAAAjAAAAHgCAYAAAC7J1fdAAAG0ElEQVR42u3WMQ0AAAjAMGQQHvyrBBuQ9KiBXYusHgCAT0IEAMDAAAAYGAAAAwMAGBgAAAMDAGBgAAADAwBgYAAADAwAYGAAAAwMAICBAQAMDACAgQEAMDAAgIEBADAwAAAGBgDAwAAABgYAwMAAABgYAMDAAAAYGAAAAwMAGBgAAAMDAGBgAAADAwBgYAAADAwAYGAAAAwMAICBAQAwMACAgQEAMDAAAAYGADAwAAAGBgDAwAAABgYAwMAAABgYAMDAAAAYGAAAAwMAGBgAAAMDAGBgAAADIwQAYGAAAAwMAICBAQAMDACAgQEAMDAAgIEBADAwAAAGBgAwMAAABgYAwMAAAAYGAMDAAAAYGADAwAAAGBgAAAMDAGBgAAADAwBgYAAADAwAYGAAAAwMAICBAQAMDACAgQEAMDAAgIEBADAwAAAGBgAwMAAABgYAwMAAAAZGBADAwAAAGBgAAAMDABgYAAADAwBgYAAAAwMAYGAAAAwMAGBgAAAMDACAgQEADAwAgIEBADAwAICBAQAwMAAABgYAwMAAAAYGAMDAAAAYGADAwAAAGBgAAAMDABgYAAADAwBgYAAAAwMAYGAAAAwMAGBgAAAMDACAgQEAMDAAgIEBADAwAAAGBgAwMAAABgYAwMAAAAYGAMDAAAAYGADAwAAAGBgAAAMDABgYAAADAwBgYAAAAyMEAGBgAAAMDACAgQEADAwAgIEBADAwAICBAQAwMAAABgYAMDAAAAYGAMDAAAAGBgDAwAAAGBgAwMAAABgYAAADAwBgYAAAAwMAYGAAAAwMAGBgAAAMDACAgQEADAwAgIEBADAwAICBAQAwMAAABgYAMDAAAAYGAMDAAAAGRgQAwMAAABgYAAADAwAYGAAAAwMAYGAAAAMDAGBgAAAMDABgYAAADAwAgIEBAAwMAICBAQAwMACAgQEAMDAAAAYGAMDAAAAGBgDAwAAAGBgAwMAAABgYAAADAwAYGAAAAwMAYGAAAAMDAGBgAAAMDABgYAAADAwAgIEBADAwAICBAQAwMAAABgYAMDAAAAYGAMDAAAAGBgDAwAAAGBgAwMAAABgYAAADAwAYGAAAAwMAYGAAAAMjBABgYAAADAwAgIEBAAwMAICBAQAwMACAgQEAMDAAAAYGADAwAAAGBgDAwAAABgYAwMAAABgYAMDAAAAYGAAAAwMAYGAAAAMDAGBgAAAMDABgYAAADAwAgIEBAAwMAICBAQAwMACAgQEAMDAAAAYGADAwAAAGBgDAwAAABkYEAMDAAAAYGAAAAwMAGBgAAAMDAGBgAAADAwBgYAAADAwAYGAAAAwMAICBAQAMDACAgQEAMDAAgIEBADAwAAAGBgDAwAAABgYAwMAAABgYAMDAAAAYGAAAAwMAGBgAAAMDAGBgAAADAwBgYAAADAwAYGAAAAwMAICBAQAwMACAgQEAMDAAAAYGADAwAAAGBgDAwAAABgYAwMAAABgYAMDAAAAYGAAAAwMAGBgAAAMDAGBgAAADIwQAYGAAAAwMAICBAQAMDACAgQEAMDAAgIEBADAwAAAGBgAwMAAABgYAwMAAAAYGAMDAAAAYGADAwAAAGBgAAAMDAGBgAAADAwBgYAAADAwAYGAAAAwMAICBAQAMDACAgQEAMDAAgIEBADAwAAAGBgAwMAAABgYAwMAAAAZGBADAwAAAGBgAAAMDABgYAAADAwBgYAAAAwMAYGAAAAwMAGBgAAAMDACAgQEADAwAgIEBADAwAICBAQAwMAAABgYAwMAAAAYGAMDAAAAYGADAwAAAGBgAAAMDABgYAAADAwBgYAAAAwMAYGAAAAwMAGBgAAAMDACAgQEAMDAAgIEBADAwAAAGBgAwMAAABgYAwMAAAAYGAMDAAAAYGADAwAAAGBgAAAMDABgYAAADAwBgYAAAAyMEAGBgAAAMDACAgQEADAwAgIEBADAwAICBAQAwMAAABgYAMDAAAAYGAMDAAAAGBgDAwAAAGBgAwMAAABgYAAADAwBgYAAAAwMAYGAAAAwMAGBgAAAMDACAgQEADAwAgIEBADAwAICBAQAwMAAABgYAMDAAAAYGAMDAAAAGRgQAwMAAABgYAAADAwAYGAAAAwMAYGAAAAMDAGBgAAAMDABgYAAADAwAgIEBAAwMAICBAQAwMACAgQEAMDAAAAYGAMDAAAAGBgDAwAAAGBgAwMAAABgYAAADAwAYGAAAAwMAYGAAAAMDAGBgAAAMDABgYAAADAwAgIEBADAwAICBAQAwMAAABgYAMDAAAAYGAMDAAAAGBgDAwAAAGBgAwMAAABgYAAADAwAYGACA2xYpAXC/SkxXowAAAABJRU5ErkJggg==</imageData>
+  <pivotPos>
+    <x>0</x>
+    <y>0</y>
+    <z>0</z>
+  </pivotPos>
+  <pivotRot>
+    <x>45.0000038</x>
+    <y>315</y>
+    <z>0</z>
+  </pivotRot>
+  <camPos>
+    <x>0</x>
+    <y>0</y>
+    <z>-200</z>
+  </camPos>
+  <frequency>200</frequency>
+  <timeStep>0.005</timeStep>
+  <throttling>true</throttling>
+</SaveData>

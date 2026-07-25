@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "0.1",
+  "id": "four-bit-counter",
+  "title": "Four-bit counter portability example",
+  "components": [
+    {
+      "id": "clock",
+      "kind": "clock",
+      "parameters": {
+        "frequencyHz": 1
+      }
+    },
+    {
+      "id": "counter",
+      "kind": "counter-4bit",
+      "parameters": {}
+    }
+  ],
+  "nets": [
+    {
+      "id": "clock-net",
+      "endpoints": [
+        {
+          "componentId": "clock",
+          "pin": "out"
+        },
+        {
+          "componentId": "counter",
+          "pin": "clock"
+        }
+      ]
+    }
+  ],
+  "firmware": [],
+  "probes": [
+    {
+      "id": "clock-probe",
+      "endpoint": {
+        "componentId": "clock",
+        "pin": "out"
+      },
+      "quantity": "logic"
+    }
+  ],
+  "assertions": [
+    {
+      "id": "counter-advances",
+      "expression": "rising(clock.out) -> counter.q == previous(counter.q) + 1"
+    }
+  ],
+  "execution": {
+    "fidelity": "gate-event",
+    "pacing": "as-fast-as-possible",
+    "logicalClockHz": 1,
+    "deterministic": true,
+    "maxSimulatedTimeSeconds": 20
+  },
+  "metadata": {
+    "purpose": "adapter-neutral example"
+  }
+}

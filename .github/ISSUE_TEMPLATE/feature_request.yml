@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a model-neutral capability, adapter improvement, or integration.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Explain the electronics workflow this would enable.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Proposed scope
+      options:
+        - Neutral electronics contract
+        - CRUMB Unity adapter
+        - CRUMB Godot adapter
+        - New simulator adapter
+        - Simulation backend
+        - MCP server or client integration
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe inputs, outputs, safety boundaries, and version constraints if known.
+    validations:
+      required: true
+
+  - type: textarea
+    id: portability
+    attributes:
+      label: Cross-model and cross-simulator considerations
+      description: Explain which parts should remain vendor-neutral and which belong in an adapter.
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to help implement or test this feature.

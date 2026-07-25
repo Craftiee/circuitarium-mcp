@@ -1,0 +1,43 @@
+name: Support question
+description: Ask about this repository's setup, contract, or supported workflows.
+title: "[Question]: "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project cannot provide support for CRUMB itself. Do not attach
+        private designs, game files, firmware, credentials, or third-party
+        examples.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to accomplish?
+      description: Describe the electronics or MCP workflow and the result you need.
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What have you tried?
+      description: Include safe commands, tool names, and redacted diagnostics.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include operating system, Node.js version, model host, backend, adapter version, and compatibility profile.
+      render: text
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data-safety check
+      options:
+        - label: I have not attached secrets, personal circuit data, game assets, or files I cannot redistribute.
+          required: true
