@@ -463,3 +463,98 @@ test("DOCTYPE and entity declarations are rejected before XML parsing", () => {
     /DOCTYPE and ENTITY/,
   );
 });
+
+test("invalid EEPROM demotion explains itself without a misleading shape mismatch", () => {
+  const base = serializeCru({ name: "EEPROM Demotion Test", components: [] });
+  const shortImage = Buffer.from([1, 2, 3]).toString("base64");
+  const componentXml = `<components>
+    <SaveComponent>
+      <toolID>5</toolID>
+      <data>
+        <anyType xmlns:q1="http://microsoft.com/wsdl/types/" xsi:type="q1:guid">72d417b6-62d0-4a7a-b202-d4467ab10d69</anyType>
+        <anyType xsi:type="Vector3S"><x>0</x><y>0</y><z>0</z></anyType>
+        <anyType xsi:type="QuaternionS"><w>1</w><x>0</x><y>0</y><z>0</z></anyType>
+        <anyType xsi:type="ArrayOfTiePointID" />
+        <anyType xsi:type="xsd:base64Binary">${shortImage}</anyType>
+        <anyType xsi:type="xsd:int">13</anyType>
+      </data>
+    </SaveComponent>
+  </components>`;
+  const analysis = analyzeCru(base.replace("<components />", componentXml));
+  const component = analysis.components[0]!;
+
+  assert.equal(component.recognitionStatus, "schema-mismatch");
+  assert.ok(
+    analysis.diagnostics.some(
+      (diagnostic) => diagnostic.code === "invalid-eeprom-image",
+    ),
+  );
+  assert.ok(
+    analysis.diagnostics.every(
+      (diagnostic) => diagnostic.code !== "payload-schema-mismatch",
+    ),
+  );
+  assert.ok(
+    component.notes.some((note) => note.includes("EEPROM payload signature matched")),
+  );
+});
+
+test("duplicate component ids surface a connectivity-reliability diagnostic", () => {
+  const first = "da67ded5-59dc-42ae-8ce8-1e9f93739844";
+  const xml = generateFixture("breadboard-and-rail").replace(
+    "37494364-d199-47f4-9712-9d205573cf74",
+    first,
+  );
+  const analysis = analyzeCru(xml);
+  assert.ok(
+    analysis.diagnostics.some(
+      (diagnostic) => diagnostic.code === "duplicate-component-id",
+    ),
+  );
+});
+
+test("schema-mismatched interconnects that still shape topology are flagged", () => {
+  const boardGuid = "05fc035f-92bb-4a1f-bf81-1ab25a51bb3a";
+  const document: CruDocument = {
+    name: "Mismatched Jumper Test",
+    components: [
+      {
+        toolId: 0,
+        guid: boardGuid,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+      },
+      {
+        toolId: 2,
+        guid: "ee877d3f-ecba-4407-93a8-40b8644bfa06",
+        geometry: [
+          { x: 4, y: 0, z: 0 },
+          { x: 5, y: 0, z: 0 },
+        ],
+        tiePoints: [
+          { id: 100, parentIdentifier: boardGuid },
+          { id: 200, parentIdentifier: boardGuid },
+        ],
+        settings: [
+          { type: "xsd:int", value: 1 },
+          { type: "xsd:float", value: 3 },
+        ],
+      },
+    ],
+  };
+  const xml = serializeCru(document).replace(
+    'xsi:type="xsd:int">1<',
+    'xsi:type="xsd:string">1<',
+  );
+  const analysis = analyzeCru(xml);
+  const jumper = analysis.components[1]!;
+
+  assert.equal(jumper.kind, "jumper-wire");
+  assert.equal(jumper.recognitionStatus, "schema-mismatch");
+  assert.ok(
+    analysis.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "topology-uses-schema-mismatched-component",
+    ),
+  );
+});

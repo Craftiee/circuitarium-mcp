@@ -169,6 +169,7 @@ export function validateExperiment(input: unknown): ExperimentValidation {
   );
 
   const componentIds = new Set(experiment.components.map((component) => component.id));
+  const endpointNetById = new Map<string, string>();
   for (const [netIndex, net] of experiment.nets.entries()) {
     const endpointKeys = new Set<string>();
     for (const [endpointIndex, endpoint] of net.endpoints.entries()) {
@@ -190,6 +191,19 @@ export function validateExperiment(input: unknown): ExperimentValidation {
         });
       }
       endpointKeys.add(endpointKey);
+      const owningNet = endpointNetById.get(endpointKey);
+      if (owningNet !== undefined && owningNet !== net.id) {
+        diagnostics.push({
+          severity: "error",
+          code: "endpoint-net-conflict",
+          path: `nets.${netIndex}.endpoints.${endpointIndex}`,
+          message:
+            `Endpoint ${endpointKey} is already on net ${owningNet}; ` +
+            "one pin cannot belong to two nets without electrically merging them",
+        });
+      } else {
+        endpointNetById.set(endpointKey, net.id);
+      }
     }
   }
 
@@ -212,6 +226,18 @@ export function validateExperiment(input: unknown): ExperimentValidation {
         path: `probes.${index}.endpoint.componentId`,
         message: `Probe targets unknown component: ${probe.endpoint.componentId}`,
       });
+    } else {
+      const endpointKey = `${probe.endpoint.componentId}:${probe.endpoint.pin}`;
+      if (!endpointNetById.has(endpointKey)) {
+        diagnostics.push({
+          severity: "warning",
+          code: "probe-endpoint-unconnected",
+          path: `probes.${index}.endpoint`,
+          message:
+            `Probe ${probe.id} targets ${endpointKey}, which appears on no net; ` +
+            "the measured node is floating or the pin name does not match the netlist",
+        });
+      }
     }
   }
 

@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   CRUMB_FIXTURE_KINDS,
@@ -8,7 +9,9 @@ import {
 import { validateCru } from "../src/adapters/crumb/format.js";
 
 async function main(): Promise<void> {
-  const fixtureDirectory = resolve("fixtures", "crumb");
+  const fixtureDirectory = resolve(
+    fileURLToPath(new URL("../fixtures/crumb", import.meta.url)),
+  );
   const expectedFiles = CRUMB_FIXTURE_KINDS.map((kind) => `${kind}.cru`).sort();
   const actualFiles = (await readdir(fixtureDirectory, { withFileTypes: true }))
     .filter((entry) => entry.isFile() && entry.name.endsWith(".cru"))

@@ -129,36 +129,77 @@ A failure includes the normal envelope plus:
 ```json
 {
   "ok": false,
-  "summary": "The requested path is outside the configured workspace.",
-  "diagnostics": [],
+  "summary": "Tool call failed: PATH_DENIED.",
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "PATH_DENIED",
+      "path": "",
+      "message": "The requested path is outside the configured MCP workspace."
+    }
+  ],
   "context": {
     "serverInstanceId": "4c2ab6e1-...",
     "sessionScope": "process",
-    "backendId": "crumb.file"
+    "backendId": "crumb.file",
+    "adapterVersion": "crumb.file/0.2",
+    "compatibilityProfile": "crumb.unity/1.3.5"
   },
-  "nextActions": [],
+  "nextActions": [
+    {
+      "tool": "electronics_capabilities",
+      "reason": "Review callable backends, constraints, and recovery workflows.",
+      "arguments": {}
+    }
+  ],
   "error": {
     "code": "PATH_DENIED",
     "category": "filesystem",
-    "message": "The path is outside CIRCUITARIUM_MCP_ROOT.",
+    "message": "The requested path is outside the configured MCP workspace.",
     "retryable": false,
-    "argumentPath": "$.path",
     "recovery": [
-      "Choose a .cru file inside the configured workspace."
+      "Use a workspace-relative path returned by another tool."
     ]
   }
 }
 ```
 
+`error.argumentPath`, when present, is a plain argument name such as
+`expectedProjectDigest` or a dotted path into the arguments object — not a
+JSONPath expression. The one mirrored diagnostic entry always restates the
+error for hosts that surface diagnostics only.
+
 `CIRCUITARIUM_MCP_ROOT` is the primary workspace-root setting.
 `ELECTRONICS_MCP_ROOT` is accepted only as a compatibility fallback for
 existing configurations.
 
-Current stable error families cover invalid arguments, unsupported schemas,
-denied/missing/existing paths, unsupported or invalid formats, invalid projects,
-project-state conflicts, unsupported operations/components, unavailable
-backends, authentication, sessions reserved for future live backends, timeouts,
-quota/cancellation, and internal errors.
+The stable error codes, their categories, and their current triggers are:
+
+| Code | Category | Current trigger |
+|---|---|---|
+| `INVALID_ARGUMENT` | argument | Input outside the published schema, malformed digests/cursors, or a non-directory `dir` |
+| `UNSUPPORTED_SCHEMA` | argument | Reserved |
+| `PATH_DENIED` | filesystem | Path resolves outside `CIRCUITARIUM_MCP_ROOT`, or a symlink overwrite is refused |
+| `NOT_FOUND` | filesystem/project | Missing file or parent directory; a path that is not a regular file; an unknown `componentId` |
+| `ALREADY_EXISTS` | filesystem | Fixture output path already exists (the server never overwrites) |
+| `UNSUPPORTED_FORMAT` | format | Path does not end in `.cru` |
+| `FORMAT_INVALID` | format | DOCTYPE/ENTITY declarations, unparseable XML, or a missing `<SaveData>` root |
+| `PROJECT_INVALID` | project | Structural validation failed, so semantic tools refuse to run |
+| `PROJECT_STATE_CONFLICT` | project | The file's bytes no longer match `expectedProjectDigest` |
+| `UNSUPPORTED_OPERATION` | backend | Reserved |
+| `UNSUPPORTED_COMPONENT` | backend | Reserved |
+| `LOSSY_CONVERSION_FORBIDDEN` | backend | Reserved for future conversion tools |
+| `BACKEND_UNAVAILABLE` | backend | Reserved |
+| `AUTH_REQUIRED` | auth | Reserved for future live backends |
+| `SESSION_NOT_FOUND` | session | Reserved for future live backends |
+| `SESSION_STATE_CONFLICT` | session | Reserved for future live backends |
+| `TIMEOUT` | backend | Reserved |
+| `QUOTA_EXCEEDED` | filesystem | The file exceeds the fixed 64 MiB (67,108,864-byte) safety limit |
+| `CANCELLED` | backend | Reserved |
+| `INTERNAL_ERROR` | internal | Any unexpected failure; no input content is echoed |
+
+File tools enforce the 64 MiB limit on both reads and generated output. The
+limit is a fixed safety bound of this build, not a configurable quota.
 
 The MCP response may also mark the call as an error for host UI purposes.
 Callers should still consume the structured envelope rather than parse prose.
@@ -171,11 +212,16 @@ registered tool contract or backend context to attach.
 
 ## Guarding project state
 
-The three CRUMB file-read tools accept optional `expectedProjectDigest`:
+Every CRUMB tool that reads one project file accepts optional
+`expectedProjectDigest`:
 
 - `crumb_analyze_design`
 - `crumb_inspect_design`
 - `crumb_validate_design`
+- `crumb_get_component`
+- `crumb_bom`
+- `crumb_export_netlist`
+- `crumb_check_design`
 
 Use it when continuing a cross-model handoff or any workflow that depends on
 earlier findings:
@@ -220,7 +266,7 @@ choosing a backend or workflow. Its output distinguishes:
 
 | Backend | Availability in this server | Current meaning |
 |---|---|---|
-| `crumb.file` | Callable | Local `.cru` inspect, validate, analyze, and synthetic fixture generation |
+| `crumb.file` | Callable | Local `.cru` discovery, inspect, validate, analyze, netlist export, electrical rule checks, BOM, IC reference, and synthetic fixture generation |
 | `wokwi.cloud` | External companion | Separate Wokwi MCP/cloud service; not callable here |
 | `logisim.evolution` | Planned | No registered adapter tools |
 | `digital.event` | Planned | Architecture only; no simulation engine |
@@ -385,6 +431,67 @@ invariants. `data.valid` carries the validation outcome. Pass
 Generates only the enumerated, CRUMB 1.3.5-tested fixture kinds. File output is
 confined to the configured workspace and never overwrites an existing file.
 This is not an arbitrary circuit editor.
+
+### `crumb_list_projects`
+
+Enumerates `.cru` files under the workspace root or one workspace-relative
+subdirectory, with byte size, ISO 8601 modification time, and (by default) each
+file's SHA-256 digest. The walk skips dot-directories, `node_modules`, and
+symbolic links, and stops at a fixed entry budget with an explicit
+`directory-scan-truncated` diagnostic. Files over the byte limit report
+`digestOmittedReason` instead of a digest. This is the discovery entry point: a
+model can go from zero knowledge to a digest-guarded analysis without being
+handed a path.
+
+### `crumb_get_component`
+
+Returns one component by `componentId` (case-insensitive) with parameters,
+terminals, geometry (on by default for a single component), the connection
+groups it participates in, and — only when `includeSourceCode` is true — a
+`sourceWindow` over embedded firmware source. `sourceOffset` continues reads
+past the 65,536-character window; `sourceWindow.nextOffset` feeds the next
+call. An unknown id returns typed `NOT_FOUND` with `argumentPath:
+"componentId"`.
+
+### `crumb_bom`
+
+Groups components into bill-of-materials lines keyed by kind, label, resolved
+IC variant, recognition status, and decoded part-identity values. Saved state
+values (`on`, `position`, `positionCode`, `positions`, `enabledOrConnected`)
+are deliberately excluded from identity so two copies of the same switch in
+different positions form one line. Unknown and schema-mismatched components
+remain visible as their own lines rather than disappearing.
+
+### `crumb_ic_reference`
+
+Queries the version-pinned tool-5 IC registry by `prefabId` or by a
+case-insensitive substring over labels and package names. Returns package
+metadata, ordered pin names with explicit unresolved entries, and the catalog's
+installed-build target. A miss is reported honestly: the part may exist in
+CRUMB without adapter evidence.
+
+### `crumb_export_netlist`
+
+Promotes inferred connection groups to electrical nets: jumper wires are
+collapsed out of net membership (kept as `wireIds` provenance), nets touching a
+recognized DC supply's terminals are named `VCC`/`GND` (numbered when several
+supplies exist), and `applySwitchStates: true` additionally merges nets across
+saved slide-switch and DIP-switch positions with per-net `mergedBySwitches`
+provenance. Results are paged with the same digest-bound opaque cursors as
+analysis. Nets are static file inference under the selected topology mode, not
+simulation output.
+
+### `crumb_check_design`
+
+Runs static electrical rule checks over the netlist: supply shorts, LEDs
+directly across the rails, two-terminal components with both terminals on one
+net, resistors dissipating above their rating directly across a supply,
+floating named IC power pins, and floating terminals. A rule violation is
+domain data — `ok: true` with `data.valid: false` — never a tool error. Every
+finding carries the evidence-confidence vocabulary and a `basis` field
+separating public electronics knowledge from version-pinned CRUMB observation.
+`data.limitations` states what the rules cannot see (no series-path tracing,
+no polarity judgment, no simulation).
 
 ## Bounded output policy
 

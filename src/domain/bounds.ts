@@ -99,7 +99,19 @@ export function boundDiagnostics(
     return bounded;
   }
 
-  const retained = bounded.slice(0, Math.max(0, limit - 1));
+  // Truncation must never hide the causal errors behind earlier warnings, so
+  // retention is ordered by severity (stable within each severity) only when
+  // the limit forces entries to be dropped.
+  const severityRank = { error: 0, warning: 1, info: 2 } as const;
+  const retainable = bounded
+    .map((diagnostic, index) => ({ diagnostic, index }))
+    .sort(
+      (left, right) =>
+        severityRank[left.diagnostic.severity] -
+          severityRank[right.diagnostic.severity] || left.index - right.index,
+    )
+    .map((entry) => entry.diagnostic);
+  const retained = retainable.slice(0, Math.max(0, limit - 1));
   return [
     ...retained,
     {

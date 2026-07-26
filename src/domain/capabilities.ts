@@ -106,6 +106,12 @@ export const ADAPTER_CAPABILITIES: AdapterCapability[] = [
       "infer CRUMB 1.3.5 breadboard and power-rail connection groups",
       "resolve 21 version-pinned DIP IC variants and ordered pin names",
       "generate verified board, rail, resistor, and LED fixtures",
+      "list workspace .cru projects with digests",
+      "fetch one component in full bounded detail",
+      "export jumper-collapsed electrical nets with supply naming",
+      "run static electrical rule checks over inferred nets",
+      "group components into a bill of materials",
+      "look up version-pinned IC packages and pinouts",
     ],
     limitations: [
       "CRUMB does not currently expose a documented automation API",
@@ -157,6 +163,7 @@ export const CALLABLE_BACKENDS: CallableBackendDescriptor[] = [
       "Five fixed synthetic fixture generators are available; build=false means there is no general circuit builder.",
       "General semantic editing is not implemented yet.",
       "Board topology is version-pinned to CRUMB 1.3.5.",
+      "Netlists and electrical rule checks are static file inference; no circuit is simulated.",
     ],
     integrationFamily: {
       id: "crumble",
@@ -302,6 +309,46 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
     ],
   },
   {
+    id: "review-crumb-design",
+    goal: "Give genuine electrical feedback on an existing CRUMB breadboard design.",
+    steps: [
+      {
+        tool: "crumb_list_projects",
+        reason: "Discover .cru projects in the workspace with their digests.",
+        exampleArguments: {},
+      },
+      {
+        tool: "crumb_analyze_design",
+        reason: "Understand recognized components and connectivity.",
+        exampleArguments: {
+          path: "fixtures/crumb/breadboard-led.cru",
+          view: "summary",
+        },
+      },
+      {
+        tool: "crumb_export_netlist",
+        reason: "Promote connection groups to named electrical nets.",
+        exampleArguments: { path: "fixtures/crumb/breadboard-led.cru" },
+      },
+      {
+        tool: "crumb_check_design",
+        reason: "Run static electrical rule checks and report findings.",
+        exampleArguments: { path: "fixtures/crumb/breadboard-led.cru" },
+      },
+    ],
+  },
+  {
+    id: "identify-ic-pinout",
+    goal: "Answer pinout questions about version-pinned CRUMB DIP ICs.",
+    steps: [
+      {
+        tool: "crumb_ic_reference",
+        reason: "Find the package by label or package-name substring.",
+        exampleArguments: { query: "74HC138" },
+      },
+    ],
+  },
+  {
     id: "validate-portable-experiment",
     goal: "Validate the simulator-neutral experiment schema.",
     steps: [
@@ -346,5 +393,10 @@ export const VOCABULARY = [
   {
     term: "connection group",
     meaning: "A version-pinned inferred electrical net; its provenance and limits are always returned.",
+  },
+  {
+    term: "net",
+    meaning:
+      "A jumper-collapsed electrical node built from connection groups; a static file inference, never simulation output.",
   },
 ] as const;

@@ -11,11 +11,23 @@ within it; CRUMB is not the canonical model for other Circuitarium backends.
 
 The callable `crumb.file` backend can:
 
+- discover workspace `.cru` files with sizes, timestamps, and digests
+  (`crumb_list_projects`);
 - inspect, structurally validate, and perform bounded semantic analysis of
   `.cru` files;
+- fetch one component in full bounded detail with windowed firmware source
+  (`crumb_get_component`);
 - recognize the version-pinned component signatures documented in
   [the format notes](crumb-format.md);
 - infer optional, version-pinned breadboard connectivity;
+- export jumper-collapsed electrical nets with supply-derived `VCC`/`GND`
+  names and optional saved-switch-state merges (`crumb_export_netlist`);
+- run static electrical rule checks with evidence-tagged findings
+  (`crumb_check_design`);
+- group components into a bill of materials by decoded part identity
+  (`crumb_bom`);
+- answer IC package and pinout queries from the version-pinned prefab
+  registry (`crumb_ic_reference`);
 - create five fixed, independently authored synthetic fixtures; and
 - preserve a workspace-relative artifact reference and SHA-256 digest for
   cross-model handoffs.

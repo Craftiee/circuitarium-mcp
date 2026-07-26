@@ -59,3 +59,47 @@ test("diagnostic counts and every diagnostic text field are bounded", () => {
   );
   assert.match(bounded[0]!.message, /\[truncated\]$/);
 });
+
+test("diagnostic truncation retains errors ahead of earlier warnings", () => {
+  const warnings = Array.from(
+    { length: MAX_RESULT_DIAGNOSTICS_RETURNED + 10 },
+    (_, index) => ({
+      severity: "warning" as const,
+      code: `warning-${index}`,
+      path: `path.${index}`,
+      message: `warning ${index}`,
+    }),
+  );
+  const trailingErrors = [
+    {
+      severity: "error" as const,
+      code: "causal-error-a",
+      path: "path.error.a",
+      message: "first causal error, listed after every warning",
+    },
+    {
+      severity: "error" as const,
+      code: "causal-error-b",
+      path: "path.error.b",
+      message: "second causal error, listed after every warning",
+    },
+  ];
+  const bounded = boundDiagnostics([...warnings, ...trailingErrors]);
+
+  assert.equal(bounded.length, MAX_RESULT_DIAGNOSTICS_RETURNED);
+  assert.equal(bounded[0]?.code, "causal-error-a");
+  assert.equal(bounded[1]?.code, "causal-error-b");
+  assert.equal(bounded[2]?.code, "warning-0");
+  assert.equal(bounded.at(-1)?.code, "diagnostics-truncated");
+});
+
+test("diagnostic order is preserved when nothing is truncated", () => {
+  const diagnostics = [
+    { severity: "warning" as const, code: "w", path: "p", message: "m" },
+    { severity: "error" as const, code: "e", path: "p", message: "m" },
+  ];
+  assert.deepEqual(
+    boundDiagnostics(diagnostics).map((diagnostic) => diagnostic.code),
+    ["w", "e"],
+  );
+});

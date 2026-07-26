@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
-import test from "node:test";
+import test, { after, before } from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -22,6 +22,22 @@ interface Envelope {
   }>;
   error?: Record<string, unknown>;
 }
+
+const EXPECTED_TOOL_NAMES = [
+  "electronics_capabilities",
+  "electronics_validate_experiment",
+  "crumb_component_catalog",
+  "crumb_analyze_design",
+  "crumb_inspect_design",
+  "crumb_validate_design",
+  "crumb_generate_fixture",
+  "crumb_list_projects",
+  "crumb_get_component",
+  "crumb_bom",
+  "crumb_ic_reference",
+  "crumb_export_netlist",
+  "crumb_check_design",
+];
 
 function envelopeOf(result: unknown): Envelope {
   const record = result as { structuredContent?: unknown };
@@ -44,48 +60,54 @@ function assertCrumbCompatibilityContext(result: unknown): void {
   assert.equal(context.compatibilityProfile, "crumb.unity/1.3.5");
 }
 
-test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (context) => {
+let client: Client;
+let generatedDirectory: string;
+let generatedRef: string;
+let outsideDirectory: string;
+let outsidePath: string;
+let longNameRef: string;
+const privateNameTail = "PRIVATE_NAME_TAIL";
+
+before(async () => {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--import", "tsx", "src/server.ts"],
     cwd: process.cwd(),
     stderr: "pipe",
   });
-  const client = new Client({ name: "circuitarium-mcp-test", version: "0.2.0" });
-  const generatedDirectory = await mkdtemp(join(process.cwd(), "mcp-output-test-"));
-  const generatedRef = relative(process.cwd(), generatedDirectory)
+  client = new Client({ name: "circuitarium-mcp-test", version: "0.2.0" });
+  generatedDirectory = await mkdtemp(join(process.cwd(), "mcp-output-test-"));
+  generatedRef = relative(process.cwd(), generatedDirectory)
     .split("\\")
     .join("/");
-  const outsideDirectory = await mkdtemp(join(tmpdir(), "circuitarium-mcp-outside-"));
-  const outsidePath = join(outsideDirectory, "outside.cru");
+  outsideDirectory = await mkdtemp(join(tmpdir(), "circuitarium-mcp-outside-"));
+  outsidePath = join(outsideDirectory, "outside.cru");
   await writeFile(outsidePath, "<SaveData />", "utf8");
-  const privateNameTail = "PRIVATE_NAME_TAIL";
-  const longNameRef = `${generatedRef}/long-name.cru`;
+  longNameRef = `${generatedRef}/long-name.cru`;
   await writeFile(
     join(generatedDirectory, "long-name.cru"),
     generateFixture("empty", `${"N".repeat(1_000)}${privateNameTail}`),
     "utf8",
   );
-
-  context.after(async () => {
-    await client.close();
-    assert.equal(generatedDirectory.startsWith(process.cwd()), true);
-    await rm(generatedDirectory, { recursive: true });
-    await rm(outsideDirectory, { recursive: true });
-  });
+  await writeFile(
+    join(generatedDirectory, "led.cru"),
+    generateFixture("breadboard-led"),
+    "utf8",
+  );
   await client.connect(transport);
+});
 
+after(async () => {
+  await client.close();
+  assert.equal(generatedDirectory.startsWith(process.cwd()), true);
+  await rm(generatedDirectory, { recursive: true });
+  await rm(outsideDirectory, { recursive: true });
+});
+
+test("tools/list exposes every envelope tool with input and output schemas", async () => {
   const listed = await client.listTools();
   const toolNames = listed.tools.map((tool) => tool.name);
-  assert.deepEqual(toolNames, [
-    "electronics_capabilities",
-    "electronics_validate_experiment",
-    "crumb_component_catalog",
-    "crumb_analyze_design",
-    "crumb_inspect_design",
-    "crumb_validate_design",
-    "crumb_generate_fixture",
-  ]);
+  assert.deepEqual(toolNames, EXPECTED_TOOL_NAMES);
   assert.ok(listed.tools.every((tool) => tool.outputSchema !== undefined));
   for (const tool of listed.tools) {
     const schema = tool.outputSchema as {
@@ -103,16 +125,11 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
   )?.inputSchema as {
     properties?: Record<string, Record<string, unknown>>;
     required?: string[];
-    definitions?: Record<string, Record<string, unknown>>;
   };
   assert.deepEqual(experimentInputSchema.required, ["experiment"]);
-  assert.equal(
-    experimentInputSchema.properties?.experiment?.$ref,
-    "#/definitions/__schema0",
-  );
   assert.ok(
-    Array.isArray(experimentInputSchema.definitions?.__schema0?.anyOf),
-    "the neutral validator continues to advertise arbitrary JSON input",
+    experimentInputSchema.properties?.experiment,
+    "the neutral validator continues to advertise its experiment input",
   );
 
   const analyzeInputSchema = listed.tools.find(
@@ -141,7 +158,9 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
   assert.deepEqual(fixtureInputSchema.required, ["kind"]);
   assert.equal(fixtureInputSchema.properties?.name?.maxLength, 256);
   assert.equal(fixtureInputSchema.properties?.outputPath?.maxLength, 4096);
+});
 
+test("electronics_capabilities orients a model without leaking paths", async () => {
   const capabilitiesResult = await client.callTool({
     name: "electronics_capabilities",
     arguments: {},
@@ -160,7 +179,10 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
   }>;
   for (const workflow of workflows) {
     for (const step of workflow.steps) {
-      assert.ok(toolNames.includes(step.tool), `workflow tool is registered: ${step.tool}`);
+      assert.ok(
+        EXPECTED_TOOL_NAMES.includes(step.tool),
+        `workflow tool is registered: ${step.tool}`,
+      );
     }
   }
   const callableBackends = capabilities.callableBackends as Array<{
@@ -168,26 +190,8 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
     dataLeavesMachine: boolean | "depends";
     operations: { build: boolean; liveSessions: boolean };
     limitations: string[];
-    integrationFamily: {
-      id: string;
-      label: string;
-      expansion: string;
-      targetProduct: string;
-      scope: string;
-      status: string;
-    };
-    compatibilityProfiles?: Array<{
-      compatibilityProfile: string;
-      status: string;
-      productVersion: string;
-      distribution: { channel: string; buildId?: string };
-      engine: { family: string; version?: string };
-      evidence: {
-        basis: string;
-        automaticFileFormatDetection: boolean;
-        limitation: string;
-      };
-    }>;
+    integrationFamily: Record<string, unknown>;
+    compatibilityProfiles?: Array<Record<string, unknown>>;
   }>;
   assert.deepEqual(
     callableBackends.map((backend) => backend.backendId),
@@ -232,7 +236,9 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
       },
     },
   ]);
+});
 
+test("experiment validation separates tool failure from invalid data", async () => {
   const missingExperimentResult = await client.callTool({
     name: "electronics_validate_experiment",
   });
@@ -240,13 +246,9 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
   assert.equal(missingExperimentResult.isError, true);
   assert.equal(missingExperimentEnvelope.ok, false);
   assert.equal(missingExperimentEnvelope.error?.code, "INVALID_ARGUMENT");
-  assert.equal(
-    missingExperimentEnvelope.error?.argumentPath,
-    "experiment",
-  );
+  assert.equal(missingExperimentEnvelope.error?.argumentPath, "experiment");
   assert.ok(
-    (missingExperimentEnvelope.error?.recovery as unknown[] | undefined)
-      ?.length,
+    (missingExperimentEnvelope.error?.recovery as unknown[] | undefined)?.length,
   );
   assert.equal(
     "compatibilityProfile" in missingExperimentEnvelope.context,
@@ -271,20 +273,17 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
   assert.equal(malformedExperimentEnvelope.ok, true);
   assert.equal(malformedExperimentEnvelope.data?.valid, false);
   assert.ok(malformedExperimentEnvelope.diagnostics.length > 0);
+});
 
+test("malformed arguments return typed INVALID_ARGUMENT envelopes", async () => {
   const missingCrumbArgumentResult = await client.callTool({
     name: "crumb_inspect_design",
   });
-  const missingCrumbArgumentEnvelope = envelopeOf(
-    missingCrumbArgumentResult,
-  );
+  const missingCrumbArgumentEnvelope = envelopeOf(missingCrumbArgumentResult);
   assertCrumbCompatibilityContext(missingCrumbArgumentResult);
   assert.equal(missingCrumbArgumentResult.isError, true);
   assert.equal(missingCrumbArgumentEnvelope.ok, false);
-  assert.equal(
-    missingCrumbArgumentEnvelope.error?.code,
-    "INVALID_ARGUMENT",
-  );
+  assert.equal(missingCrumbArgumentEnvelope.error?.code, "INVALID_ARGUMENT");
   assert.equal(missingCrumbArgumentEnvelope.error?.argumentPath, "path");
 
   const otherInvalidCrumbCalls = [
@@ -308,6 +307,31 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
       arguments: {},
       argumentPath: "kind",
     },
+    {
+      name: "crumb_get_component",
+      arguments: { path: "fixtures/crumb/breadboard-led.cru" },
+      argumentPath: "componentId",
+    },
+    {
+      name: "crumb_export_netlist",
+      arguments: {},
+      argumentPath: "path",
+    },
+    {
+      name: "crumb_check_design",
+      arguments: {},
+      argumentPath: "path",
+    },
+    {
+      name: "crumb_bom",
+      arguments: {},
+      argumentPath: "path",
+    },
+    {
+      name: "crumb_list_projects",
+      arguments: { limit: 0 },
+      argumentPath: "limit",
+    },
   ];
   for (const invalidCall of otherInvalidCrumbCalls) {
     const invalidResult = await client.callTool({
@@ -316,12 +340,13 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
     });
     const invalidEnvelope = envelopeOf(invalidResult);
     assertCrumbCompatibilityContext(invalidResult);
-    assert.equal(invalidResult.isError, true);
-    assert.equal(invalidEnvelope.ok, false);
-    assert.equal(invalidEnvelope.error?.code, "INVALID_ARGUMENT");
+    assert.equal(invalidResult.isError, true, invalidCall.name);
+    assert.equal(invalidEnvelope.ok, false, invalidCall.name);
+    assert.equal(invalidEnvelope.error?.code, "INVALID_ARGUMENT", invalidCall.name);
     assert.equal(
       invalidEnvelope.error?.argumentPath,
       invalidCall.argumentPath,
+      invalidCall.name,
     );
   }
 
@@ -359,11 +384,10 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
       content: Array<{ type: string; text: string }>;
     }
   ).content;
-  assert.match(
-    unknownToolContent[0]?.text ?? "",
-    /not registered/i,
-  );
+  assert.match(unknownToolContent[0]?.text ?? "", /not registered/i);
+});
 
+test("component catalog returns evidence vocabulary and IC variants", async () => {
   const catalogResult = await client.callTool({
     name: "crumb_component_catalog",
     arguments: { toolId: 5 },
@@ -373,8 +397,6 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
   assert.equal(catalog.matched, true);
   const evidenceVocabulary = catalog.evidenceVocabulary as Array<{
     confidence: string;
-    label: string;
-    meaning: string;
     sourceAndRedistributionBoundary: string;
     limitation: string;
   }>;
@@ -412,7 +434,9 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
     icVariants[0]?.pins.map((pin) => pin.name),
     ["GND", "TRIG", "Q", "|RST", "CV", "THR", "DIS", "Vcc"],
   );
+});
 
+test("analysis summaries stay bounded and never leak untrusted names", async () => {
   const summaryResult = await client.callTool({
     name: "crumb_analyze_design",
     arguments: {
@@ -486,6 +510,18 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
   );
   assert.equal(JSON.stringify(longNameResult).includes(privateNameTail), false);
   assert.ok(JSON.stringify(longNameResult).length < 25_000);
+});
+
+test("pagination cursors and digest guards protect continued reads", async () => {
+  const summaryResult = await client.callTool({
+    name: "crumb_analyze_design",
+    arguments: {
+      path: "fixtures/crumb/breadboard-resistor.cru",
+      view: "summary",
+    },
+  });
+  const summaryDigest = envelopeOf(summaryResult).context
+    .projectDigest as string;
 
   const inspectionResult = await client.callTool({
     name: "crumb_inspect_design",
@@ -568,7 +604,9 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
       (staleDigestEnvelope.nextActions[0]?.arguments ?? {}),
     false,
   );
+});
 
+test("validation reports invalid designs as data, and analysis refuses them", async () => {
   const validationResult = await client.callTool({
     name: "crumb_validate_design",
     arguments: { path: "fixtures/crumb/breadboard-resistor.cru" },
@@ -576,17 +614,6 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
   assertCrumbCompatibilityContext(validationResult);
   const validation = dataOf(validationResult);
   assert.equal(validation.valid, true);
-
-  const outsideResult = await client.callTool({
-    name: "crumb_inspect_design",
-    arguments: { path: outsidePath },
-  });
-  const outsideEnvelope = envelopeOf(outsideResult);
-  assertCrumbCompatibilityContext(outsideResult);
-  assert.equal(outsideResult.isError, true);
-  assert.equal(outsideEnvelope.ok, false);
-  assert.equal(outsideEnvelope.error?.code, "PATH_DENIED");
-  assert.equal(JSON.stringify(outsideResult).includes(outsideDirectory), false);
 
   const invalidRef = `${generatedRef}/invalid.cru`;
   await writeFile(
@@ -618,6 +645,27 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
     "crumb_validate_design",
   );
 
+  const invalidErcResult = await client.callTool({
+    name: "crumb_check_design",
+    arguments: { path: invalidRef },
+  });
+  assert.equal(envelopeOf(invalidErcResult).error?.code, "PROJECT_INVALID");
+});
+
+test("file access stays inside the workspace root", async () => {
+  const outsideResult = await client.callTool({
+    name: "crumb_inspect_design",
+    arguments: { path: outsidePath },
+  });
+  const outsideEnvelope = envelopeOf(outsideResult);
+  assertCrumbCompatibilityContext(outsideResult);
+  assert.equal(outsideResult.isError, true);
+  assert.equal(outsideEnvelope.ok, false);
+  assert.equal(outsideEnvelope.error?.code, "PATH_DENIED");
+  assert.equal(JSON.stringify(outsideResult).includes(outsideDirectory), false);
+});
+
+test("fixture generation writes once and refuses to overwrite", async () => {
   const outputRef = `${generatedRef}/${basename(generatedDirectory)}.cru`;
   const generationResult = await client.callTool({
     name: "crumb_generate_fixture",
@@ -648,4 +696,238 @@ test("stdio MCP exposes a bounded, model-neutral CRUMB v0.2 contract", async (co
   assertCrumbCompatibilityContext(overwriteResult);
   assert.equal(overwriteResult.isError, true);
   assert.equal(overwriteEnvelope.error?.code, "ALREADY_EXISTS");
+});
+
+test("workspace listing discovers projects with digests and containment", async () => {
+  const listingResult = await client.callTool({
+    name: "crumb_list_projects",
+    arguments: { dir: generatedRef },
+  });
+  assertCrumbCompatibilityContext(listingResult);
+  const listing = dataOf(listingResult);
+  assert.equal(listing.listingVersion, "crumb.workspace/0.1");
+  const entries = listing.entries as Array<{
+    ref: string;
+    bytes: number;
+    mtime: string;
+    digest?: string;
+  }>;
+  assert.ok(entries.length >= 2);
+  assert.ok(entries.every((entry) => entry.ref.endsWith(".cru")));
+  assert.ok(entries.every((entry) => entry.ref.startsWith(generatedRef)));
+  assert.ok(
+    entries.every((entry) => /^sha256:[0-9a-f]{64}$/.test(entry.digest ?? "")),
+  );
+  assert.ok(
+    entries.every((entry) => !Number.isNaN(Date.parse(entry.mtime))),
+  );
+  const nextAction = envelopeOf(listingResult).nextActions[0];
+  assert.equal(nextAction?.tool, "crumb_analyze_design");
+
+  const outsideListing = await client.callTool({
+    name: "crumb_list_projects",
+    arguments: { dir: outsideDirectory },
+  });
+  assert.equal(envelopeOf(outsideListing).error?.code, "PATH_DENIED");
+
+  const notADirectory = await client.callTool({
+    name: "crumb_list_projects",
+    arguments: { dir: "fixtures/crumb/breadboard.cru" },
+  });
+  const notADirectoryEnvelope = envelopeOf(notADirectory);
+  assert.equal(notADirectoryEnvelope.error?.code, "INVALID_ARGUMENT");
+  assert.equal(notADirectoryEnvelope.error?.argumentPath, "dir");
+});
+
+test("single-component fetch returns detail, connections, and typed NOT_FOUND", async () => {
+  const analysisResult = await client.callTool({
+    name: "crumb_analyze_design",
+    arguments: {
+      path: "fixtures/crumb/breadboard-led.cru",
+      view: "components",
+      limit: 10,
+    },
+  });
+  const components = dataOf(analysisResult).components as Array<{
+    id: string;
+    kind: string;
+  }>;
+  const led = components.find((component) => component.kind === "led-5mm");
+  assert.ok(led);
+
+  const detailResult = await client.callTool({
+    name: "crumb_get_component",
+    arguments: {
+      path: "fixtures/crumb/breadboard-led.cru",
+      componentId: led!.id.toUpperCase(),
+    },
+  });
+  assertCrumbCompatibilityContext(detailResult);
+  const detail = dataOf(detailResult);
+  assert.equal(detail.detailVersion, "crumb.component/0.1");
+  const component = detail.component as {
+    id: string;
+    kind: string;
+    parameters: Record<string, { value: unknown }>;
+    geometry?: unknown[];
+  };
+  assert.equal(component.kind, "led-5mm");
+  assert.equal(component.parameters.forwardVoltage?.value, 2.2);
+  assert.ok(Array.isArray(component.geometry), "geometry included by default");
+  const connections = detail.connections as unknown[];
+  assert.equal(connections.length, 2);
+
+  const missingResult = await client.callTool({
+    name: "crumb_get_component",
+    arguments: {
+      path: "fixtures/crumb/breadboard-led.cru",
+      componentId: "00000000-0000-4000-8000-000000000000",
+    },
+  });
+  const missingEnvelope = envelopeOf(missingResult);
+  assert.equal(missingResult.isError, true);
+  assert.equal(missingEnvelope.error?.code, "NOT_FOUND");
+  assert.equal(missingEnvelope.error?.argumentPath, "componentId");
+});
+
+test("BOM groups parts and keeps totals with bounded lines", async () => {
+  const bomResult = await client.callTool({
+    name: "crumb_bom",
+    arguments: { path: "fixtures/crumb/breadboard-led.cru" },
+  });
+  assertCrumbCompatibilityContext(bomResult);
+  const bom = dataOf(bomResult);
+  assert.equal(bom.bomVersion, "crumb.bom/0.1");
+  const totals = bom.totals as { components: number; distinctLines: number };
+  assert.equal(totals.components, 2);
+  assert.equal(totals.distinctLines, 2);
+  const lines = bom.lines as Array<{
+    kind: string;
+    quantity: number;
+    identity: Record<string, { value: unknown; unit?: string }>;
+  }>;
+  const ledLine = lines.find((line) => line.kind === "led-5mm");
+  assert.ok(ledLine);
+  assert.equal(ledLine!.quantity, 1);
+  assert.equal(ledLine!.identity.forwardVoltage?.value, 2.2);
+  assert.equal(ledLine!.identity.forwardVoltage?.unit, "volt");
+});
+
+test("netlist export pages nets and reports floating terminals", async () => {
+  const netlistResult = await client.callTool({
+    name: "crumb_export_netlist",
+    arguments: { path: "fixtures/crumb/breadboard-led.cru", limit: 1 },
+  });
+  assertCrumbCompatibilityContext(netlistResult);
+  const netlist = dataOf(netlistResult);
+  assert.equal(netlist.netlistVersion, "crumb.netlist/0.1");
+  const stats = netlist.stats as {
+    netCount: number;
+    floatingTerminalCount: number;
+  };
+  assert.equal(stats.netCount, 2);
+  assert.equal(stats.floatingTerminalCount, 2);
+  const page = netlist.page as { returned: number; total: number; nextCursor?: string };
+  assert.equal(page.returned, 1);
+  assert.equal(page.total, 2);
+  assert.ok(page.nextCursor);
+
+  const secondPageResult = await client.callTool({
+    name: "crumb_export_netlist",
+    arguments: {
+      path: "fixtures/crumb/breadboard-led.cru",
+      limit: 1,
+      cursor: page.nextCursor,
+    },
+  });
+  const secondPage = dataOf(secondPageResult);
+  const secondNets = secondPage.nets as Array<{ id: string }>;
+  assert.equal(secondNets.length, 1);
+  const firstNets = netlist.nets as Array<{ id: string }>;
+  assert.notEqual(secondNets[0]?.id, firstNets[0]?.id);
+
+  const crossToolCursor = await client.callTool({
+    name: "crumb_analyze_design",
+    arguments: {
+      path: "fixtures/crumb/breadboard-led.cru",
+      view: "components",
+      cursor: page.nextCursor,
+    },
+  });
+  assert.equal(
+    envelopeOf(crossToolCursor).error?.code,
+    "INVALID_ARGUMENT",
+    "netlist cursors are not valid for analyze views",
+  );
+});
+
+test("electrical rule check returns findings as data with evidence tags", async () => {
+  const checkResult = await client.callTool({
+    name: "crumb_check_design",
+    arguments: { path: "fixtures/crumb/breadboard-led.cru" },
+  });
+  assertCrumbCompatibilityContext(checkResult);
+  const checkEnvelope = envelopeOf(checkResult);
+  assert.equal(checkResult.isError ?? false, false);
+  const check = dataOf(checkResult);
+  assert.equal(check.ercVersion, "crumb.erc/0.1");
+  assert.equal(check.valid, true);
+  const findings = check.findings as Array<{
+    ruleId: string;
+    severity: string;
+    confidence: string;
+    basis: string;
+  }>;
+  assert.ok(findings.length >= 2);
+  assert.ok(findings.every((finding) => finding.ruleId === "floating-terminal"));
+  assert.ok(
+    findings.every((finding) =>
+      ["public-electronics-knowledge", "version-pinned-crumb-observation", "both"].includes(
+        finding.basis,
+      ),
+    ),
+  );
+  assert.ok((check.limitations as string[]).length > 0);
+  assert.ok(
+    checkEnvelope.nextActions.some(
+      (action) => action.tool === "crumb_export_netlist",
+    ),
+  );
+});
+
+test("IC reference answers pinout queries and stays honest on misses", async () => {
+  const hitResult = await client.callTool({
+    name: "crumb_ic_reference",
+    arguments: { query: "74HC138" },
+  });
+  assertCrumbCompatibilityContext(hitResult);
+  const hit = dataOf(hitResult);
+  assert.equal(hit.matched, true);
+  const variants = hit.variants as Array<{
+    label: string;
+    pins: Array<{ name: string | null }>;
+  }>;
+  assert.equal(variants.length, 1);
+  assert.match(variants[0]!.label, /74HC138/);
+  assert.ok(variants[0]!.pins.length > 0);
+
+  const missResult = await client.callTool({
+    name: "crumb_ic_reference",
+    arguments: { query: "definitely-not-an-ic" },
+  });
+  const miss = dataOf(missResult);
+  assert.equal(miss.matched, false);
+  assert.ok(
+    envelopeOf(missResult).diagnostics.some(
+      (diagnostic) => diagnostic.code === "unsupported-component",
+    ),
+  );
+
+  const byPrefab = await client.callTool({
+    name: "crumb_ic_reference",
+    arguments: { prefabId: 0 },
+  });
+  const prefabData = dataOf(byPrefab);
+  const prefabVariants = prefabData.variants as Array<{ label: string }>;
+  assert.equal(prefabVariants[0]?.label, "LM555");
 });

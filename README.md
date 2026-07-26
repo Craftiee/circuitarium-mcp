@@ -71,6 +71,18 @@ for the evidence categories used by the project.
   behavior.
 - Infer attachment groups using either explicit connections only or the
   version-pinned CRUMB 1.3.5 breadboard topology.
+- Export jumper-collapsed electrical nets with `VCC`/`GND` names inferred from
+  DC supply terminals, optional saved-switch-state merges with explicit
+  provenance, and paging for large designs.
+- Run static electrical rule checks over the inferred nets: supply shorts,
+  LEDs directly across the rails, bypassed two-terminal parts, resistors above
+  their power rating, floating IC power pins, and floating terminals — each
+  finding tagged with evidence confidence and rule basis, without claiming any
+  simulation ran.
+- Group components into a bill of materials keyed by decoded part identity,
+  with saved state (switch positions, supply on/off) deliberately excluded.
+- Discover workspace `.cru` files with digests, and answer IC pinout questions
+  from the version-pinned prefab registry.
 - Page through component and connection details without placing an entire large
   design in one model response. Continue by copying `data.page.nextCursor`
   unchanged into the next request's `cursor`; it is opaque and bound to that
@@ -143,12 +155,22 @@ npm run start:mcp
 Useful CLI commands:
 
 ```powershell
+npm run cli -- list
 npm run cli -- inspect fixtures/crumb/breadboard.cru
 npm run cli -- analyze fixtures/crumb/breadboard-resistor.cru components 50
+npm run cli -- netlist fixtures/crumb/breadboard-led.cru
+npm run cli -- check fixtures/crumb/breadboard-led.cru
+npm run cli -- bom fixtures/crumb/breadboard-led.cru
+npm run cli -- ic 74HC138
 npm run cli -- validate fixtures/crumb/breadboard-and-rail.cru
 npm run cli -- generate breadboard my-design.cru
 npm run cli -- validate-experiment examples/experiments/four-bit-counter.json
 ```
+
+Read commands invoke the same registered MCP tools as the stdio server and
+print the same result envelopes; only the fixture `generate`/`generate-all`
+maintenance commands write directly (they support `--force`, which the MCP
+surface never does).
 
 The server confines file operations to its working directory by default. Set
 `CIRCUITARIUM_MCP_ROOT` to a different absolute directory if the MCP client
@@ -166,7 +188,13 @@ For a concise model-host footing, use the
 | `electronics_capabilities` | Discover callable backends, limitations, vocabulary, and workflows | None |
 | `electronics_validate_experiment` | Validate portable circuit schema and semantics | None |
 | `crumb_component_catalog` | List 18 recognized CRUMB 1.3.5 schemas, 21 tool-5 DIP variants, pin-name coverage, and machine-readable evidence meanings | None |
+| `crumb_ic_reference` | Answer IC pinout questions ("74HC138") from the version-pinned prefab registry | None |
+| `crumb_list_projects` | Discover workspace `.cru` files with sizes, timestamps, and digests | Reads listed files |
 | `crumb_analyze_design` | Return bounded semantic summaries, component pages, or inferred connection pages | Reads one file |
+| `crumb_get_component` | Fetch one component with parameters, terminals, connection groups, and windowed firmware source | Reads one file |
+| `crumb_export_netlist` | Promote connection groups to named electrical nets with jumper collapse and optional switch-state merges | Reads one file |
+| `crumb_check_design` | Run static electrical rule checks (supply shorts, LED series resistance, floating pins, power ratings) | Reads one file |
+| `crumb_bom` | Group components into a bill of materials by part identity | Reads one file |
 | `crumb_inspect_design` | Return a format-level `.cru` inventory | Reads one file |
 | `crumb_validate_design` | Check `.cru` structure and known invariants | Reads one file |
 | `crumb_generate_fixture` | Write one synthetic, compatibility-tested fixture and return its artifact identity | Optional new file; never overwrites |

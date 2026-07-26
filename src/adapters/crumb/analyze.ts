@@ -598,6 +598,11 @@ function analyzeComponent(
         : [
             ...definition.notes,
             ...(icDefinition === undefined ? [] : [icDefinition.sourceNote]),
+            ...(embeddedData !== undefined && !embeddedData.valid
+              ? [
+                  "The tool-5 EEPROM payload signature matched, but the embedded 28C16 image is invalid; prefab identity and pin names are withheld until the image is exactly 2,048 valid base64-encoded bytes.",
+                ]
+              : []),
           ],
     ...(icDefinition === undefined
       ? {}
@@ -629,12 +634,18 @@ class UnionFind {
 
   find(value: string): string {
     this.add(value);
-    const parent = this.#parents.get(value)!;
-    if (parent === value) {
-      return value;
+    // Iterative with full path compression: recursion here can exhaust the
+    // stack on adversarially long parent chains in untrusted saves.
+    let root = value;
+    while (this.#parents.get(root)! !== root) {
+      root = this.#parents.get(root)!;
     }
-    const root = this.find(parent);
-    this.#parents.set(value, root);
+    let current = value;
+    while (current !== root) {
+      const next = this.#parents.get(current)!;
+      this.#parents.set(current, root);
+      current = next;
+    }
     return root;
   }
 
@@ -842,12 +853,17 @@ export function analyzeCru(
         message: `Tool ID ${component.toolId} is preserved but not identified`,
       });
     } else if (!component.payloadMatchesCatalog) {
-      diagnostics.push({
-        severity: "warning",
-        code: "payload-schema-mismatch",
-        path: `components.${component.index}.rawDataTypes`,
-        message: `${component.label} payload differs from the observed catalog schema`,
-      });
+      // An invalid EEPROM image already emits the specific
+      // invalid-eeprom-image diagnostic; the generic shape-mismatch message
+      // would misdescribe a payload whose signature actually matched.
+      if (component.embeddedData === undefined || component.embeddedData.valid) {
+        diagnostics.push({
+          severity: "warning",
+          code: "payload-schema-mismatch",
+          path: `components.${component.index}.rawDataTypes`,
+          message: `${component.label} payload differs from the observed catalog schema`,
+        });
+      }
     } else if (component.toolId === 5 && component.variant === undefined) {
       diagnostics.push({
         severity: "warning",
@@ -889,6 +905,50 @@ export function analyzeCru(
           : "The 28C16 EEPROM image is not valid base64 or is not exactly 2,048 bytes",
       });
     }
+  }
+
+  const componentIndexesById = new Map<string, number[]>();
+  for (const component of components) {
+    const key = component.id.toLowerCase();
+    const indexes = componentIndexesById.get(key) ?? [];
+    indexes.push(component.index);
+    componentIndexesById.set(key, indexes);
+  }
+  for (const [id, indexes] of componentIndexesById) {
+    if (indexes.length > 1) {
+      diagnostics.push({
+        severity: "warning",
+        code: "duplicate-component-id",
+        path: `components.${indexes[0]}.id`,
+        message:
+          `Component id ${id} appears ${indexes.length} times ` +
+          `(indexes ${indexes.slice(0, MAX_DIAGNOSTIC_SAMPLES_RETURNED).join(", ")}); ` +
+          "connectivity inference keeps only one entry per id, so groups touching this id are unreliable.",
+      });
+    }
+  }
+
+  const mismatchedTopologyComponents = components.filter(
+    (component) =>
+      component.recognitionStatus === "schema-mismatch" &&
+      (component.kind === "jumper-wire" ||
+        ((component.kind === "breadboard" || component.kind === "power-rail") &&
+          resolvedOptions.topologyMode === "known-board-v1.3.5")),
+  );
+  if (mismatchedTopologyComponents.length > 0) {
+    const sample = mismatchedTopologyComponents
+      .slice(0, MAX_DIAGNOSTIC_SAMPLES_RETURNED)
+      .map((component) => component.id)
+      .join(", ");
+    diagnostics.push({
+      severity: "warning",
+      code: "topology-uses-schema-mismatched-component",
+      path: "connectivity",
+      message:
+        `${mismatchedTopologyComponents.length} structural or interconnect component(s) ` +
+        "failed payload signature matching but still shape connectivity inference " +
+        `by tool-ID kind. Treat affected groups with reduced confidence. Sample: ${sample}`,
+    });
   }
 
   const componentsWithBoundedNestedOutput = components.filter(

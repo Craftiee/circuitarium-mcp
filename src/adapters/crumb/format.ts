@@ -185,7 +185,10 @@ const parser = new XMLParser({
   trimValues: true,
 });
 
-class CruStructuralLimitError extends Error {
+/** The bytes are not a structurally acceptable CRUMB save. */
+export class CruFormatError extends Error {}
+
+class CruStructuralLimitError extends CruFormatError {
   constructor(
     readonly diagnosticPath: string,
     label: string,
@@ -496,7 +499,10 @@ function componentXml(component: CruComponent): string[] {
     : connectedComponentXml(component);
 }
 
-export function serializeCru(document: CruDocument): string {
+export function serializeCru(
+  document: CruDocument,
+  options: { validate?: boolean } = {},
+): string {
   if (document.name.trim().length === 0) {
     throw new Error("CRUMB save name cannot be empty");
   }
@@ -538,16 +544,32 @@ export function serializeCru(document: CruDocument): string {
   lines.push(`  <timeStep>${scalar(timeStep)}</timeStep>`);
   lines.push(`  <throttling>${document.throttling ?? true}</throttling>`);
   lines.push("</SaveData>");
-  return `${lines.join("\n")}\n`;
+  const xml = `${lines.join("\n")}\n`;
+  if (options.validate ?? true) {
+    const validation = validateCru(xml);
+    if (!validation.valid) {
+      const firstError = validation.diagnostics.find(
+        (diagnostic) => diagnostic.severity === "error",
+      );
+      throw new Error(
+        "serializeCru produced a structurally invalid CRUMB save: " +
+          `${firstError?.code ?? "unknown"} at ${firstError?.path ?? ""} — ` +
+          `${firstError?.message ?? "no error diagnostic was retained"}`,
+      );
+    }
+  }
+  return xml;
 }
 
 export function decodeCru(xml: string): CruDecodedDocument {
   if (/<!DOCTYPE|<!ENTITY/i.test(xml)) {
-    throw new Error("DOCTYPE and ENTITY declarations are not allowed in CRUMB files");
+    throw new CruFormatError(
+      "DOCTYPE and ENTITY declarations are not allowed in CRUMB files",
+    );
   }
   const validation = XMLValidator.validate(xml);
   if (validation !== true) {
-    throw new Error(
+    throw new CruFormatError(
       `Invalid XML at line ${validation.err.line}, column ${validation.err.col}: ${validation.err.msg}`,
     );
   }
@@ -555,7 +577,7 @@ export function decodeCru(xml: string): CruDecodedDocument {
   const parsed = parser.parse(xml) as Record<string, unknown>;
   const root = parsed.SaveData as Record<string, unknown> | undefined;
   if (!root || typeof root !== "object") {
-    throw new Error("Expected CRUMB root element <SaveData>");
+    throw new CruFormatError("Expected CRUMB root element <SaveData>");
   }
 
   const componentContainer = root.components as Record<string, unknown> | undefined;

@@ -36,7 +36,7 @@
     "fixtures": "tsx src/cli.ts generate-all fixtures/crumb --force",
     "fixtures:verify": "tsx scripts/verify-fixtures.ts",
     "start:mcp": "tsx src/server.ts",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
