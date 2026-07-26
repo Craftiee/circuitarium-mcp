@@ -15,8 +15,8 @@
 experimental, model-neutral electronics tool server with
 application-specific integrations. Its first integration family is
 **CRUMBLE** — **C**ircuit **R**epresentation & **U**niversal **M**odel
-**B**ridge for **L**aboratory **E**lectronics. CRUMBLE reads and validates
-CRUMB `.cru` save files, recognizes a version-pinned subset of CRUMB
+**B**ridge for **L**aboratory **E**lectronics. CRUMBLE reads, validates, and
+compares CRUMB `.cru` save files, recognizes a version-pinned subset of CRUMB
 components, and generates a small set of independently authored synthetic
 fixtures. A separately licensed installation of CRUMB is needed only when a
 user chooses to test those files in the game; CRUMB itself is not included.
@@ -75,6 +75,15 @@ for the evidence categories used by the project.
   design in one model response. Continue by copying `data.page.nextCursor`
   unchanged into the next request's `cursor`; it is opaque and bound to that
   project digest and view.
+- Compare a controlled baseline and candidate `.cru` under the explicitly
+  selected Unity compatibility profile without writing either file. The
+  comparison distinguishes byte identity, modeled equivalence,
+  parameter-value changes, lexical-only rewrites, attachments, geometry, and
+  unverified payload signatures while binding pagination to both digests.
+  Unknown XML fields, attributes, mixed content, namespace bindings used by
+  content, or subtrees force partial, inconclusive coverage and are represented
+  only by content-safe fingerprints. Unused, well-formed namespace
+  declarations are representation-neutral.
 - Redact embedded source code by default while returning useful metadata and a
   digest; source is included only when explicitly requested.
 - Keep 28C16 EEPROM images metadata-only after validating their exact 2,048-byte
@@ -83,7 +92,8 @@ for the evidence categories used by the project.
 - Treat the save name as untrusted too: return only a 160-character preview
   with size, digest, and truncation metadata. Nested component and connection
   collections carry explicit `total`, `returned`, `limit`, and `truncated`
-  fields instead of growing without bound.
+  fields instead of growing without bound. Unknown payload observations return
+  at most 64 child-key names in aggregate for one component.
 - Validate a simulator-neutral circuit experiment.
 - Generate five synthetic CRUMB save fixtures:
   - blank workspace
@@ -145,6 +155,7 @@ Useful CLI commands:
 ```powershell
 npm run cli -- inspect fixtures/crumb/breadboard.cru
 npm run cli -- analyze fixtures/crumb/breadboard-resistor.cru components 50
+npm run cli -- compare baseline.cru candidate.cru components 50
 npm run cli -- validate fixtures/crumb/breadboard-and-rail.cru
 npm run cli -- generate breadboard my-design.cru
 npm run cli -- validate-experiment examples/experiments/four-bit-counter.json
@@ -167,6 +178,7 @@ For a concise model-host footing, use the
 | `electronics_validate_experiment` | Validate portable circuit schema and semantics | None |
 | `crumb_component_catalog` | List 18 recognized CRUMB 1.3.5 schemas, 21 tool-5 DIP variants, pin-name coverage, and machine-readable evidence meanings | None |
 | `crumb_analyze_design` | Return bounded semantic summaries, component pages, or inferred connection pages | Reads one file |
+| `crumb_compare_designs` | Compare two `.cru` files under `crumb.unity/1.3.5` with digest-guarded, bounded root and component changes | Reads two files |
 | `crumb_inspect_design` | Return a format-level `.cru` inventory | Reads one file |
 | `crumb_validate_design` | Check `.cru` structure and known invariants | Reads one file |
 | `crumb_generate_fixture` | Write one synthetic, compatibility-tested fixture and return its artifact identity | Optional new file; never overwrites |
@@ -175,12 +187,19 @@ All tools have input and output schemas. Successful tool execution and valid
 domain data are separate states: a validator can return `ok: true` with
 `data.valid: false`. See [the v0.2 tool contract](docs/contract.md).
 
-File tools reject non-`.cru` paths, files over 64 MiB, paths outside the root
-selected by `CIRCUITARIUM_MCP_ROOT` (or the legacy fallback), and overwrite
-attempts. Artifact references in results are workspace-relative rather than
-leaked absolute paths. Artifact metadata uses `adapterTestedCompatibility` to
-describe the adapter evidence; it does not claim that an arbitrary input file
-was created or tested in that CRUMB build.
+File tools reject non-`.cru` paths, malformed UTF-8, files over 3 MiB, paths
+outside the root selected by `CIRCUITARIUM_MCP_ROOT` (or the legacy fallback),
+and overwrite attempts. A comparison pair is additionally capped at 5 MiB
+combined. SHA-256 artifact identities cover the exact file bytes, including an
+optional UTF-8 BOM. Artifact references in results are workspace-relative
+rather than leaked absolute paths. Artifact metadata uses
+`adapterTestedCompatibility` to describe the adapter evidence; it does not
+claim that an arbitrary input file was created or tested in that CRUMB build.
+
+The Unity decoder accepts XML 1.0 represented as UTF-8, enforces namespace
+well-formedness and strict typed scalar forms, and caps each parsed XML text
+node at 1 MiB. See the [format notes](docs/crumb-format.md) for the exact
+declaration, numeric, base64, namespace, and structural-limit rules.
 
 The file backend runs locally, but its capability reports
 `dataLeavesMachine: "depends"` because a cloud-backed MCP client or model host
@@ -225,6 +244,8 @@ See the [cross-model handoff example](examples/cross-model/handoff.md).
 - `docs/crumb-format.md` — observed, version-pinned CRUMB schema notes
 - `docs/wokwi-audit.md` — official Wokwi CLI/MCP audit
 - `docs/architecture.md` — current boundary and scalable simulator roadmap
+- `docs/unity-adapter-plan.md` — Unity-first comparison, editing, and writer
+  acceptance gates
 - `docs/client-setup.md` — ChatGPT/Codex, Claude, API, and local-model routes
 - `docs/release-checklist.md` — local and GitHub publication gates
 - `ROADMAP.md` — adapter, portable project, simulation, and live-bridge stages

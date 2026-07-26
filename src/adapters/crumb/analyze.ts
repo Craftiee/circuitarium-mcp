@@ -11,6 +11,7 @@ import {
   MAX_DIAGNOSTIC_SAMPLES_RETURNED,
   MAX_KIND_COUNTS_RETURNED,
   MAX_PARAMETER_COLLECTION_ITEMS_RETURNED,
+  MAX_UNKNOWN_PAYLOAD_KEYS_RETURNED_PER_COMPONENT,
   type BoundedCollectionInfo,
   type BoundedTextInfo,
 } from "../../domain/bounds.js";
@@ -24,6 +25,7 @@ import {
   decodeCru,
   type CruDecodedComponent,
   type CruDecodedDataValue,
+  type CruDecodedDocument,
   type CruTiePoint,
   type Quaternion,
   type Vector3,
@@ -222,7 +224,9 @@ function sha256(value: string | Buffer): string {
 }
 
 function normalizedType(type: string): string {
-  return type.endsWith(":guid") ? "guid" : type;
+  return !type.startsWith("unresolved:") && /^[^:]+:guid$/.test(type)
+    ? "guid"
+    : type;
 }
 
 function matchesSignature(rawTypes: string[], signature: string[]): boolean {
@@ -340,11 +344,23 @@ function sourceCodeInfo(
   const source = strings[0]?.value ?? "";
   const secondary = strings[1]?.value ?? "";
   const returnedSource = includeSourceCode ? source.slice(0, 65_536) : "";
+  let lineCount = source.length === 0 ? 0 : 1;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source.charCodeAt(index);
+    if (character === 13) {
+      lineCount += 1;
+      if (source.charCodeAt(index + 1) === 10) {
+        index += 1;
+      }
+    } else if (character === 10) {
+      lineCount += 1;
+    }
+  }
   return {
     present: source.length > 0,
     characters: source.length,
     bytes: Buffer.byteLength(source, "utf8"),
-    lines: source.length === 0 ? 0 : source.split(/\r\n|\r|\n/).length,
+    lines: lineCount,
     sha256: sha256(source),
     languageHint: "c-cpp-or-arduino",
     included: includeSourceCode,
@@ -455,6 +471,13 @@ function analyzeComponent(
   const embeddedData = isEepromIcSignature
     ? eepromDataInfo(component.values[4])
     : undefined;
+  const decodedPayloadMatchesSignature = component.values.every(
+    (value, index) =>
+      (isEepromIcSignature &&
+        index === 4 &&
+        embeddedData?.valid === true) ||
+      (value.kind !== "unknown" && value.modeledStructureComplete),
+  );
   const subtypeMatchesSignature =
     component.toolId !== 5 ||
     (isNormalIcSignature && prefabId !== 13) ||
@@ -464,7 +487,9 @@ function analyzeComponent(
   const payloadMatchesCatalog =
     definition !== undefined &&
     matchedSignatureIndex >= 0 &&
-    subtypeMatchesSignature;
+    subtypeMatchesSignature &&
+    decodedPayloadMatchesSignature &&
+    component.structuralDigest === undefined;
   const effectiveDefinition = payloadMatchesCatalog ? definition : undefined;
   const icDefinition =
     payloadMatchesCatalog && component.toolId === 5 && prefabId !== undefined
@@ -516,6 +541,8 @@ function analyzeComponent(
     allRawDataTypes,
     MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED,
   );
+  let remainingUnknownKeyBudget =
+    MAX_UNKNOWN_PAYLOAD_KEYS_RETURNED_PER_COMPONENT;
   const allUnknownPayloads = component.values.flatMap((value, index) => {
     if (
       value.kind !== "unknown" ||
@@ -525,14 +552,18 @@ function analyzeComponent(
     }
     const boundedKeys = boundCollection(
       value.keys,
-      MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED,
+      remainingUnknownKeyBudget,
     );
+    remainingUnknownKeyBudget -= boundedKeys.items.length;
     return [
       {
         index,
         type: value.type,
         keys: boundedKeys.items,
-        keyBounds: boundedKeys.bounds,
+        keyBounds: {
+          ...boundedKeys.bounds,
+          limit: MAX_UNKNOWN_PAYLOAD_KEYS_RETURNED_PER_COMPONENT,
+        },
       },
     ];
   });
@@ -804,12 +835,19 @@ export function analyzeCru(
   xml: string,
   options: CrumbAnalysisOptions = {},
 ): CrumbDesignAnalysis {
+  return analyzeDecodedCru(decodeCru(xml), sha256(xml), options);
+}
+
+export function analyzeDecodedCru(
+  decoded: CruDecodedDocument,
+  projectDigest: string,
+  options: CrumbAnalysisOptions = {},
+): CrumbDesignAnalysis {
   const resolvedOptions: Required<CrumbAnalysisOptions> = {
     includeGeometry: options.includeGeometry ?? false,
     includeSourceCode: options.includeSourceCode ?? false,
     topologyMode: options.topologyMode ?? "known-board-v1.3.5",
   };
-  const decoded = decodeCru(xml);
   const analyzedComponents = decoded.components.map((component) =>
     analyzeComponent(component, resolvedOptions),
   );
@@ -1058,7 +1096,7 @@ export function analyzeCru(
     format: "crumb-cru",
     designName: designNameInfo.preview,
     designNameInfo,
-    projectDigest: sha256(xml),
+    projectDigest,
     adapterTestedCompatibility: ["CRUMB 1.3.5"],
     summary: {
       componentCount: components.length,

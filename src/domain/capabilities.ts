@@ -105,6 +105,7 @@ export const ADAPTER_CAPABILITIES: AdapterCapability[] = [
       "analyze typed component parameters and terminal attachments",
       "infer CRUMB 1.3.5 breadboard and power-rail connection groups",
       "resolve 21 version-pinned DIP IC variants and ordered pin names",
+      "compare controlled baseline and candidate files under crumb.unity/1.3.5 without writing either",
       "generate verified board, rail, resistor, and LED fixtures",
     ],
     limitations: [
@@ -155,6 +156,7 @@ export const CALLABLE_BACKENDS: CallableBackendDescriptor[] = [
       "Reads and writes files; it does not control a running CRUMB simulation.",
       "The backend runs locally, but returned data may leave the machine through the MCP client or model host.",
       "Five fixed synthetic fixture generators are available; build=false means there is no general circuit builder.",
+      "Controlled-save comparison is read-only and does not prove which CRUMB build authored a file.",
       "General semantic editing is not implemented yet.",
       "Board topology is version-pinned to CRUMB 1.3.5.",
     ],
@@ -271,6 +273,34 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
           view: "connections",
           topologyMode: "known-board-v1.3.5",
           limit: 50,
+        },
+      },
+    ],
+  },
+  {
+    id: "compare-controlled-crumb-saves",
+    goal: "Explain what changed after a controlled CRUMB 1.3.5 edit or Save As operation.",
+    steps: [
+      {
+        tool: "crumb_compare_designs",
+        reason:
+          "Start with byte identity, modeled equivalence, coverage, and bounded change counts.",
+        exampleArguments: {
+          baselinePath: "designs/before-controlled-edit.cru",
+          candidatePath: "designs/after-controlled-edit.cru",
+          view: "summary",
+          compatibilityProfile: "crumb.unity/1.3.5",
+        },
+      },
+      {
+        tool: "crumb_compare_designs",
+        reason: "Inspect GUID-matched component changes when the summary differs.",
+        exampleArguments: {
+          baselinePath: "designs/before-controlled-edit.cru",
+          candidatePath: "designs/after-controlled-edit.cru",
+          view: "components",
+          limit: 50,
+          compatibilityProfile: "crumb.unity/1.3.5",
         },
       },
     ],

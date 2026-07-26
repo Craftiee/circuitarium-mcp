@@ -21,7 +21,7 @@ ChatGPT / Codex / Claude / local agent host
               | capabilities | validation |
                          |
                 CRUMBLE file backend
-          inspect / validate / analyze / fixture
+       inspect / validate / analyze / compare / fixture
            profile: crumb.unity/1.3.5
                          |
           workspace-relative .cru artifact
@@ -92,6 +92,9 @@ The normative MCP result rules are in [contract.md](contract.md).
 The adapter currently supports:
 
 - format-level inventory and validation;
+- controlled baseline/candidate comparison with both artifact digests,
+  modeled-equivalence assessment, order-sensitive opaque fingerprints, and
+  bounded change pages;
 - semantic recognition for 18 observed tool-ID signatures (`0..15`, `20`,
   `24`);
 - typed component parameters with units and confidence;
@@ -144,6 +147,11 @@ CRUMB live run/pause/step/read tools require a supported bridge. The preferred
 route is developer cooperation or a documented plugin/local API. GUI automation
 can help acceptance-test generated files, but it is not a stable simulation
 contract.
+
+The staged Unity editing design and writer-evidence gates are documented in
+[unity-adapter-plan.md](unity-adapter-plan.md). Comparison comes before general
+editing because the current semantic decoder is not a lossless XML round-trip
+representation.
 
 ## Why a neutral electronics layer matters
 

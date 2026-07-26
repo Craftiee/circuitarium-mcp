@@ -60,6 +60,57 @@ test("generated component payloads use the observed CRUMB positional types", () 
   ]);
 });
 
+test("GUID namespace aliases and inherited bindings follow XML namespace scope", () => {
+  const baseline = generateFixture("breadboard");
+  const aliased = baseline
+    .replaceAll("xmlns:q1=", "xmlns:q2=")
+    .replaceAll("q1:guid", "q2:guid");
+  assert.equal(validateCru(aliased).valid, true);
+
+  const inherited = baseline
+    .replaceAll(
+      ' xmlns:q1="http://microsoft.com/wsdl/types/"',
+      "",
+    )
+    .replace(
+      'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+      'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:q1="http://microsoft.com/wsdl/types/"',
+    );
+  assert.equal(validateCru(inherited).valid, true);
+});
+
+test("incorrect namespace bindings cannot masquerade as CRUMB typed values", () => {
+  const baseline = generateFixture("breadboard-resistor");
+  const wrongGuid = baseline.replaceAll(
+    "http://microsoft.com/wsdl/types/",
+    "urn:not-guid",
+  );
+  const wrongXsi = baseline.replace(
+    "http://www.w3.org/2001/XMLSchema-instance",
+    "urn:not-xsi",
+  );
+  const defaultNamespace = baseline.replace(
+    "<SaveData ",
+    '<SaveData xmlns="urn:not-crumb" ',
+  );
+
+  for (const candidate of [wrongGuid, wrongXsi]) {
+    const result = validateCru(candidate);
+    assert.equal(result.valid, false);
+    assert.ok(
+      result.diagnostics.some(
+        (diagnostic) => diagnostic.code === "missing-guid",
+      ),
+    );
+  }
+  const defaultResult = validateCru(defaultNamespace);
+  assert.equal(defaultResult.valid, false);
+  assert.equal(
+    defaultResult.diagnostics[0]?.code,
+    "invalid-xml-or-root",
+  );
+});
+
 test("unknown tie-point parent GUIDs are rejected", () => {
   const xml = generateFixture("breadboard-led").replace(
     "7f889f69-8140-493a-b1ef-6a519d869b1a</parentIdentifier>",

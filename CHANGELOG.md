@@ -23,6 +23,11 @@ remains experimental.
   data, connection membership, summaries, and diagnostics.
 - Typed `INVALID_ARGUMENT` envelopes for malformed registered-tool calls while
   retaining strict published input schemas.
+- Read-only `crumb_compare_designs` support for digest-guarded, bounded
+  comparison of controlled baseline and candidate `.cru` files under the
+  `crumb.unity/1.3.5` compatibility profile.
+- A Unity-first adapter plan with comparison, lossless-editing, and
+  component-writer acceptance gates.
 
 ### Changed
 
@@ -37,6 +42,16 @@ remains experimental.
   cannot be mistaken for an input-file origin claim.
 - Local-backend data egress is reported as host-dependent, and fixed fixture
   generation is distinguished from general circuit building.
+- CRUMB reads are capped at 3 MiB per file, with a 5 MiB combined comparison
+  cap, a 1 MiB parsed-text-node cap, a 100,000-markup-delimiter cap, and a
+  64-key aggregate budget for unknown payload observations per component.
+- Unity parsing now enforces UTF-8/XML 1.0 declaration rules, namespace
+  well-formedness, finite decimal and signed-int32 lexical forms, exact boolean
+  spellings, float32 modeling where Unity serializes single-precision values,
+  and canonical thumbnail base64.
+- Partial-node comparison now retains conservative `opaque-payload`
+  classification alongside narrower modeled changes; unused, well-formed
+  namespace declarations remain representation-neutral.
 
 ## [0.2.0] - 2026-07-25
 

@@ -9,8 +9,14 @@ import {
   type CrumbFixtureKind,
 } from "./adapters/crumb/fixtures.js";
 import { analyzeCru } from "./adapters/crumb/analyze.js";
+import { compareCru } from "./adapters/crumb/compare.js";
 import { inspectCru, validateCru } from "./adapters/crumb/format.js";
-import { readCruFile, workspaceRef, writeCruFile } from "./adapters/crumb/io.js";
+import {
+  readCruFile,
+  requireCruComparisonSize,
+  workspaceRef,
+  writeCruFile,
+} from "./adapters/crumb/io.js";
 import { validateExperiment } from "./domain/experiment.js";
 
 function usage(): string {
@@ -19,6 +25,7 @@ function usage(): string {
 Commands:
   inspect <file.cru>
   analyze <file.cru> [summary|components|connections] [limit]
+  compare <baseline.cru> <candidate.cru> [summary|root|components] [limit]
   validate <file.cru>
   validate-experiment <experiment.json>
   generate <fixture-kind> <output.cru> [name] [--force]
@@ -100,6 +107,91 @@ async function main(): Promise<void> {
             limit,
           },
           connections: analysis.connectivity.groups.slice(0, limit),
+        });
+      } else {
+        printJson({ ...base, view });
+      }
+      return;
+    }
+    case "compare": {
+      const baselinePath = positional[0];
+      const candidatePath = positional[1];
+      const view = positional[2] ?? "summary";
+      const limit = Number.parseInt(positional[3] ?? "50", 10);
+      if (!baselinePath || !candidatePath) {
+        throw new Error(
+          "compare requires baseline and candidate .cru paths",
+        );
+      }
+      if (!["summary", "root", "components"].includes(view)) {
+        throw new Error(
+          "compare view must be summary, root, or components",
+        );
+      }
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+        throw new Error("compare limit must be an integer from 1 through 200");
+      }
+      const [baselineFile, candidateFile] = await Promise.all([
+        readCruFile(baselinePath),
+        readCruFile(candidatePath),
+      ]);
+      requireCruComparisonSize(
+        baselineFile.bytes,
+        candidateFile.bytes,
+      );
+      const baselineValidation = validateCru(baselineFile.xml);
+      const candidateValidation = validateCru(candidateFile.xml);
+      if (!baselineValidation.valid || !candidateValidation.valid) {
+        printJson({
+          valid: false,
+          baseline: {
+            path: workspaceRef(baselineFile.path),
+            validation: baselineValidation,
+          },
+          candidate: {
+            path: workspaceRef(candidateFile.path),
+            validation: candidateValidation,
+          },
+        });
+        process.exitCode = 1;
+        return;
+      }
+      const comparison = compareCru(baselineFile.xml, candidateFile.xml, {
+        baselineByteDigest: baselineFile.digest,
+        candidateByteDigest: candidateFile.digest,
+      });
+      const {
+        root,
+        componentChanges,
+        diagnostics,
+        ...summary
+      } = comparison;
+      const base = {
+        baseline: {
+          path: workspaceRef(baselineFile.path),
+          bytes: baselineFile.bytes,
+          digest: baselineFile.digest,
+        },
+        candidate: {
+          path: workspaceRef(candidateFile.path),
+          bytes: candidateFile.bytes,
+          digest: candidateFile.digest,
+        },
+        ...summary,
+        diagnostics,
+      };
+      if (view === "root") {
+        printJson({ ...base, view, root });
+      } else if (view === "components") {
+        printJson({
+          ...base,
+          view,
+          page: {
+            returned: Math.min(limit, componentChanges.length),
+            total: componentChanges.length,
+            limit,
+          },
+          componentChanges: componentChanges.slice(0, limit),
         });
       } else {
         printJson({ ...base, view });

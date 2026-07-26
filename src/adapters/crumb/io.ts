@@ -1,8 +1,23 @@
+import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { TextDecoder } from "node:util";
 
-export const MAX_CRU_BYTES = 64 * 1024 * 1024;
+export const MAX_CRU_BYTES = 3 * 1024 * 1024;
+export const MAX_CRU_COMPARISON_BYTES = 5 * 1024 * 1024;
+
+export function requireCruComparisonSize(
+  baselineBytes: number,
+  candidateBytes: number,
+): void {
+  const total = baselineBytes + candidateBytes;
+  if (total > MAX_CRU_COMPARISON_BYTES) {
+    throw new Error(
+      `Combined CRUMB comparison input is ${total} bytes; the current safety limit is ${MAX_CRU_COMPARISON_BYTES} bytes`,
+    );
+  }
+}
 
 export function resolveCircuitariumMcpRoot(
   environment: NodeJS.ProcessEnv = process.env,
@@ -114,7 +129,9 @@ async function requireWritablePath(
   }
 }
 
-export async function readCruFile(path: string): Promise<{ path: string; xml: string }> {
+export async function readCruFile(
+  path: string,
+): Promise<{ path: string; xml: string; bytes: number; digest: string }> {
   const absolutePath = absoluteWorkspacePath(path);
   requireCruExtension(absolutePath);
   const safePath = await requireReadablePath(absolutePath);
@@ -127,7 +144,27 @@ export async function readCruFile(path: string): Promise<{ path: string; xml: st
       `CRUMB file is ${file.size} bytes; the current safety limit is ${MAX_CRU_BYTES} bytes`,
     );
   }
-  return { path: safePath, xml: await readFile(safePath, "utf8") };
+  const fileBytes = await readFile(safePath);
+  if (fileBytes.byteLength > MAX_CRU_BYTES) {
+    throw new Error(
+      `CRUMB file is ${fileBytes.byteLength} bytes after reading; the current safety limit is ${MAX_CRU_BYTES} bytes`,
+    );
+  }
+  let xml: string;
+  try {
+    xml = new TextDecoder("utf-8", {
+      fatal: true,
+      ignoreBOM: true,
+    }).decode(fileBytes);
+  } catch {
+    throw new Error("CRUMB files must contain valid UTF-8 text");
+  }
+  return {
+    path: safePath,
+    xml,
+    bytes: fileBytes.byteLength,
+    digest: `sha256:${createHash("sha256").update(fileBytes).digest("hex")}`,
+  };
 }
 
 export async function writeCruFile(

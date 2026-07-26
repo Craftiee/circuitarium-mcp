@@ -171,7 +171,8 @@ registered tool contract or backend context to attach.
 
 ## Guarding project state
 
-The three CRUMB file-read tools accept optional `expectedProjectDigest`:
+The three single-file CRUMB read tools accept optional
+`expectedProjectDigest`:
 
 - `crumb_analyze_design`
 - `crumb_inspect_design`
@@ -191,6 +192,11 @@ earlier findings:
 Copy `context.projectDigest` unchanged from the earlier result. The value must
 be lowercase SHA-256 prefixed with `sha256:`. A malformed value returns
 `INVALID_ARGUMENT`.
+
+`crumb_compare_designs` applies the same guard independently through
+`expectedBaselineDigest` and `expectedCandidateDigest`. Its result context
+identifies the candidate, while `data.baseline` and `data.candidate` retain
+both workspace-relative refs and digests.
 
 If the current file bytes have another digest, the tool returns an error
 envelope whose identifying fields are:
@@ -220,7 +226,7 @@ choosing a backend or workflow. Its output distinguishes:
 
 | Backend | Availability in this server | Current meaning |
 |---|---|---|
-| `crumb.file` | Callable | Local `.cru` inspect, validate, analyze, and synthetic fixture generation |
+| `crumb.file` | Callable | Local `.cru` inspect, validate, analyze, compare, and synthetic fixture generation |
 | `wokwi.cloud` | External companion | Separate Wokwi MCP/cloud service; not callable here |
 | `logisim.evolution` | Planned | No registered adapter tools |
 | `digital.event` | Planned | Architecture only; no simulation engine |
@@ -345,7 +351,8 @@ Untrusted text and nested detail are always bounded:
   `designNameInfo` preserves the full character/byte counts, SHA-256 digest,
   trust marker, and truncation state without returning the omitted tail.
 - Each component returns at most 64 terminals, 64 geometry points, 64 raw or
-  unknown payload descriptors, 64 keys per unknown payload, and 64 items from a
+  unknown payload descriptors, 64 child-key names in aggregate across all
+  unknown payload descriptors for that component, and 64 items from a
   collection-valued parameter. Each connection-group membership field returns
   at most 128 items. Bound metadata preserves complete counts and truncation
   state.
@@ -358,15 +365,88 @@ The analysis-level `disclosure` records
 `annotationTextMode: "untrusted-bounded-preview"` on every view. Its `limits`
 object is the machine-readable source for these exact response limits.
 
-The decoder rejects structural tokens before they can become large response
-fields: `xsi:type` values over 256 characters, numeric lexical tokens over
-1,024, GUID/parent-GUID tokens over 64, and XML element names over 256.
-Rejection diagnostics are fixed and do not echo the rejected content.
+The decoder accepts XML 1.0 represented as valid UTF-8. An XML declaration is
+optional; when present, it must declare version `1.0`, optional encoding
+`utf-8`, and optional standalone `yes` or `no`. Namespace checks reject
+undeclared prefixes, invalid reserved-prefix bindings, duplicate expanded
+attributes, and non-empty default namespaces. Well-formed aliases and inherited
+bindings are resolved by URI; unused declarations are representation-neutral.
+
+Typed values use finite decimal syntax, signed 32-bit bounds for `xsd:int` and
+serialized IDs, exact XML boolean spellings (`true`, `false`, `1`, or `0`),
+float32 modeling for `xsd:float` and Unity spatial/timing fields, and canonical
+base64 for thumbnail `imageData`. The parser also rejects more than 100,000
+`<` markup delimiters, any parsed text or attribute-value node over 1,048,576
+characters, `xsi:type` values over 256 characters, numeric lexical tokens over
+1,024, GUID/parent-GUID tokens over 64, and XML element or namespace-prefix
+names over 256. Rejection diagnostics are fixed and do not echo the rejected
+content.
 
 The analyzer preserves switch positions, supply settings, potentiometer
 settings, display configuration, and terminal order. It does not apply dynamic
 switch closures, calculate device behavior, illuminate a display, execute an
 EEPROM, or run a circuit.
+
+### `crumb_compare_designs`
+
+Performs a read-only comparison between a controlled `baselinePath` and
+`candidatePath` under compatibility profile `crumb.unity/1.3.5`. It never
+opens, controls, saves, or modifies CRUMB.
+
+The three views are:
+
+- `summary` — byte identity, modeled equivalence, profile coverage, change
+  counts, and unverified candidate signatures;
+- `root` — bounded before/after observations for the save name, thumbnail
+  identity, camera/pivot fields, timing, and throttling; and
+- `components` — a paginated list of GUID-matched additions, removals, and
+  modifications.
+
+Lexical-only differences in modeled root or component values use the
+`modeled-encoding` change field; typed parameters use the more specific
+`parameter-encoding`. A semantic change that lacks a narrower safe classifier
+is reported as `opaque-payload`, not mislabeled as encoding-only. On a partial
+component, a concurrent modeled change does not hide a changed opaque
+projection; `opaque-payload` remains present alongside the narrower field.
+
+The comparison distinguishes:
+
+- exact file-byte identity, including an optional UTF-8 BOM;
+- modeled content equivalence;
+- modeled representation equivalence after XML parsing, including retained
+  numeric lexical forms for root, spatial, array, and typed-scalar values;
+- complete versus partial modeled coverage; and
+- `exact`, `modeled-only`, `changed`, or `inconclusive` assessment.
+
+`modeled-only` can describe harmless byte differences such as XML whitespace,
+an unused well-formed namespace declaration, or representation differences
+such as `1000` versus `1e3` when their modeled numeric value is equal.
+`inconclusive` means an unknown or schema-mismatched component, unsupported
+component shape, or unmodeled XML field, attribute, mixed-content fragment,
+namespace binding used by content, or subtree prevents a complete semantic
+claim. Opaque structure is compared with an order-sensitive digest and is
+never returned. None of these states proves which application build authored
+a file.
+
+Components are matched only by case-insensitive GUID. The tool does not guess
+that separately created components are the same merely because their tool IDs,
+positions, or parameters look similar. Unknown tool IDs and payload signatures
+are returned only as `unverified-observation` schema candidates.
+
+Use `expectedBaselineDigest` and `expectedCandidateDigest` to guard both
+artifacts. A `components` cursor is opaque and bound to both digests, topology
+mode, geometry-disclosure choice, and view. Changing either artifact or option
+invalidates the cursor. Geometry pages are capped at 25 items; other component
+pages accept at most 200.
+
+Ordinary results never include raw XML, firmware text, EEPROM bytes, thumbnail
+content, or opaque payload content. User text is a bounded untrusted preview
+plus digest; source, embedded data, thumbnails, and opaque values are compared
+through bounded metadata and SHA-256 identities.
+
+Both files must be valid UTF-8 and no larger than 3 MiB each or 5 MiB combined.
+Artifact digests and `byteEquivalent` use the exact bytes read from disk;
+parsing does not erase a UTF-8 BOM from identity.
 
 ### `crumb_inspect_design`
 

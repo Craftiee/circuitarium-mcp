@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import { analyzeCru } from "./adapters/crumb/analyze.js";
 import { listCrumbComponentDefinitions } from "./adapters/crumb/catalog.js";
+import { compareCru } from "./adapters/crumb/compare.js";
 import { CRUMB_COMPATIBILITY_PROFILE } from "./adapters/crumb/compatibility.js";
 import { listCrumbEvidenceVocabulary } from "./adapters/crumb/evidence.js";
 import {
@@ -28,7 +29,9 @@ import {
 import { listCrumbIcs } from "./adapters/crumb/icCatalog.js";
 import {
   MAX_CRU_BYTES,
+  MAX_CRU_COMPARISON_BYTES,
   readCruFile,
+  requireCruComparisonSize,
   workspaceRef,
   writeCruFile,
 } from "./adapters/crumb/io.js";
@@ -47,7 +50,10 @@ import {
   MAX_COMPONENT_TERMINALS_RETURNED,
   MAX_CONNECTION_GROUP_MEMBERS_RETURNED,
   MAX_CRU_GUID_TOKEN_CHARACTERS,
+  MAX_CRU_DOCUMENT_CHARACTERS,
+  MAX_CRU_MARKUP_DELIMITERS,
   MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
+  MAX_CRU_TEXT_NODE_CHARACTERS,
   MAX_CRU_XML_NAME_CHARACTERS,
   MAX_CRU_XSI_TYPE_CHARACTERS,
   MAX_DESIGN_NAME_PREVIEW_CHARACTERS,
@@ -58,6 +64,7 @@ import {
   MAX_KIND_COUNTS_RETURNED,
   MAX_PARAMETER_COLLECTION_ITEMS_RETURNED,
   MAX_RESULT_DIAGNOSTICS_RETURNED,
+  MAX_UNKNOWN_PAYLOAD_KEYS_RETURNED_PER_COMPONENT,
 } from "./domain/bounds.js";
 import {
   CONTRACT_VERSION,
@@ -73,6 +80,7 @@ import {
   CapabilitiesDataSchema,
   CrumbAnalysisDataSchema,
   CrumbCatalogDataSchema,
+  CrumbComparisonDataSchema,
   CrumbFixtureDataSchema,
   CrumbInspectionDataSchema,
   CrumbValidationDataSchema,
@@ -132,6 +140,40 @@ const CrumbArtifactReadInputSchema = z.object({
     .optional()
     .describe("Optional sha256: digest from a prior cross-model handoff"),
 });
+const CrumbCompareInputSchema = z.object({
+  baselinePath: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_REF_CHARACTERS)
+    .describe("Workspace-relative baseline .cru project ref"),
+  candidatePath: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_REF_CHARACTERS)
+    .describe("Workspace-relative candidate .cru project ref"),
+  expectedBaselineDigest: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_DIGEST_CHARACTERS)
+    .optional()
+    .describe("Optional sha256: digest previously recorded for the baseline"),
+  expectedCandidateDigest: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_DIGEST_CHARACTERS)
+    .optional()
+    .describe("Optional sha256: digest previously recorded for the candidate"),
+  compatibilityProfile: z
+    .literal(CRUMB_COMPATIBILITY_PROFILE)
+    .default(CRUMB_COMPATIBILITY_PROFILE),
+  view: z.enum(["summary", "root", "components"]).default("summary"),
+  cursor: z.string().min(1).max(MAX_CURSOR_CHARACTERS).optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+  includeGeometry: z.boolean().default(false),
+  topologyMode: z
+    .enum(["direct-only", "known-board-v1.3.5"])
+    .default("known-board-v1.3.5"),
+});
 const CrumbFixtureInputSchema = z.object({
   kind: z.enum(CRUMB_FIXTURE_KINDS),
   name: z.string().min(1).max(MAX_FIXTURE_NAME_CHARACTERS).optional(),
@@ -159,7 +201,7 @@ const server = new McpServer(
   },
   {
     instructions:
-      "Call electronics_capabilities first when the workflow is unclear. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation ran and found an invalid design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. The component catalog returns machine-readable evidenceVocabulary; do not treat confidence strings as electrical-model accuracy. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability. Its callable backend reads and writes save files only; it does not control a live simulation. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
+      "Call electronics_capabilities first when the workflow is unclear. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation ran and found an invalid design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. Use crumb_compare_designs for a read-only, digest-guarded comparison after a controlled Unity edit or Save As operation. The component catalog returns machine-readable evidenceVocabulary; do not treat confidence strings as electrical-model accuracy. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability. Its callable backend reads and writes save files only; it does not control a live simulation. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
   },
 );
 
@@ -275,14 +317,15 @@ function invalidArgument(
 function requireExpectedProjectDigest(
   expectedProjectDigest: string | undefined,
   actualProjectDigest: string,
+  argumentPath = "expectedProjectDigest",
 ): void {
   if (expectedProjectDigest === undefined) {
     return;
   }
   if (!/^sha256:[0-9a-f]{64}$/.test(expectedProjectDigest)) {
     throw invalidArgument(
-      "expectedProjectDigest must be a lowercase SHA-256 value prefixed with sha256:.",
-      "expectedProjectDigest",
+      `${argumentPath} must be a lowercase SHA-256 value prefixed with sha256:.`,
+      argumentPath,
       ["Copy context.projectDigest unchanged from a prior tool result."],
     );
   }
@@ -293,9 +336,9 @@ function requireExpectedProjectDigest(
       message:
         "The project bytes changed since the supplied digest was recorded.",
       retryable: false,
-      argumentPath: "expectedProjectDigest",
+      argumentPath,
       recovery: [
-        "Analyze the project again without expectedProjectDigest.",
+        `Analyze the project again without ${argumentPath}.`,
         "Review the changed digest before continuing the handoff.",
       ],
     });
@@ -458,13 +501,17 @@ function compactInspection(inspection: CruInspection) {
   };
 }
 
-function crumbArtifact(xml: string, ref?: string) {
+function crumbArtifact(
+  xml: string,
+  ref?: string,
+  byteIdentity?: { bytes: number; digest: string },
+) {
   return {
     ...(ref === undefined ? {} : { ref }),
     format: "crumb-cru" as const,
     mediaType: "application/vnd.crumb.cru+xml" as const,
-    bytes: Buffer.byteLength(xml, "utf8"),
-    digest: sha256(xml),
+    bytes: byteIdentity?.bytes ?? Buffer.byteLength(xml, "utf8"),
+    digest: byteIdentity?.digest ?? sha256(xml),
     adapterTestedCompatibility: ADAPTER_TESTED_CRUMB_COMPATIBILITY,
   };
 }
@@ -478,7 +525,22 @@ interface PageCursor {
   projectDigest: string;
 }
 
+interface ComparisonPageCursor {
+  version: 1;
+  kind: "crumb-comparison";
+  view: "components";
+  offset: number;
+  baselineDigest: string;
+  candidateDigest: string;
+  topologyMode: "direct-only" | "known-board-v1.3.5";
+  includeGeometry: boolean;
+}
+
 function encodeCursor(cursor: PageCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function encodeComparisonCursor(cursor: ComparisonPageCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
 
@@ -522,6 +584,57 @@ function decodeCursor(
   }
 }
 
+function decodeComparisonCursor(
+  value: string | undefined,
+  options: {
+    view: "summary" | "root" | "components";
+    baselineDigest: string;
+    candidateDigest: string;
+    topologyMode: "direct-only" | "known-board-v1.3.5";
+    includeGeometry: boolean;
+    total: number;
+  },
+): number {
+  if (value === undefined) {
+    return 0;
+  }
+  if (options.view !== "components") {
+    throw invalidArgument(
+      "Pagination cursors are only valid for the components comparison view.",
+      "cursor",
+      ["Remove cursor or select view=components."],
+    );
+  }
+  try {
+    const decoded = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8"),
+    ) as Partial<ComparisonPageCursor>;
+    if (
+      decoded.version !== 1 ||
+      decoded.kind !== "crumb-comparison" ||
+      decoded.view !== "components" ||
+      decoded.baselineDigest !== options.baselineDigest ||
+      decoded.candidateDigest !== options.candidateDigest ||
+      decoded.topologyMode !== options.topologyMode ||
+      decoded.includeGeometry !== options.includeGeometry ||
+      !Number.isInteger(decoded.offset) ||
+      decoded.offset! < 0 ||
+      decoded.offset! > options.total
+    ) {
+      throw new Error("cursor mismatch");
+    }
+    return decoded.offset!;
+  } catch {
+    throw invalidArgument(
+      "The comparison cursor is invalid, targets changed files, or belongs to different options.",
+      "cursor",
+      [
+        "Restart comparison pagination without a cursor using the current baseline and candidate refs.",
+      ],
+    );
+  }
+}
+
 function pageResult<T>(
   items: T[],
   offset: number,
@@ -544,6 +657,43 @@ function pageResult<T>(
               view,
               offset: nextOffset,
               projectDigest,
+            }),
+          }
+        : {}),
+    },
+  };
+}
+
+function comparisonPageResult<T>(
+  items: T[],
+  offset: number,
+  limit: number,
+  options: {
+    baselineDigest: string;
+    candidateDigest: string;
+    topologyMode: "direct-only" | "known-board-v1.3.5";
+    includeGeometry: boolean;
+  },
+) {
+  const pageItems = items.slice(offset, offset + limit);
+  const nextOffset = offset + pageItems.length;
+  return {
+    items: pageItems,
+    page: {
+      returned: pageItems.length,
+      total: items.length,
+      limit,
+      ...(nextOffset < items.length
+        ? {
+            nextCursor: encodeComparisonCursor({
+              version: 1,
+              kind: "crumb-comparison",
+              view: "components",
+              offset: nextOffset,
+              baselineDigest: options.baselineDigest,
+              candidateDigest: options.candidateDigest,
+              topologyMode: options.topologyMode,
+              includeGeometry: options.includeGeometry,
             }),
           }
         : {}),
@@ -585,6 +735,7 @@ const electronicsCapabilitiesTool = server.registerTool(
           rootRef: ".",
           pathStyle: "workspace-relative-posix",
           maxCruBytes: MAX_CRU_BYTES,
+          maxCruComparisonBytes: MAX_CRU_COMPARISON_BYTES,
           writesOverwriteExistingFiles: false,
         },
         portableExperiment: {
@@ -802,7 +953,7 @@ const crumbAnalysisTool = server.registerTool(
     try {
       const file = await readCruFile(path);
       const ref = workspaceRef(file.path);
-      const project = crumbArtifact(file.xml, ref);
+      const project = crumbArtifact(file.xml, ref, file);
       operationContext = makeCrumbContext({
         projectRef: ref,
         projectDigest: project.digest,
@@ -902,6 +1053,8 @@ const crumbAnalysisTool = server.registerTool(
             componentTerminals: MAX_COMPONENT_TERMINALS_RETURNED,
             componentPayloadEntries:
               MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED,
+            unknownPayloadKeysPerComponent:
+              MAX_UNKNOWN_PAYLOAD_KEYS_RETURNED_PER_COMPONENT,
             parameterCollectionItems:
               MAX_PARAMETER_COLLECTION_ITEMS_RETURNED,
             connectionGroupMembersPerField:
@@ -917,6 +1070,9 @@ const crumbAnalysisTool = server.registerTool(
               MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
             cruGuidTokenCharacters: MAX_CRU_GUID_TOKEN_CHARACTERS,
             cruXmlNameCharacters: MAX_CRU_XML_NAME_CHARACTERS,
+            cruTextNodeCharacters: MAX_CRU_TEXT_NODE_CHARACTERS,
+            cruMarkupDelimiters: MAX_CRU_MARKUP_DELIMITERS,
+            cruDocumentCharacters: MAX_CRU_DOCUMENT_CHARACTERS,
           },
         },
       };
@@ -1045,6 +1201,287 @@ envelopeTools.set("crumb_analyze_design", {
   context: makeCrumbContext,
 });
 
+const CrumbComparisonOutputSchema = envelopeSchema(
+  CrumbComparisonDataSchema,
+);
+const crumbComparisonTool = server.registerTool(
+  "crumb_compare_designs",
+  {
+    title: "Compare CRUMB files under the Unity profile",
+    description:
+      "Read-only, GUID-matched comparison of a baseline and candidate .cru under crumb.unity/1.3.5. Distinguishes exact bytes, modeled equivalence, root changes, component changes, and unverified payload signatures without returning raw XML, firmware, EEPROM bytes, or thumbnails.",
+    inputSchema: CrumbCompareInputSchema,
+    outputSchema: CrumbComparisonOutputSchema,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({
+    baselinePath,
+    candidatePath,
+    expectedBaselineDigest,
+    expectedCandidateDigest,
+    compatibilityProfile,
+    view,
+    cursor,
+    limit,
+    includeGeometry,
+    topologyMode,
+  }) => {
+    let operationContext = makeCrumbContext();
+    try {
+      const readComparisonFile = async (
+        path: string,
+        argumentPath: "baselinePath" | "candidatePath",
+      ) => {
+        try {
+          return await readCruFile(path);
+        } catch (error) {
+          const details = classifyError(error, "FORMAT_INVALID");
+          throw new ContractFailure({
+            ...details,
+            argumentPath:
+              details.argumentPath === undefined ||
+              details.argumentPath === "path"
+                ? argumentPath
+                : details.argumentPath,
+          });
+        }
+      };
+      const [baselineFile, candidateFile] = await Promise.all([
+        readComparisonFile(baselinePath, "baselinePath"),
+        readComparisonFile(candidatePath, "candidatePath"),
+      ]);
+      requireCruComparisonSize(
+        baselineFile.bytes,
+        candidateFile.bytes,
+      );
+      const baselineRef = workspaceRef(baselineFile.path);
+      const candidateRef = workspaceRef(candidateFile.path);
+      const baselineProject = crumbArtifact(
+        baselineFile.xml,
+        baselineRef,
+        baselineFile,
+      );
+      const candidateProject = crumbArtifact(
+        candidateFile.xml,
+        candidateRef,
+        candidateFile,
+      );
+
+      operationContext = makeCrumbContext({
+        projectRef: baselineRef,
+        projectDigest: baselineProject.digest,
+      });
+      requireExpectedProjectDigest(
+        expectedBaselineDigest,
+        baselineProject.digest,
+        "expectedBaselineDigest",
+      );
+      operationContext = makeCrumbContext({
+        projectRef: candidateRef,
+        projectDigest: candidateProject.digest,
+      });
+      requireExpectedProjectDigest(
+        expectedCandidateDigest,
+        candidateProject.digest,
+        "expectedCandidateDigest",
+      );
+
+      const baselineValidation = validateCru(baselineFile.xml);
+      if (!baselineValidation.valid) {
+        operationContext = makeCrumbContext({
+          projectRef: baselineRef,
+          projectDigest: baselineProject.digest,
+        });
+        throw new ContractFailure({
+          code: "PROJECT_INVALID",
+          category: "project",
+          message:
+            "The baseline CRUMB save has structural errors and cannot be compared safely.",
+          retryable: false,
+          argumentPath: "baselinePath",
+          recovery: [
+            "Call crumb_validate_design for the baseline artifact.",
+            "Repair or restore the baseline before comparing it.",
+          ],
+        });
+      }
+      const candidateValidation = validateCru(candidateFile.xml);
+      if (!candidateValidation.valid) {
+        throw new ContractFailure({
+          code: "PROJECT_INVALID",
+          category: "project",
+          message:
+            "The candidate CRUMB save has structural errors and cannot be compared safely.",
+          retryable: false,
+          argumentPath: "candidatePath",
+          recovery: [
+            "Call crumb_validate_design for the candidate artifact.",
+            "Repair or restore the candidate before comparing it.",
+          ],
+        });
+      }
+
+      const comparison = compareCru(
+        baselineFile.xml,
+        candidateFile.xml,
+        {
+          includeGeometry,
+          topologyMode,
+          baselineByteDigest: baselineFile.digest,
+          candidateByteDigest: candidateFile.digest,
+        },
+      );
+      const effectiveLimit = includeGeometry ? Math.min(limit, 25) : limit;
+      const offset = decodeComparisonCursor(cursor, {
+        view,
+        baselineDigest: baselineProject.digest,
+        candidateDigest: candidateProject.digest,
+        topologyMode,
+        includeGeometry,
+        total: comparison.componentChanges.length,
+      });
+      const baseData = {
+        comparisonVersion: comparison.comparisonVersion,
+        view,
+        compatibilityProfile,
+        topologyMode: comparison.topologyMode,
+        baseline: { ...baselineProject, ref: baselineRef },
+        candidate: { ...candidateProject, ref: candidateRef },
+        equivalence: comparison.equivalence,
+        profileAssessment: comparison.profileAssessment,
+        summary: comparison.summary,
+        schemaCandidates: comparison.schemaCandidates,
+        schemaCandidateBounds: comparison.schemaCandidateBounds,
+        disclosure: {
+          ...comparison.disclosure,
+          geometryIncluded:
+            view === "components" && comparison.disclosure.geometryIncluded,
+        },
+        limitations: comparison.limitations,
+      };
+      let data: Record<string, unknown> = baseData;
+      let nextActions: NextAction[] = [];
+
+      if (view === "root") {
+        data = { ...baseData, root: comparison.root };
+        if (comparison.componentChanges.length > 0) {
+          nextActions = [
+            {
+              tool: "crumb_compare_designs",
+              reason: "Inspect the bounded component changes.",
+              arguments: {
+                baselinePath: baselineRef,
+                candidatePath: candidateRef,
+                expectedBaselineDigest: baselineProject.digest,
+                expectedCandidateDigest: candidateProject.digest,
+                view: "components",
+                limit: effectiveLimit,
+                includeGeometry,
+                topologyMode,
+              },
+            },
+          ];
+        }
+      } else if (view === "components") {
+        const paged = comparisonPageResult(
+          comparison.componentChanges,
+          offset,
+          effectiveLimit,
+          {
+            baselineDigest: baselineProject.digest,
+            candidateDigest: candidateProject.digest,
+            topologyMode,
+            includeGeometry,
+          },
+        );
+        data = {
+          ...baseData,
+          page: paged.page,
+          componentChanges: paged.items,
+        };
+        nextActions =
+          paged.page.nextCursor === undefined
+            ? []
+            : [
+                {
+                  tool: "crumb_compare_designs",
+                  reason:
+                    "Continue the component comparison without overlap.",
+                  arguments: {
+                    baselinePath: baselineRef,
+                    candidatePath: candidateRef,
+                    expectedBaselineDigest: baselineProject.digest,
+                    expectedCandidateDigest: candidateProject.digest,
+                    view,
+                    cursor: paged.page.nextCursor,
+                    limit: effectiveLimit,
+                    includeGeometry,
+                    topologyMode,
+                  },
+                },
+              ];
+      } else {
+        if (comparison.summary.rootFieldChangeCount > 0) {
+          nextActions.push({
+            tool: "crumb_compare_designs",
+            reason: "Inspect the modeled root and metadata changes.",
+            arguments: {
+              baselinePath: baselineRef,
+              candidatePath: candidateRef,
+              expectedBaselineDigest: baselineProject.digest,
+              expectedCandidateDigest: candidateProject.digest,
+              view: "root",
+              topologyMode,
+            },
+          });
+        }
+        if (comparison.componentChanges.length > 0) {
+          nextActions.push({
+            tool: "crumb_compare_designs",
+            reason: "Inspect the bounded component changes.",
+            arguments: {
+              baselinePath: baselineRef,
+              candidatePath: candidateRef,
+              expectedBaselineDigest: baselineProject.digest,
+              expectedCandidateDigest: candidateProject.digest,
+              view: "components",
+              limit: effectiveLimit,
+              includeGeometry,
+              topologyMode,
+            },
+          });
+        }
+      }
+
+      return successResult({
+        summary:
+          comparison.equivalence.assessment === "exact"
+            ? "The baseline and candidate CRUMB saves are byte-identical."
+            : `Compared the .cru files under crumb.unity/1.3.5: ${comparison.equivalence.assessment}; ${comparison.componentChanges.length} component change${comparison.componentChanges.length === 1 ? "" : "s"} and ${comparison.summary.rootFieldChangeCount} root-field change${comparison.summary.rootFieldChangeCount === 1 ? "" : "s"}.`,
+        data,
+        diagnostics: comparison.diagnostics,
+        context: operationContext,
+        nextActions,
+      });
+    } catch (error) {
+      return errorResult(error, {
+        fallback: "FORMAT_INVALID",
+        context: operationContext,
+      });
+    }
+  },
+);
+envelopeTools.set("crumb_compare_designs", {
+  inputSchema: CrumbCompareInputSchema,
+  outputSchema: CrumbComparisonOutputSchema,
+  registeredTool: crumbComparisonTool,
+  context: makeCrumbContext,
+});
+
 const CrumbInspectionOutputSchema = envelopeSchema(CrumbInspectionDataSchema);
 const crumbInspectionTool = server.registerTool(
   "crumb_inspect_design",
@@ -1066,7 +1503,7 @@ const crumbInspectionTool = server.registerTool(
       const file = await readCruFile(path);
       const ref = workspaceRef(file.path);
       const inspection = inspectCru(file.xml);
-      const project = crumbArtifact(file.xml, ref);
+      const project = crumbArtifact(file.xml, ref, file);
       operationContext = makeCrumbContext({
         projectRef: ref,
         projectDigest: project.digest,
@@ -1127,7 +1564,7 @@ const crumbValidationTool = server.registerTool(
       const file = await readCruFile(path);
       const ref = workspaceRef(file.path);
       const validation = validateCru(file.xml);
-      const project = crumbArtifact(file.xml, ref);
+      const project = crumbArtifact(file.xml, ref, file);
       operationContext = makeCrumbContext({
         projectRef: ref,
         projectDigest: project.digest,

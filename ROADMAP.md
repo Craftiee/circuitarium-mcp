@@ -12,6 +12,9 @@ reproducible evidence.
 - Portable experiment validation.
 - Read-only CRUMBLE inspection, validation, and bounded semantic analysis for
   the observed CRUMB 1.3.5 Unity-era `.cru` format.
+- Read-only, digest-guarded comparison of controlled baseline and candidate
+  `.cru` files interpreted under `crumb.unity/1.3.5`, including modeled root
+  and component changes.
 - A small, synthetic, non-overwriting CRUMBLE fixture generator.
 - Cross-model artifact handoff using workspace-relative references and SHA-256
   digests.
@@ -27,8 +30,9 @@ or CRUMB 2.x/Godot compatibility.
   evidence and reopen tests exist.
 - Collect minimal, controlled saves from a public Godot release when one is
   available to the project.
-- Add round-trip tests that preserve unknown fields before enabling general
-  editing.
+- Use controlled-save comparisons to expand the Unity evidence corpus.
+- Add a lossless no-op round-trip representation that preserves unknown fields
+  before enabling general editing.
 - Expand fixture generation only from independently authored controlled cases.
 - Seek a documented save contract or local plugin API from the CRUMB developer.
 
