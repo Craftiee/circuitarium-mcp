@@ -3,6 +3,25 @@
 [![CI](https://github.com/Craftiee/circuitarium-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Craftiee/circuitarium-mcp/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
+Give Claude, ChatGPT/Codex, or a local MCP-capable model a safe, typed
+electronics workbench instead of asking it to guess at opaque circuit files.
+Circuitarium MCP currently provides bounded, read-only analysis of Unity-era
+CRUMB `.cru` saves; the longer-term neutral layer is designed to support
+netlists, electrical checks, and additional simulators without making CRUMB
+the universal data model.
+
+```powershell
+git clone https://github.com/Craftiee/circuitarium-mcp.git
+cd circuitarium-mcp
+npm ci
+npm run check
+```
+
+Then connect the compiled `dist/src/server.js` stdio entrypoint using the
+[model-host setup guide](docs/client-setup.md). The current boundary is file
+analysis: no live CRUMB control, arbitrary editing, or circuit simulation is
+claimed.
+
 > [!IMPORTANT]
 > Circuitarium MCP and its CRUMBLE integration are independent, unofficial
 > community interoperability work. They are not affiliated with, endorsed by,
@@ -137,8 +156,12 @@ git clone https://github.com/Craftiee/circuitarium-mcp.git
 cd circuitarium-mcp
 npm ci
 npm run check
-npm run start:mcp
+node dist/src/server.js
 ```
+
+The packaged `circuitarium-mcp` command is install-smoke-tested in CI. Until
+the first npm release is published, use the source-checkout instructions
+above; do not assume the registry package exists yet.
 
 Useful CLI commands:
 

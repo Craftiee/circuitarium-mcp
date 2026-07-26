@@ -23,6 +23,12 @@ remains experimental.
   data, connection membership, summaries, and diagnostics.
 - Typed `INVALID_ARGUMENT` envelopes for malformed registered-tool calls while
   retaining strict published input schemas.
+- An installable `circuitarium-mcp` package entrypoint with an allowlisted
+  artifact, installed-package MCP handshake, and release-version coherence
+  checks.
+- SHA-pinned CI, package/coverage gates, dependency review, CodeQL scanning,
+  and a protected tag-driven npm publication workflow.
+- A controlled-observation issue form for community CRUMB format evidence.
 
 ### Changed
 
@@ -37,6 +43,14 @@ remains experimental.
   cannot be mistaken for an input-file origin claim.
 - Local-backend data egress is reported as host-dependent, and fixed fixture
   generation is distinguished from general circuit building.
+- Pull-request CI no longer duplicates branch-push and pull-request matrices;
+  macOS compatibility coverage and a non-blocking current-Node canary are
+  included.
+- The executable package publishes the MCP SDK's bundled, shrinkwrapped,
+  audited dependency tree so consumers retain the security override used by
+  repository CI.
+- Release packaging builds and prepares bundled runtime metadata only inside
+  per-run isolated staging and tarball workspaces.
 
 ## [0.2.0] - 2026-07-25
 

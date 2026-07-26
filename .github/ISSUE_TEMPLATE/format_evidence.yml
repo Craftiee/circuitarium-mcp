@@ -1,0 +1,124 @@
+name: CRUMB format evidence
+description: Contribute a controlled, independently observed Unity-era .cru format fact.
+title: "[Evidence]: "
+labels:
+  - "type:format-evidence"
+  - "area:crumb-unity"
+  - "status:needs-verification"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Format evidence should change one variable at a time in a circuit you
+        created yourself. Do not upload CRUMB binaries, extracted assets,
+        decompiled code, third-party designs, screenshots, firmware, EEPROM
+        contents, personal paths, or unrelated save data.
+
+  - type: input
+    id: crumb-version
+    attributes:
+      label: Exact CRUMB version and build
+      description: Include the displayed version and Steam build ID when available.
+      placeholder: CRUMB 1.3.5 Unity build, Steam build ID ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Linux or Steam Play
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: profile
+    attributes:
+      label: Proposed compatibility profile
+      description: Use the existing profile unless this observation proves a different format.
+      value: crumb.unity/1.3.5
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Format question
+      description: State the single mapping, field, or behavior this observation tests.
+      placeholder: Determine which saved value changes when ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: baseline
+    attributes:
+      label: Baseline circuit recipe
+      description: Give exact steps for creating the smallest baseline from a blank project.
+      placeholder: |
+        1. Create a blank project.
+        2. Place one ...
+        3. Save as baseline.cru.
+    validations:
+      required: true
+
+  - type: textarea
+    id: changed
+    attributes:
+      label: One-variable change
+      description: Describe only the single action performed before the second save.
+    validations:
+      required: true
+
+  - type: textarea
+    id: identities
+    attributes:
+      label: Artifact identities
+      description: Provide filenames, byte lengths, and SHA-256 digests for both saves. Do not include absolute paths.
+      render: text
+      placeholder: |
+        baseline.cru  bytes=...  sha256=...
+        changed.cru   bytes=...  sha256=...
+    validations:
+      required: true
+
+  - type: textarea
+    id: observation
+    attributes:
+      label: Minimal observed difference
+      description: Describe the bounded structural difference without pasting unrelated XML or sensitive content.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reopen
+    attributes:
+      label: Reopen result
+      description: State whether each save reopened in the same CRUMB build and what appeared.
+    validations:
+      required: true
+
+  - type: textarea
+    id: uncertainty
+    attributes:
+      label: Uncertainty and alternate explanations
+      description: Identify what this experiment does not establish and what still needs independent reproduction.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: provenance
+    attributes:
+      label: Provenance and redistribution checks
+      options:
+        - label: I created the test circuit and performed this controlled observation myself.
+          required: true
+        - label: Any attached .cru file is a minimal synthetic save that I have the right to share.
+          required: true
+        - label: I did not include game binaries, extracted assets, decompiled code, screenshots, third-party designs, firmware, EEPROM contents, secrets, or personal paths.
+          required: true
+        - label: I understand that one observation remains version-scoped and may require independent reproduction.
+          required: true
