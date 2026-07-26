@@ -11,17 +11,44 @@ within it; CRUMB is not the canonical model for other Circuitarium backends.
 
 The callable `crumb.file` backend can:
 
+- discover workspace `.cru` files with sizes, timestamps, and digests
+  (`crumb_list_projects`);
 - inspect, structurally validate, and perform bounded semantic analysis of
   `.cru` files;
+- fetch one component in full bounded detail with windowed firmware source
+  (`crumb_get_component`);
 - recognize the version-pinned component signatures documented in
   [the format notes](crumb-format.md);
 - infer optional, version-pinned breadboard connectivity;
+- compare controlled baseline and candidate saves with bounded, digest-guarded
+  root and component changes under `crumb.unity/1.3.5`;
+- export jumper-collapsed electrical nets with unambiguous supply-derived
+  `VCC`/`GND` names, explicitly unnamed mixed-role supply nets, and optional
+  saved-switch-state merges (`crumb_export_netlist`);
+- run static electrical rule checks with evidence-tagged findings
+  (`crumb_check_design`);
+- group components into a bill of materials by decoded part identity
+  (`crumb_bom`);
+- answer IC package and pinout queries from the version-pinned prefab
+  registry (`crumb_ic_reference`);
 - create five fixed, independently authored synthetic fixtures; and
 - preserve a workspace-relative artifact reference and SHA-256 digest for
   cross-model handoffs.
 
 It cannot control a running CRUMB process, simulate circuit behavior, edit an
 arbitrary design, or convert a general Circuitarium project to CRUMB.
+
+`crumb_compare_designs` is an observation tool. It does not open, control,
+save, or modify CRUMB. The user performs those controls in the Unity
+application and gives the resulting before/after artifacts to the adapter.
+That separation is the first stage of the
+[Unity adapter plan](unity-adapter-plan.md).
+
+The comparison never assumes a file was authored by Unity. It applies the
+selected evidence profile. Unknown XML structure forces partial,
+`inconclusive` coverage and is represented only by an order-sensitive digest.
+The internal byte-preserving round-trip core is a separate safety foundation
+for future structured edits; no arbitrary edit tool is public today.
 
 ## Evidence profiles
 
@@ -68,4 +95,6 @@ they choose to open generated files in the application.
 
 Start with [`electronics_capabilities`](contract.md#electronics_capabilities)
 for machine-readable availability and limitations, then use
-`crumb_analyze_design` in summary mode before requesting bounded detail.
+`crumb_analyze_design` in summary mode before requesting bounded detail. Use
+`crumb_compare_designs` when a controlled Unity change or Save As operation
+needs an evidence-backed difference report.

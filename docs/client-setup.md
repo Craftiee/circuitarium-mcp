@@ -27,7 +27,7 @@ CRUMB-specific integration family. The branding does not change the stable
 Build first:
 
 ```powershell
-npm install
+npm ci
 npm run build
 ```
 
@@ -40,6 +40,24 @@ The production entrypoint is:
 MCP clients generally require an absolute path. Replace the examples below
 with the absolute path to your clone; do not copy the angle-bracket placeholder
 literally.
+
+## Source checkout versus npm
+
+The repository contains a smoke-tested `circuitarium-mcp` package command, but
+the command is not available through `npx` until the first public npm release
+has actually been published. Before that release, use the source checkout and
+absolute `dist/src/server.js` path documented below.
+
+After a registry release, an MCP client can launch the same stdio server with:
+
+```text
+Command: npx
+Arguments: -y circuitarium-mcp
+```
+
+Keep the client's working directory or `CIRCUITARIUM_MCP_ROOT` pointed at the
+intended circuit workspace. An npm installation does not bundle user projects
+or make repository-relative fixture paths appear in that workspace.
 
 The default file boundary is the working directory. Set
 `CIRCUITARIUM_MCP_ROOT` to the intended shared project directory when the
@@ -54,16 +72,22 @@ Give an unfamiliar model this operating sequence:
 
 1. Call `electronics_capabilities`.
 2. Treat only backends with `availability: "callable"` as usable.
-3. For an existing CRUMB file, call `crumb_analyze_design` with
+3. When no `.cru` path is known, call `crumb_list_projects` and pick an entry;
+   its returned digest becomes `expectedProjectDigest` for the next read.
+4. For an existing CRUMB file, call `crumb_analyze_design` with
    `view: "summary"`.
-4. Request bounded component or connection pages only when needed. If
+5. Request bounded component or connection pages only when needed. If
    `data.page.nextCursor` is present, pass that exact opaque value as `cursor`
    with the same view and project.
-5. Keep the returned project reference and SHA-256 digest in any handoff.
-6. When continuing a handoff, pass the recorded digest as
+6. For electrical feedback, follow the `review-crumb-design` capability
+   workflow: `crumb_export_netlist`, then `crumb_check_design`; use
+   `crumb_bom` for part lists and `crumb_ic_reference` for pinout questions.
+7. Keep the returned project reference and SHA-256 digest in any handoff.
+8. When continuing a handoff, pass the recorded digest as
    `expectedProjectDigest` on the first CRUMB file read.
-7. Do not claim run, pause, step, signal-read, arbitrary edit, or simulation
-   capability.
+9. Do not claim run, pause, step, signal-read, arbitrary edit, or simulation
+   capability. Netlists and rule findings are static file inference, not
+   simulation output.
 
 Embedded firmware/source is redacted by default. Set the explicit source
 inclusion option only when the user's task actually requires source text and

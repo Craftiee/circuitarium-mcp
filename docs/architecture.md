@@ -21,15 +21,18 @@ ChatGPT / Codex / Claude / local agent host
               | capabilities | validation |
                          |
                 CRUMBLE file backend
-          inspect / validate / analyze / fixture
+ discover / catalog / inspect / validate / analyze / compare
+ component / netlist / ERC / BOM / IC reference / fixture
            profile: crumb.unity/1.3.5
                          |
           workspace-relative .cru artifact
                 + immutable SHA-256 digest
 ```
 
-Only `crumb.file` is callable through this server today. It reads files; it is
-not a bridge into a running CRUMB process.
+Only `crumb.file` is callable through this server today. Thirteen of the
+fourteen registered tools have no file-writing side effect; the remaining tool
+can create only one of five fixed synthetic fixtures and never overwrites.
+None is a bridge into a running CRUMB process.
 
 The branding boundary does not change protocol identity. Neutral tools retain
 the `electronics_*` namespace, CRUMB-specific tools retain `crumb_*`, and the
@@ -64,7 +67,8 @@ Portable project / experiments / artifacts
 4. **Artifacts cross process boundaries; sessions do not.** Stdio server state
    is process-scoped. Cross-model handoff uses a workspace-relative reference
    and SHA-256 digest. Continued reads pass that identity as
-   `expectedProjectDigest`.
+   `expectedProjectDigest`; controlled comparisons guard baseline and candidate
+   independently.
 5. **Fidelity and losses are explicit.** Unknown CRUMB payloads are inventoried,
    not guessed into canonical electrical behavior.
 6. **Compatibility evidence is explicit.** An adapter reports the versioned
@@ -91,7 +95,13 @@ The normative MCP result rules are in [contract.md](contract.md).
 
 The adapter currently supports:
 
+- workspace discovery with stable file snapshots, sizes, timestamps, and
+  exact-byte digests;
 - format-level inventory and validation;
+- controlled baseline/candidate comparison with both artifact digests,
+  modeled-equivalence assessment, order-sensitive opaque fingerprints, and
+  bounded change pages;
+- focused single-component reads with bounded firmware-source windows;
 - semantic recognition for 18 observed tool-ID signatures (`0..15`, `20`,
   `24`);
 - typed component parameters with units and confidence;
@@ -108,8 +118,18 @@ The adapter currently supports:
 - explicit jumper connectivity;
 - inferred main-board and detached-rail connectivity under
   `known-board-v1.3.5`;
+- jumper-collapsed netlist export with deterministic supply naming and optional
+  saved slide/DIP-switch connectivity, including bounded provenance;
+- static electrical rule checks for evidence-supported supply shorts, bypassed
+  parts, LED series resistance, resistor power, floating IC power pins, and
+  floating terminals;
+- bill-of-materials grouping by decoded part identity and version-pinned IC
+  package/pin reference queries;
 - bounded component and connection views;
 - bounded nested component, group-membership, summary, and diagnostic fields;
+- a private byte-preserving round-trip foundation that retains exact source
+  bytes and opaque payload spans, applies digest-guarded minimal patches, and
+  revalidates every replacement artifact; and
 - five non-overwriting synthetic, compatibility-tested fixtures.
 
 The inferred board rules are pinned to the observed CRUMB 1.3.5 Unity-era save
@@ -144,6 +164,23 @@ CRUMB live run/pause/step/read tools require a supported bridge. The preferred
 route is developer cooperation or a documented plugin/local API. GUI automation
 can help acceptance-test generated files, but it is not a stable simulation
 contract.
+
+The staged Unity editing design and writer-evidence gates are documented in
+[unity-adapter-plan.md](unity-adapter-plan.md). The semantic decoder remains a
+read model rather than a lossless serializer. The separate internal round-trip
+layer closes that preservation gap for future guarded operations, but no public
+general editor or placement tool is exposed.
+
+### Distribution and verification boundary
+
+The source checkout and npm artifact expose the same stdio server, CLI tool
+envelopes, and typed ESM entrypoint. Packaging is allowlisted and verified from
+an isolated packed tarball: CI installs that exact artifact in a clean consumer,
+imports the tool registry without accidentally starting stdio, and completes an
+MCP handshake through the packaged executable. Pull requests additionally run
+the supported Node/OS matrix, lint, coverage, dependency review, CodeQL, and
+deterministic fixture verification. These gates establish build and packaging
+integrity; they do not add circuit-simulation or CRUMB-runtime capabilities.
 
 ## Why a neutral electronics layer matters
 
@@ -183,7 +220,12 @@ For a safe handoff:
    `known-board-v1.3.5`;
 6. have the receiving model pass the recorded digest as
    `expectedProjectDigest` on `crumb_analyze_design`,
-   `crumb_inspect_design`, or `crumb_validate_design`.
+   `crumb_inspect_design`, `crumb_validate_design`, `crumb_get_component`,
+   `crumb_bom`, `crumb_export_netlist`, or `crumb_check_design`.
+
+For a controlled comparison, retain both artifact references and digests, then
+pass them as `expectedBaselineDigest` and `expectedCandidateDigest`. A
+comparison cursor is bound to both identities and its view options.
 
 If the digest changed, the read returns `ok: false` with
 `error.code: "PROJECT_STATE_CONFLICT"` because earlier findings describe a

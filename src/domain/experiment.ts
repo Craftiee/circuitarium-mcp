@@ -127,6 +127,14 @@ function reportDuplicates(
   }
 }
 
+function endpointKey(componentId: string, pin: string): string {
+  return JSON.stringify([componentId, pin]);
+}
+
+function endpointLabel(componentId: string, pin: string): string {
+  return `${JSON.stringify(componentId)} pin ${JSON.stringify(pin)}`;
+}
+
 export function validateExperiment(input: unknown): ExperimentValidation {
   const parsed = CircuitExperimentSchema.safeParse(input);
   if (!parsed.success) {
@@ -169,6 +177,7 @@ export function validateExperiment(input: unknown): ExperimentValidation {
   );
 
   const componentIds = new Set(experiment.components.map((component) => component.id));
+  const endpointNetById = new Map<string, string>();
   for (const [netIndex, net] of experiment.nets.entries()) {
     const endpointKeys = new Set<string>();
     for (const [endpointIndex, endpoint] of net.endpoints.entries()) {
@@ -180,16 +189,30 @@ export function validateExperiment(input: unknown): ExperimentValidation {
           message: `Unknown component: ${endpoint.componentId}`,
         });
       }
-      const endpointKey = `${endpoint.componentId}:${endpoint.pin}`;
-      if (endpointKeys.has(endpointKey)) {
+      const key = endpointKey(endpoint.componentId, endpoint.pin);
+      const label = endpointLabel(endpoint.componentId, endpoint.pin);
+      if (endpointKeys.has(key)) {
         diagnostics.push({
           severity: "warning",
           code: "duplicate-endpoint",
           path: `nets.${netIndex}.endpoints.${endpointIndex}`,
-          message: `Endpoint ${endpointKey} appears more than once on net ${net.id}`,
+          message: `Endpoint ${label} appears more than once on net ${net.id}`,
         });
       }
-      endpointKeys.add(endpointKey);
+      endpointKeys.add(key);
+      const owningNet = endpointNetById.get(key);
+      if (owningNet !== undefined && owningNet !== net.id) {
+        diagnostics.push({
+          severity: "error",
+          code: "endpoint-net-conflict",
+          path: `nets.${netIndex}.endpoints.${endpointIndex}`,
+          message:
+            `Endpoint ${label} is already on net ${owningNet}; ` +
+            "one pin cannot belong to two nets without electrically merging them",
+        });
+      } else {
+        endpointNetById.set(key, net.id);
+      }
     }
   }
 
@@ -212,6 +235,18 @@ export function validateExperiment(input: unknown): ExperimentValidation {
         path: `probes.${index}.endpoint.componentId`,
         message: `Probe targets unknown component: ${probe.endpoint.componentId}`,
       });
+    } else {
+      const key = endpointKey(probe.endpoint.componentId, probe.endpoint.pin);
+      if (!endpointNetById.has(key)) {
+        diagnostics.push({
+          severity: "warning",
+          code: "probe-endpoint-unconnected",
+          path: `probes.${index}.endpoint`,
+          message:
+            `Probe ${probe.id} targets ${endpointLabel(probe.endpoint.componentId, probe.endpoint.pin)}, which appears on no net; ` +
+            "the measured node is floating or the pin name does not match the netlist",
+        });
+      }
     }
   }
 

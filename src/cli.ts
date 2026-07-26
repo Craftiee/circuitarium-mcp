@@ -8,19 +8,29 @@ import {
   generateFixture,
   type CrumbFixtureKind,
 } from "./adapters/crumb/fixtures.js";
-import { analyzeCru } from "./adapters/crumb/analyze.js";
-import { inspectCru, validateCru } from "./adapters/crumb/format.js";
-import { readCruFile, workspaceRef, writeCruFile } from "./adapters/crumb/io.js";
-import { validateExperiment } from "./domain/experiment.js";
+import { validateCru } from "./adapters/crumb/format.js";
+import { workspaceRef, writeCruFile } from "./adapters/crumb/io.js";
+import { callToolLocally } from "./server.js";
 
 function usage(): string {
   return `Circuitarium MCP CLI
 
-Commands:
+Read commands run the same registered MCP tools as the stdio server, with the
+same validation, bounds, and result envelopes:
+  list [dir]
   inspect <file.cru>
-  analyze <file.cru> [summary|components|connections] [limit]
+  analyze <file.cru> [summary|components|connections] [limit] [cursor]
+  compare <baseline.cru> <candidate.cru> [summary|root|components] [limit] [cursor]
+  component <file.cru> <componentId>
+  netlist <file.cru> [limit] [cursor]
+  check <file.cru>
+  bom <file.cru>
+  ic [label-or-package-query]
   validate <file.cru>
   validate-experiment <experiment.json>
+
+Fixture maintenance commands write directly and support --force overwrite,
+which the MCP surface never does:
   generate <fixture-kind> <output.cru> [name] [--force]
   generate-all [output-directory] [--force]
 `;
@@ -30,93 +40,124 @@ function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
+async function runTool(
+  name: string,
+  args: Record<string, unknown>,
+  options: { failWhenDataInvalid?: boolean } = {},
+): Promise<void> {
+  const { envelope, isError } = await callToolLocally(name, args);
+  printJson(envelope);
+  if (isError) {
+    process.exitCode = 1;
+    return;
+  }
+  if (options.failWhenDataInvalid) {
+    const data = envelope.data as { valid?: boolean } | undefined;
+    if (data?.valid === false) {
+      process.exitCode = 1;
+    }
+  }
+}
+
+function requirePath(value: string | undefined, command: string): string {
+  if (!value) {
+    throw new Error(`${command} requires a .cru path`);
+  }
+  return value;
+}
+
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   const force = args.includes("--force");
   const positional = args.filter((argument) => argument !== "--force");
 
   switch (command) {
+    case "list": {
+      await runTool("crumb_list_projects", {
+        ...(positional[0] === undefined ? {} : { dir: positional[0] }),
+      });
+      return;
+    }
     case "inspect": {
-      const path = positional[0];
-      if (!path) {
-        throw new Error("inspect requires a .cru path");
-      }
-      const file = await readCruFile(path);
-      printJson({ path: workspaceRef(file.path), inspection: inspectCru(file.xml) });
+      await runTool("crumb_inspect_design", {
+        path: requirePath(positional[0], "inspect"),
+      });
       return;
     }
     case "analyze": {
-      const path = positional[0];
+      const path = requirePath(positional[0], "analyze");
       const view = positional[1] ?? "summary";
       const limit = Number.parseInt(positional[2] ?? "50", 10);
-      if (!path) {
-        throw new Error("analyze requires a .cru path");
+      const cursor = positional[3];
+      await runTool("crumb_analyze_design", {
+        path,
+        view,
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      return;
+    }
+    case "compare": {
+      const baselinePath = positional[0];
+      const candidatePath = positional[1];
+      if (!baselinePath || !candidatePath) {
+        throw new Error("compare requires baseline and candidate .cru paths");
       }
-      if (!["summary", "components", "connections"].includes(view)) {
-        throw new Error("analyze view must be summary, components, or connections");
+      const view = positional[2] ?? "summary";
+      const limit = Number.parseInt(positional[3] ?? "50", 10);
+      const cursor = positional[4];
+      await runTool("crumb_compare_designs", {
+        baselinePath,
+        candidatePath,
+        view,
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      return;
+    }
+    case "component": {
+      const path = requirePath(positional[0], "component");
+      const componentId = positional[1];
+      if (!componentId) {
+        throw new Error("component requires a componentId");
       }
-      if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
-        throw new Error("analyze limit must be an integer from 1 through 200");
-      }
-      const file = await readCruFile(path);
-      const analysis = analyzeCru(file.xml);
-      const base = {
-        path: workspaceRef(file.path),
-        analysisVersion: analysis.analysisVersion,
-        projectDigest: analysis.projectDigest,
-        designName: analysis.designName,
-        designNameInfo: analysis.designNameInfo,
-        summary: analysis.summary,
-        connectivity: {
-          scope: analysis.connectivity.scope,
-          confidence: analysis.connectivity.confidence,
-          topologyMode: analysis.connectivity.topologyMode,
-          groupCount: analysis.connectivity.groupCount,
-          isolatedAttachmentGroupCount:
-            analysis.connectivity.isolatedAttachmentGroupCount,
-          limitations: analysis.connectivity.limitations,
-        },
-        conversion: analysis.conversion,
-        diagnostics: analysis.diagnostics,
-      };
-      if (view === "components") {
-        printJson({
-          ...base,
-          view,
-          page: {
-            returned: Math.min(limit, analysis.components.length),
-            total: analysis.components.length,
-            limit,
-          },
-          components: analysis.components.slice(0, limit),
-        });
-      } else if (view === "connections") {
-        printJson({
-          ...base,
-          view,
-          page: {
-            returned: Math.min(limit, analysis.connectivity.groups.length),
-            total: analysis.connectivity.groups.length,
-            limit,
-          },
-          connections: analysis.connectivity.groups.slice(0, limit),
-        });
-      } else {
-        printJson({ ...base, view });
-      }
+      await runTool("crumb_get_component", { path, componentId });
+      return;
+    }
+    case "netlist": {
+      const limit = Number.parseInt(positional[1] ?? "50", 10);
+      const cursor = positional[2];
+      await runTool("crumb_export_netlist", {
+        path: requirePath(positional[0], "netlist"),
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      return;
+    }
+    case "check": {
+      await runTool(
+        "crumb_check_design",
+        { path: requirePath(positional[0], "check") },
+        { failWhenDataInvalid: true },
+      );
+      return;
+    }
+    case "bom": {
+      await runTool("crumb_bom", { path: requirePath(positional[0], "bom") });
+      return;
+    }
+    case "ic": {
+      await runTool("crumb_ic_reference", {
+        ...(positional[0] === undefined ? {} : { query: positional[0] }),
+      });
       return;
     }
     case "validate": {
-      const path = positional[0];
-      if (!path) {
-        throw new Error("validate requires a .cru path");
-      }
-      const file = await readCruFile(path);
-      const result = validateCru(file.xml);
-      printJson({ path: workspaceRef(file.path), ...result });
-      if (!result.valid) {
-        process.exitCode = 1;
-      }
+      await runTool(
+        "crumb_validate_design",
+        { path: requirePath(positional[0], "validate") },
+        { failWhenDataInvalid: true },
+      );
       return;
     }
     case "validate-experiment": {
@@ -124,12 +165,12 @@ async function main(): Promise<void> {
       if (!path) {
         throw new Error("validate-experiment requires a JSON path");
       }
-      const input = JSON.parse(await readFile(resolve(path), "utf8")) as unknown;
-      const result = validateExperiment(input);
-      printJson(result);
-      if (!result.valid) {
-        process.exitCode = 1;
-      }
+      const experiment = JSON.parse(await readFile(resolve(path), "utf8")) as unknown;
+      await runTool(
+        "electronics_validate_experiment",
+        { experiment },
+        { failWhenDataInvalid: true },
+      );
       return;
     }
     case "generate": {

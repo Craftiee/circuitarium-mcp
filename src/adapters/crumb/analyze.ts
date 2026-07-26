@@ -11,6 +11,7 @@ import {
   MAX_DIAGNOSTIC_SAMPLES_RETURNED,
   MAX_KIND_COUNTS_RETURNED,
   MAX_PARAMETER_COLLECTION_ITEMS_RETURNED,
+  MAX_UNKNOWN_PAYLOAD_KEYS_RETURNED_PER_COMPONENT,
   type BoundedCollectionInfo,
   type BoundedTextInfo,
 } from "../../domain/bounds.js";
@@ -24,6 +25,7 @@ import {
   decodeCru,
   type CruDecodedComponent,
   type CruDecodedDataValue,
+  type CruDecodedDocument,
   type CruTiePoint,
   type Quaternion,
   type Vector3,
@@ -161,6 +163,34 @@ export interface CrumbConnectionGroup {
   };
 }
 
+export interface CrumbFullConnectionGroupMembership {
+  physicalAttachments: readonly CrumbConnectionGroup["physicalAttachments"][number][];
+  componentTerminals: readonly CrumbConnectionGroup["componentTerminals"][number][];
+  explicitWireIds: readonly string[];
+}
+
+const fullConnectionMembershipByGroup = new WeakMap<
+  CrumbConnectionGroup,
+  CrumbFullConnectionGroupMembership
+>();
+
+/**
+ * Returns the complete internal membership used for electrical analysis.
+ * Public connection-group arrays are deliberately display-bounded, so rule
+ * evaluation must use this accessor instead of those serialized arrays.
+ */
+export function fullConnectionGroupMembership(
+  group: CrumbConnectionGroup,
+): CrumbFullConnectionGroupMembership {
+  return (
+    fullConnectionMembershipByGroup.get(group) ?? {
+      physicalAttachments: group.physicalAttachments,
+      componentTerminals: group.componentTerminals,
+      explicitWireIds: group.explicitWireIds,
+    }
+  );
+}
+
 export interface CrumbDesignAnalysis {
   analysisVersion: "crumb.analysis/0.2";
   format: "crumb-cru";
@@ -222,14 +252,53 @@ function sha256(value: string | Buffer): string {
 }
 
 function normalizedType(type: string): string {
-  return type.endsWith(":guid") ? "guid" : type;
+  return !type.startsWith("unresolved:") && /^[^:]+:guid$/.test(type)
+    ? "guid"
+    : type;
 }
 
-function matchesSignature(rawTypes: string[], signature: string[]): boolean {
+function decodedKindMatchesType(
+  value: CruDecodedDataValue,
+  normalized: string,
+): boolean {
+  switch (normalized) {
+    case "guid":
+      return value.kind === "guid";
+    case "Vector3S":
+      return value.kind === "vector3";
+    case "QuaternionS":
+      return value.kind === "quaternion";
+    case "ArrayOfVector3S":
+      return value.kind === "vector3-array";
+    case "ArrayOfTiePointID":
+      return value.kind === "tie-point-array";
+    case "ArrayOfBoolean":
+      return value.kind === "boolean-array";
+    case "xsd:boolean":
+      return value.kind === "boolean";
+    case "xsd:int":
+    case "xsd:float":
+    case "xsd:double":
+      return value.kind === "number";
+    case "xsd:string":
+      return value.kind === "string";
+    case "xsd:base64Binary":
+      return value.kind === "unknown";
+    default:
+      return true;
+  }
+}
+
+function matchesSignature(
+  values: CruDecodedDataValue[],
+  signature: string[],
+): boolean {
   return (
-    rawTypes.length === signature.length &&
-    rawTypes.every(
-      (type, index) => normalizedType(type) === signature[index],
+    values.length === signature.length &&
+    values.every(
+      (value, index) =>
+        normalizedType(value.type) === signature[index] &&
+        decodedKindMatchesType(value, signature[index] ?? ""),
     )
   );
 }
@@ -340,11 +409,23 @@ function sourceCodeInfo(
   const source = strings[0]?.value ?? "";
   const secondary = strings[1]?.value ?? "";
   const returnedSource = includeSourceCode ? source.slice(0, 65_536) : "";
+  let lineCount = source.length === 0 ? 0 : 1;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source.charCodeAt(index);
+    if (character === 13) {
+      lineCount += 1;
+      if (source.charCodeAt(index + 1) === 10) {
+        index += 1;
+      }
+    } else if (character === 10) {
+      lineCount += 1;
+    }
+  }
   return {
     present: source.length > 0,
     characters: source.length,
     bytes: Buffer.byteLength(source, "utf8"),
-    lines: source.length === 0 ? 0 : source.split(/\r\n|\r|\n/).length,
+    lines: lineCount,
     sha256: sha256(source),
     languageHint: "c-cpp-or-arduino",
     included: includeSourceCode,
@@ -437,7 +518,7 @@ function analyzeComponent(
           ...(definition.alternateDataTypes ?? []),
         ];
   const matchedSignatureIndex = signatures.findIndex((signature) =>
-    matchesSignature(allRawDataTypes, signature),
+    matchesSignature(component.values, signature),
   );
   const isNormalIcSignature =
     component.toolId === 5 && matchedSignatureIndex === 0;
@@ -455,6 +536,13 @@ function analyzeComponent(
   const embeddedData = isEepromIcSignature
     ? eepromDataInfo(component.values[4])
     : undefined;
+  const decodedPayloadMatchesSignature = component.values.every(
+    (value, index) =>
+      (isEepromIcSignature &&
+        index === 4 &&
+        embeddedData?.valid === true) ||
+      (value.kind !== "unknown" && value.modeledStructureComplete),
+  );
   const subtypeMatchesSignature =
     component.toolId !== 5 ||
     (isNormalIcSignature && prefabId !== 13) ||
@@ -464,7 +552,9 @@ function analyzeComponent(
   const payloadMatchesCatalog =
     definition !== undefined &&
     matchedSignatureIndex >= 0 &&
-    subtypeMatchesSignature;
+    subtypeMatchesSignature &&
+    decodedPayloadMatchesSignature &&
+    component.structuralDigest === undefined;
   const effectiveDefinition = payloadMatchesCatalog ? definition : undefined;
   const icDefinition =
     payloadMatchesCatalog && component.toolId === 5 && prefabId !== undefined
@@ -516,6 +606,8 @@ function analyzeComponent(
     allRawDataTypes,
     MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED,
   );
+  let remainingUnknownKeyBudget =
+    MAX_UNKNOWN_PAYLOAD_KEYS_RETURNED_PER_COMPONENT;
   const allUnknownPayloads = component.values.flatMap((value, index) => {
     if (
       value.kind !== "unknown" ||
@@ -525,14 +617,18 @@ function analyzeComponent(
     }
     const boundedKeys = boundCollection(
       value.keys,
-      MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED,
+      remainingUnknownKeyBudget,
     );
+    remainingUnknownKeyBudget -= boundedKeys.items.length;
     return [
       {
         index,
         type: value.type,
         keys: boundedKeys.items,
-        keyBounds: boundedKeys.bounds,
+        keyBounds: {
+          ...boundedKeys.bounds,
+          limit: MAX_UNKNOWN_PAYLOAD_KEYS_RETURNED_PER_COMPONENT,
+        },
       },
     ];
   });
@@ -598,6 +694,11 @@ function analyzeComponent(
         : [
             ...definition.notes,
             ...(icDefinition === undefined ? [] : [icDefinition.sourceNote]),
+            ...(embeddedData !== undefined && !embeddedData.valid
+              ? [
+                  "The tool-5 EEPROM payload signature matched, but the embedded 28C16 image is invalid; prefab identity and pin names are withheld until the image is exactly 2,048 valid base64-encoded bytes.",
+                ]
+              : []),
           ],
     ...(icDefinition === undefined
       ? {}
@@ -629,12 +730,18 @@ class UnionFind {
 
   find(value: string): string {
     this.add(value);
-    const parent = this.#parents.get(value)!;
-    if (parent === value) {
-      return value;
+    // Iterative with full path compression: recursion here can exhaust the
+    // stack on adversarially long parent chains in untrusted saves.
+    let root = value;
+    while (this.#parents.get(root)! !== root) {
+      root = this.#parents.get(root)!;
     }
-    const root = this.find(parent);
-    this.#parents.set(value, root);
+    let current = value;
+    while (current !== root) {
+      const next = this.#parents.get(current)!;
+      this.#parents.set(current, root);
+      current = next;
+    }
     return root;
   }
 
@@ -773,7 +880,7 @@ function connectionGroups(
         MAX_CONNECTION_GROUP_MEMBERS_RETURNED,
       );
 
-      return {
+      const group: CrumbConnectionGroup = {
         id: `connection-${index + 1}`,
         physicalAttachments: physicalAttachments.items,
         componentTerminals: componentTerminals.items,
@@ -787,6 +894,12 @@ function connectionGroups(
           ).length,
         },
       };
+      fullConnectionMembershipByGroup.set(group, {
+        physicalAttachments: allPhysicalAttachments,
+        componentTerminals: allComponentTerminals,
+        explicitWireIds: allExplicitWireIds,
+      });
+      return group;
     });
   const boundedOutOfRangeAttachments = boundCollection(
     outOfRangeAttachments,
@@ -804,12 +917,19 @@ export function analyzeCru(
   xml: string,
   options: CrumbAnalysisOptions = {},
 ): CrumbDesignAnalysis {
+  return analyzeDecodedCru(decodeCru(xml), sha256(xml), options);
+}
+
+export function analyzeDecodedCru(
+  decoded: CruDecodedDocument,
+  projectDigest: string,
+  options: CrumbAnalysisOptions = {},
+): CrumbDesignAnalysis {
   const resolvedOptions: Required<CrumbAnalysisOptions> = {
     includeGeometry: options.includeGeometry ?? false,
     includeSourceCode: options.includeSourceCode ?? false,
     topologyMode: options.topologyMode ?? "known-board-v1.3.5",
   };
-  const decoded = decodeCru(xml);
   const analyzedComponents = decoded.components.map((component) =>
     analyzeComponent(component, resolvedOptions),
   );
@@ -842,12 +962,17 @@ export function analyzeCru(
         message: `Tool ID ${component.toolId} is preserved but not identified`,
       });
     } else if (!component.payloadMatchesCatalog) {
-      diagnostics.push({
-        severity: "warning",
-        code: "payload-schema-mismatch",
-        path: `components.${component.index}.rawDataTypes`,
-        message: `${component.label} payload differs from the observed catalog schema`,
-      });
+      // An invalid EEPROM image already emits the specific
+      // invalid-eeprom-image diagnostic; the generic shape-mismatch message
+      // would misdescribe a payload whose signature actually matched.
+      if (component.embeddedData === undefined || component.embeddedData.valid) {
+        diagnostics.push({
+          severity: "warning",
+          code: "payload-schema-mismatch",
+          path: `components.${component.index}.rawDataTypes`,
+          message: `${component.label} payload differs from the observed catalog schema`,
+        });
+      }
     } else if (component.toolId === 5 && component.variant === undefined) {
       diagnostics.push({
         severity: "warning",
@@ -889,6 +1014,50 @@ export function analyzeCru(
           : "The 28C16 EEPROM image is not valid base64 or is not exactly 2,048 bytes",
       });
     }
+  }
+
+  const componentIndexesById = new Map<string, number[]>();
+  for (const component of components) {
+    const key = component.id.toLowerCase();
+    const indexes = componentIndexesById.get(key) ?? [];
+    indexes.push(component.index);
+    componentIndexesById.set(key, indexes);
+  }
+  for (const [id, indexes] of componentIndexesById) {
+    if (indexes.length > 1) {
+      diagnostics.push({
+        severity: "warning",
+        code: "duplicate-component-id",
+        path: `components.${indexes[0]}.id`,
+        message:
+          `Component id ${id} appears ${indexes.length} times ` +
+          `(indexes ${indexes.slice(0, MAX_DIAGNOSTIC_SAMPLES_RETURNED).join(", ")}); ` +
+          "connectivity inference keeps only one entry per id, so groups touching this id are unreliable.",
+      });
+    }
+  }
+
+  const mismatchedTopologyComponents = components.filter(
+    (component) =>
+      component.recognitionStatus === "schema-mismatch" &&
+      (component.kind === "jumper-wire" ||
+        ((component.kind === "breadboard" || component.kind === "power-rail") &&
+          resolvedOptions.topologyMode === "known-board-v1.3.5")),
+  );
+  if (mismatchedTopologyComponents.length > 0) {
+    const sample = mismatchedTopologyComponents
+      .slice(0, MAX_DIAGNOSTIC_SAMPLES_RETURNED)
+      .map((component) => component.id)
+      .join(", ");
+    diagnostics.push({
+      severity: "warning",
+      code: "topology-uses-schema-mismatched-component",
+      path: "connectivity",
+      message:
+        `${mismatchedTopologyComponents.length} structural or interconnect component(s) ` +
+        "failed payload signature matching but still shape connectivity inference " +
+        `by tool-ID kind. Treat affected groups with reduced confidence. Sample: ${sample}`,
+    });
   }
 
   const componentsWithBoundedNestedOutput = components.filter(
@@ -1058,7 +1227,7 @@ export function analyzeCru(
     format: "crumb-cru",
     designName: designNameInfo.preview,
     designNameInfo,
-    projectDigest: sha256(xml),
+    projectDigest,
     adapterTestedCompatibility: ["CRUMB 1.3.5"],
     summary: {
       componentCount: components.length,

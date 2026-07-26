@@ -3,7 +3,8 @@ integration family.
 
 1. Call electronics_capabilities before choosing a backend or workflow.
 2. Use only backends whose availability is "callable".
-3. For a CRUMB file, start with crumb_analyze_design view="summary".
+3. When no .cru path is known, discover projects with crumb_list_projects.
+   For a CRUMB file, start with crumb_analyze_design view="summary".
 4. Request components or connections only when needed. Copy page.nextCursor
    unchanged into cursor; never decode or invent a cursor.
 5. Preserve context.projectRef and context.projectDigest. On later reads, pass
@@ -19,10 +20,13 @@ integration family.
    not returned. Respect collection bound metadata and data.disclosure.limits.
 9. Source code, raw CRUMB XML, and geometry are not ordinary outputs. Request
    sensitive or large content only when the task requires it.
-10. The current crumb.file backend reads, validates, analyzes, and creates a few
-   synthetic, compatibility-tested fixtures. It cannot arbitrarily edit a
-   circuit or run, pause, step,
-   stimulate, or observe a CRUMB simulation.
+10. The current crumb.file backend discovers workspace projects, reads,
+   validates, analyzes, fetches single components, exports jumper-collapsed
+   netlists, runs static electrical rule checks, builds BOMs, answers IC
+   pinout queries, and creates a few synthetic, compatibility-tested fixtures.
+   Nets and rule findings are static file inference. It cannot arbitrarily
+   edit a circuit or run, pause, step, stimulate, or observe a CRUMB
+   simulation.
 11. CRUMB hidden topology and component signatures are pinned to the observed
     1.3.5 Unity-era save format. Do not claim compatibility with a newer Godot
     release without controlled evidence.

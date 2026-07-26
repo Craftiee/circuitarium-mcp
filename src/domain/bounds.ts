@@ -6,6 +6,7 @@ export const MAX_DESIGN_NAME_PREVIEW_CHARACTERS = 160;
 export const MAX_COMPONENT_GEOMETRY_POINTS_RETURNED = 64;
 export const MAX_COMPONENT_TERMINALS_RETURNED = 64;
 export const MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED = 64;
+export const MAX_UNKNOWN_PAYLOAD_KEYS_RETURNED_PER_COMPONENT = 64;
 export const MAX_PARAMETER_COLLECTION_ITEMS_RETURNED = 64;
 export const MAX_CONNECTION_GROUP_MEMBERS_RETURNED = 128;
 export const MAX_KIND_COUNTS_RETURNED = 64;
@@ -19,6 +20,13 @@ export const MAX_CRU_XSI_TYPE_CHARACTERS = 256;
 export const MAX_CRU_NUMERIC_LEXICAL_CHARACTERS = 1_024;
 export const MAX_CRU_GUID_TOKEN_CHARACTERS = 64;
 export const MAX_CRU_XML_NAME_CHARACTERS = 256;
+export const MAX_CRU_TEXT_NODE_CHARACTERS = 1_048_576;
+export const MAX_CRU_MARKUP_DELIMITERS = 100_000;
+export const MAX_CRU_DOCUMENT_CHARACTERS = 3 * 1024 * 1024;
+export const MAX_CRU_XML_ELEMENTS = 200_000;
+export const MAX_CRU_XML_DEPTH = 64;
+export const MAX_CRU_COMPONENTS = 10_000;
+export const MAX_CRU_DATA_VALUES_PER_COMPONENT = 256;
 
 export interface BoundedCollectionInfo {
   total: number;
@@ -99,7 +107,19 @@ export function boundDiagnostics(
     return bounded;
   }
 
-  const retained = bounded.slice(0, Math.max(0, limit - 1));
+  // Truncation must never hide the causal errors behind earlier warnings, so
+  // retention is ordered by severity (stable within each severity) only when
+  // the limit forces entries to be dropped.
+  const severityRank = { error: 0, warning: 1, info: 2 } as const;
+  const retainable = bounded
+    .map((diagnostic, index) => ({ diagnostic, index }))
+    .sort(
+      (left, right) =>
+        severityRank[left.diagnostic.severity] -
+          severityRank[right.diagnostic.severity] || left.index - right.index,
+    )
+    .map((entry) => entry.diagnostic);
+  const retained = retainable.slice(0, Math.max(0, limit - 1));
   return [
     ...retained,
     {
