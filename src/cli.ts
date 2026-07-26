@@ -20,6 +20,7 @@ same validation, bounds, and result envelopes:
   list [dir]
   inspect <file.cru>
   analyze <file.cru> [summary|components|connections] [limit] [cursor]
+  compare <baseline.cru> <candidate.cru> [summary|root|components] [limit] [cursor]
   component <file.cru> <componentId>
   netlist <file.cru> [limit] [cursor]
   check <file.cru>
@@ -90,6 +91,24 @@ async function main(): Promise<void> {
       const cursor = positional[3];
       await runTool("crumb_analyze_design", {
         path,
+        view,
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      return;
+    }
+    case "compare": {
+      const baselinePath = positional[0];
+      const candidatePath = positional[1];
+      if (!baselinePath || !candidatePath) {
+        throw new Error("compare requires baseline and candidate .cru paths");
+      }
+      const view = positional[2] ?? "summary";
+      const limit = Number.parseInt(positional[3] ?? "50", 10);
+      const cursor = positional[4];
+      await runTool("crumb_compare_designs", {
+        baselinePath,
+        candidatePath,
         view,
         limit,
         ...(cursor === undefined ? {} : { cursor }),

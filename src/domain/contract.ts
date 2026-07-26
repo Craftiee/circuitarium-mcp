@@ -15,7 +15,7 @@ export const DiagnosticSchema = z.object({
   code: z.string().max(MAX_DIAGNOSTIC_CODE_CHARACTERS),
   path: z.string().max(MAX_DIAGNOSTIC_PATH_CHARACTERS),
   message: z.string().max(MAX_DIAGNOSTIC_MESSAGE_CHARACTERS),
-});
+}).strict();
 
 export const ContractContextSchema = z.object({
   serverInstanceId: z.string(),
@@ -25,13 +25,13 @@ export const ContractContextSchema = z.object({
   compatibilityProfile: z.string().optional(),
   projectRef: z.string().optional(),
   projectDigest: z.string().optional(),
-});
+}).strict();
 
 export const NextActionSchema = z.object({
   tool: z.string(),
   reason: z.string(),
   arguments: z.record(z.string(), z.json()),
-});
+}).strict();
 
 export const ToolErrorSchema = z.object({
   code: z.enum([
@@ -70,7 +70,7 @@ export const ToolErrorSchema = z.object({
   retryable: z.boolean(),
   argumentPath: z.string().optional(),
   recovery: z.array(z.string()),
-});
+}).strict();
 
 export function envelopeSchema<T extends z.ZodType>(dataSchema: T) {
   return z.object({
@@ -84,7 +84,7 @@ export function envelopeSchema<T extends z.ZodType>(dataSchema: T) {
     context: ContractContextSchema,
     nextActions: z.array(NextActionSchema),
     error: ToolErrorSchema.optional(),
-  });
+  }).strict();
 }
 
 export type ToolError = z.infer<typeof ToolErrorSchema>;

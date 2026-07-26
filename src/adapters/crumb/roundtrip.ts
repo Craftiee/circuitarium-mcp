@@ -517,7 +517,9 @@ export function decodeCruRoundTrip(source: Uint8Array): CruRoundTripDocument {
     throw new CruRoundTripIndexError(
       `CRUMB source is structurally invalid: ${
         diagnostic?.code ?? "unknown"
-      } at ${diagnostic?.path ?? ""}`,
+      } at ${diagnostic?.path ?? ""}${
+        diagnostic?.message === undefined ? "" : ` - ${diagnostic.message}`
+      }`,
     );
   }
   const offsets = new Utf8ByteOffsetIndex(text, bytePrefix);

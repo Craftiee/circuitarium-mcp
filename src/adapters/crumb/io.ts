@@ -9,6 +9,9 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { TextDecoder } from "node:util";
+
+import { CruFormatError } from "./format.js";
 
 export const MAX_CRU_BYTES = 64 * 1024 * 1024;
 
@@ -234,9 +237,28 @@ export async function readCruFile(
     // exact file content; hashing the decoded string would let byte-distinct
     // files collide through U+FFFD replacement.
     const bytes = Buffer.concat(chunks, bytesReadTotal);
+    let decodedXml: string | undefined;
     return {
       path: safePath,
-      xml: bytes.toString("utf8"),
+      // Decode only when semantic parsing actually begins. Callers can hash
+      // and compare exact bytes first, preserving stale-digest guard ordering
+      // even when the file contains malformed UTF-8.
+      get xml(): string {
+        if (decodedXml !== undefined) {
+          return decodedXml;
+        }
+        try {
+          // Keep a BOM in the lexical string because it participates in exact
+          // representation comparison.
+          decodedXml = new TextDecoder("utf-8", {
+            fatal: true,
+            ignoreBOM: true,
+          }).decode(bytes);
+          return decodedXml;
+        } catch {
+          throw new CruFormatError("CRUMB files must contain valid UTF-8 text");
+        }
+      },
       bytes,
       mtime: completedFile.mtime.toISOString(),
     };

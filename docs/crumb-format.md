@@ -23,9 +23,13 @@ Unity-era format**. They do not establish compatibility with a later Godot-based
 release. Before extending the version claim, collect fresh controlled saves,
 diff their payloads, and reopen generated fixtures in that exact release.
 
-The format is UTF-8 XML serialized under a `SaveData` root. It is not an opaque
-binary container. The order of values inside each component's `data/anyType`
-array is part of that component's version-specific contract.
+The format is XML 1.0 represented as UTF-8 and serialized under a `SaveData`
+root. It is not an opaque binary container. A file may omit its XML declaration.
+When a declaration is present, it must declare version `1.0`; an optional
+encoding must be `utf-8`, and an optional standalone value must be `yes` or
+`no`. An optional UTF-8 BOM remains part of exact byte identity even though it
+does not change the decoded model. The order of values inside each component's
+`data/anyType` array is part of that component's version-specific contract.
 
 The adapter supports only the signatures that have evidence. Unknown tool IDs
 remain unknown. A known tool ID with an unexpected payload is reported as
@@ -62,21 +66,55 @@ or question-mark recent-file thumbnail. The fixture generator supplies a small
 valid 560×480 PNG. Inspection does not return the embedded thumbnail by
 default.
 
-The semantic decoder rejects XML `DOCTYPE` and entity declarations. Its scalar
-`lexical` fields are decoded parser values, not a promise of byte-faithful XML
-spelling. The separate
+The decoder rejects malformed UTF-8, XML `DOCTYPE` and entity declarations,
+non-empty default namespaces, undeclared prefixes, invalid reserved-prefix
+bindings, and duplicate expanded attribute names. Namespace aliases and
+inherited prefix bindings remain valid when they resolve to the expected URI.
+An unused, well-formed namespace declaration is representation-neutral. A
+binding that is actually used by a modeled type or element must resolve
+correctly; rebinding a used XML Schema, schema-instance, or CRUMB GUID prefix
+cannot masquerade as the expected type.
+
+Typed scalar parsing is deliberately strict:
+
+- finite decimal and scientific notation are accepted after XML whitespace
+  normalization; `NaN`, infinities, and hexadecimal forms are not;
+- `xsd:int`, tool IDs, and tie-point IDs use signed 32-bit integer bounds;
+- booleans accept only `true`, `false`, `1`, or `0`;
+- `xsd:float`, vectors, quaternions, and Unity root timing/spatial fields are
+  modeled at IEEE-754 float32 precision; `xsd:double` remains double precision;
+  nonzero values that overflow or underflow float32 fail closed;
+  and
+- thumbnail `imageData` must use canonical base64 after XML whitespace is
+  removed. EEPROM base64 is separately checked for syntax and its exact
+  2,048-byte decoded size.
+
+Malformed known typed payloads fail atomically rather than being filtered into
+a smaller apparently valid component. Unknown future payload types remain
+opaque and can still produce partial comparison coverage.
+
+Numeric lexical forms, including scientific notation such as `1E-06`, are
+retained alongside decoded root, spatial, array, and typed-scalar values. The
+semantic decoder's scalar `lexical` fields remain decoded parser values, not a
+promise of byte-faithful XML spelling. The separate
 [round-trip canonicalization contract](cru-roundtrip-canonicalization.md)
-indexes exact byte spans when preservation is required. Before response
-shaping, parsing also rejects structural tokens above fixed limits: 256
-characters for `xsi:type`, 1,024 for numeric lexical text, 64 for
-GUID/parent-GUID tokens, and 256 for XML element names. Work limits cap XML at
-200,000 elements and 64 levels, saves at 10,000 components, and each component
-at 256 direct data values. Fixed diagnostics identify the field and limit
-without echoing rejected content.
+indexes exact byte spans when preservation is required.
+
+Stable byte reads are capped at 64 MiB, semantic XML documents at 3,145,728
+characters, and a baseline/candidate comparison at 5 MiB combined. Before
+response shaping, the adapter also rejects more than 100,000 `<` markup
+delimiters, any parsed text or attribute-value node over 1,048,576 characters,
+`xsi:type` values over 256 characters, numeric lexical text over 1,024
+characters, GUID/parent-GUID tokens over 64 characters, and XML element or
+namespace-prefix names over 256 characters. Work limits cap XML at 200,000
+elements and 64 levels, saves at 10,000 components, and each component at 256
+direct data values. Fixed diagnostics identify the field and limit without
+echoing rejected content.
 
 The root `name` is user-authored and untrusted. Inspection and analysis return
 only a 160-character preview plus full size, SHA-256, trust, blank, and
-truncation metadata.
+truncation metadata. Analysis returns no more than 64 unknown child-key names
+in aggregate across all opaque payload descriptors for one component.
 
 ## Spatial structural components
 
@@ -311,6 +349,43 @@ Connection results include provenance so a caller can distinguish direct
 addresses, jumpers, and version-pinned hidden board buses. These are inferred
 connection groups, not a solved electrical state.
 
+## Controlled-save comparison
+
+`crumb_compare_designs` applies `crumb.unity/1.3.5` to a baseline and candidate
+save without writing either file. It does not infer either file's origin. It
+matches components only by GUID and reports:
+
+- root metadata, camera, timing, and thumbnail-identity changes;
+- component presence, ordering, tool ID, and payload-signature changes;
+- semantic parameter changes separately from lexical-only numeric rewrites;
+- attachment, position, rotation, and geometry changes;
+- source, EEPROM, annotation, thumbnail, and opaque data through bounded
+  metadata and digests rather than content; and
+- unknown or schema-mismatched candidate signatures as unverified
+  observations.
+
+Known lexical-only differences use `parameter-encoding` for typed parameters
+and `modeled-encoding` for other retained root or component representations.
+An otherwise unclassified semantic payload difference remains
+`opaque-payload`. For a partially modeled component, a visible parameter or
+geometry change does not suppress `opaque-payload` when the hidden structural
+projection also changed.
+
+Byte equality is stronger than modeled equality. Modeled equality is limited
+to the fields represented by this profile and is not automatic origin
+detection. The internal round-trip core separately preserves exact source bytes
+and indexed opaque spans for future guarded edits; neither facility makes
+unknown payloads semantically understood or publicly editable. The broader
+implementation plan and writer acceptance ladder are in
+[unity-adapter-plan.md](unity-adapter-plan.md).
+
+An unknown XML field, attribute, mixed-content fragment, namespace binding used
+by content, or subtree forces `coverage: partial` and an `inconclusive`
+assessment. Unused, well-formed namespace declarations remain neutral.
+Order-sensitive fingerprints still detect opaque changes without disclosing
+their contents. Exact artifact identity hashes the file bytes, including an
+optional UTF-8 BOM.
+
 ## Game verification
 
 These are synthetic fixtures emitted by this project's fixture generator. The
@@ -338,6 +413,13 @@ are retained:
 | 8-bit CPU | 764/764 components | 362 | 5 EEPROM images represented only by metadata; 32 labels limited to untrusted previews |
 | Bridge Rectifier | 20/20 components | 6 | — |
 
+The non-redistributed 8-bit CPU artifact also provides a practical safety-cap
+reference. In the 2026-07-25 recheck, its fetch reported 2,149,258 HTTP bytes
+and decoded to 2,149,255 characters; it contained 63,556 `<` delimiters, and
+its largest parsed text node (`imageData`) was 812,648 characters. The current
+3,145,728-character document, 100,000-delimiter, and 1,048,576-character node
+limits leave bounded headroom for that known corpus artifact.
+
 Both group counts use `known-board-v1.3.5`. Full recognition means every
 serialized component matched a known positional schema; it does not establish
 behavioral correctness or mean either circuit was simulated. The external files
@@ -350,8 +432,10 @@ and SHA-256 identities are recorded in [PROVENANCE.md](../PROVENANCE.md).
   `crumb.unity/1.3.5`; a `.cru` file does not identify its originating engine
   or build automatically.
 - Treat tool IDs, signatures, and topology as version-specific.
-- Preserve scalar lexical representation for future round-trip work.
-- Preserve unknown payloads when a future general editor is added.
+- Preserve scalar lexical representation in comparison, and preserve exact
+  source bytes and spans through the internal round-trip core.
+- Preserve unknown payloads verbatim; future public editors must refuse edits
+  they cannot apply without rebuilding opaque structure.
 - Pin the CRUMB version and adapter version in provenance.
 - Validate and visually reopen controlled fixtures after every game update.
 - Never mutate the user's only copy of a design.

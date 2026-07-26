@@ -19,6 +19,7 @@ import {
 } from "./adapters/crumb/analyze.js";
 import { buildBom } from "./adapters/crumb/bom.js";
 import { listCrumbComponentDefinitions } from "./adapters/crumb/catalog.js";
+import { compareCru } from "./adapters/crumb/compare.js";
 import { CRUMB_COMPATIBILITY_PROFILE } from "./adapters/crumb/compatibility.js";
 import { checkNetlist } from "./adapters/crumb/erc.js";
 import { listCrumbEvidenceVocabulary } from "./adapters/crumb/evidence.js";
@@ -99,6 +100,7 @@ import {
   CrumbAnalysisDataSchema,
   CrumbBomDataSchema,
   CrumbCatalogDataSchema,
+  CrumbComparisonDataSchema,
   CrumbComponentDetailDataSchema,
   CrumbErcDataSchema,
   CrumbFixtureDataSchema,
@@ -122,6 +124,7 @@ const MAX_PROJECT_DIGEST_CHARACTERS = 71;
 const MAX_CURSOR_CHARACTERS = 2048;
 const MAX_FIXTURE_NAME_CHARACTERS = 256;
 const MAX_DIGEST_BYTES_PER_LISTING = 256 * 1024 * 1024;
+const MAX_CRU_COMPARISON_BYTES = 5 * 1024 * 1024;
 
 const ElectronicsCapabilitiesInputSchema = z.object({});
 const ElectronicsExperimentInputSchema = z.object({
@@ -163,6 +166,40 @@ const CrumbArtifactReadInputSchema = z.object({
     .max(MAX_PROJECT_DIGEST_CHARACTERS)
     .optional()
     .describe("Optional sha256: digest from a prior cross-model handoff"),
+});
+const CrumbCompareInputSchema = z.object({
+  baselinePath: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_REF_CHARACTERS)
+    .describe("Workspace-relative baseline .cru project ref"),
+  candidatePath: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_REF_CHARACTERS)
+    .describe("Workspace-relative candidate .cru project ref"),
+  expectedBaselineDigest: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_DIGEST_CHARACTERS)
+    .optional()
+    .describe("Optional sha256: digest previously recorded for the baseline"),
+  expectedCandidateDigest: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_DIGEST_CHARACTERS)
+    .optional()
+    .describe("Optional sha256: digest previously recorded for the candidate"),
+  compatibilityProfile: z
+    .literal(CRUMB_COMPATIBILITY_PROFILE)
+    .default(CRUMB_COMPATIBILITY_PROFILE),
+  view: z.enum(["summary", "root", "components"]).default("summary"),
+  cursor: z.string().min(1).max(MAX_CURSOR_CHARACTERS).optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+  includeGeometry: z.boolean().default(false),
+  topologyMode: z
+    .enum(["direct-only", "known-board-v1.3.5"])
+    .default("known-board-v1.3.5"),
 });
 const CrumbFixtureInputSchema = z.object({
   kind: z.enum(CRUMB_FIXTURE_KINDS),
@@ -414,14 +451,15 @@ function invalidArgument(
 function requireExpectedProjectDigest(
   expectedProjectDigest: string | undefined,
   actualProjectDigest: string,
+  argumentPath = "expectedProjectDigest",
 ): void {
   if (expectedProjectDigest === undefined) {
     return;
   }
   if (!/^sha256:[0-9a-f]{64}$/.test(expectedProjectDigest)) {
     throw invalidArgument(
-      "expectedProjectDigest must be a lowercase SHA-256 value prefixed with sha256:.",
-      "expectedProjectDigest",
+      `${argumentPath} must be a lowercase SHA-256 value prefixed with sha256:.`,
+      argumentPath,
       ["Copy context.projectDigest unchanged from a prior tool result."],
     );
   }
@@ -432,9 +470,9 @@ function requireExpectedProjectDigest(
       message:
         "The project bytes changed since the supplied digest was recorded.",
       retryable: false,
-      argumentPath: "expectedProjectDigest",
+      argumentPath,
       recovery: [
-        "Analyze the project again without expectedProjectDigest.",
+        `Analyze the project again without ${argumentPath}.`,
         "Review the changed digest before continuing the handoff.",
       ],
     });
@@ -637,7 +675,11 @@ function crumbArtifact(content: string | Buffer, ref?: string) {
 }
 
 type AnalysisView = "summary" | "components" | "connections";
-type PagedView = "components" | "connections" | "netlist";
+type PagedView =
+  | "components"
+  | "connections"
+  | "netlist"
+  | "comparison-components";
 
 interface PageCursor {
   version: 2;
@@ -815,6 +857,7 @@ const electronicsCapabilitiesTool = server.registerTool(
           rootRef: ".",
           pathStyle: "workspace-relative-posix",
           maxCruBytes: MAX_CRU_BYTES,
+          maxCruComparisonBytes: MAX_CRU_COMPARISON_BYTES,
           writesOverwriteExistingFiles: false,
         },
         portableExperiment: {
@@ -1294,6 +1337,321 @@ envelopeTools.set("crumb_analyze_design", {
   inputSchema: CrumbAnalyzeInputSchema,
   outputSchema: CrumbAnalysisOutputSchema,
   registeredTool: crumbAnalysisTool,
+  context: makeCrumbContext,
+});
+
+const CrumbComparisonOutputSchema = envelopeSchema(CrumbComparisonDataSchema);
+const crumbComparisonTool = server.registerTool(
+  "crumb_compare_designs",
+  {
+    title: "Compare CRUMB files under the Unity profile",
+    description:
+      "Read-only, GUID-matched comparison of a baseline and candidate .cru under crumb.unity/1.3.5. Distinguishes exact bytes, modeled equivalence, root changes, component changes, and unverified payload signatures without returning raw XML, firmware, EEPROM bytes, or thumbnails.",
+    inputSchema: CrumbCompareInputSchema,
+    outputSchema: CrumbComparisonOutputSchema,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({
+    baselinePath,
+    candidatePath,
+    expectedBaselineDigest,
+    expectedCandidateDigest,
+    compatibilityProfile,
+    view,
+    cursor,
+    limit,
+    includeGeometry,
+    topologyMode,
+  }) => {
+    let operationContext = makeCrumbContext();
+    try {
+      const readComparisonFile = async (
+        path: string,
+        argumentPath: "baselinePath" | "candidatePath",
+        maxBytes: number,
+      ) => {
+        try {
+          return await readCruFile(path, { maxBytes });
+        } catch (error) {
+          if (error instanceof CruFileTooLargeError) {
+            throw new ContractFailure({
+              code: "QUOTA_EXCEEDED",
+              category: "filesystem",
+              message:
+                `The baseline and candidate must fit the ` +
+                `${MAX_CRU_COMPARISON_BYTES}-byte combined comparison limit.`,
+              retryable: false,
+              argumentPath,
+              recovery: [
+                "Compare smaller .cru artifacts or reduce the size of the other comparison input.",
+              ],
+            });
+          }
+          const details = classifyError(error, "FORMAT_INVALID");
+          throw new ContractFailure({
+            ...details,
+            argumentPath:
+              details.argumentPath === undefined ||
+              details.argumentPath === "path"
+                ? argumentPath
+                : details.argumentPath,
+          });
+        }
+      };
+
+      // Read stable snapshots under one combined budget. The second read gets
+      // only the exact bytes left after the baseline, so oversized comparisons
+      // fail before both payloads are held in memory.
+      const baselineFile = await readComparisonFile(
+        baselinePath,
+        "baselinePath",
+        MAX_CRU_COMPARISON_BYTES,
+      );
+      const candidateFile = await readComparisonFile(
+        candidatePath,
+        "candidatePath",
+        MAX_CRU_COMPARISON_BYTES - baselineFile.bytes.byteLength,
+      );
+      const baselineRef = workspaceRef(baselineFile.path);
+      const candidateRef = workspaceRef(candidateFile.path);
+      const baselineProject = crumbArtifact(baselineFile.bytes, baselineRef);
+      const candidateProject = crumbArtifact(candidateFile.bytes, candidateRef);
+
+      // Publish and enforce both raw-byte identities before parsing either
+      // artifact. This keeps cross-model handoff guards stronger than format
+      // diagnostics, including for malformed or invalid UTF-8 saves.
+      operationContext = makeCrumbContext({
+        projectRef: baselineRef,
+        projectDigest: baselineProject.digest,
+      });
+      requireExpectedProjectDigest(
+        expectedBaselineDigest,
+        baselineProject.digest,
+        "expectedBaselineDigest",
+      );
+      operationContext = makeCrumbContext({
+        projectRef: candidateRef,
+        projectDigest: candidateProject.digest,
+      });
+      requireExpectedProjectDigest(
+        expectedCandidateDigest,
+        candidateProject.digest,
+        "expectedCandidateDigest",
+      );
+
+      const baselineValidation = validateCru(baselineFile.xml);
+      if (!baselineValidation.valid) {
+        operationContext = makeCrumbContext({
+          projectRef: baselineRef,
+          projectDigest: baselineProject.digest,
+        });
+        throw new ContractFailure({
+          code: "PROJECT_INVALID",
+          category: "project",
+          message:
+            "The baseline CRUMB save has structural errors and cannot be compared safely.",
+          retryable: false,
+          argumentPath: "baselinePath",
+          recovery: [
+            "Call crumb_validate_design for the baseline artifact.",
+            "Repair or restore the baseline before comparing it.",
+          ],
+        });
+      }
+      const candidateValidation = validateCru(candidateFile.xml);
+      if (!candidateValidation.valid) {
+        throw new ContractFailure({
+          code: "PROJECT_INVALID",
+          category: "project",
+          message:
+            "The candidate CRUMB save has structural errors and cannot be compared safely.",
+          retryable: false,
+          argumentPath: "candidatePath",
+          recovery: [
+            "Call crumb_validate_design for the candidate artifact.",
+            "Repair or restore the candidate before comparing it.",
+          ],
+        });
+      }
+
+      const effectiveIncludeGeometry =
+        view === "components" && includeGeometry;
+      const comparison = compareCru(baselineFile.xml, candidateFile.xml, {
+        includeGeometry: effectiveIncludeGeometry,
+        topologyMode,
+        baselineByteDigest: baselineProject.digest,
+        candidateByteDigest: candidateProject.digest,
+      });
+      const effectiveLimit = effectiveIncludeGeometry
+        ? Math.min(limit, 25)
+        : limit;
+      const optionsFingerprint = paginationOptionsFingerprint({
+        baselineDigest: baselineProject.digest,
+        candidateDigest: candidateProject.digest,
+        topologyMode,
+        includeGeometry: effectiveIncludeGeometry,
+      });
+      if (view !== "components" && cursor !== undefined) {
+        throw invalidArgument(
+          "Pagination cursors are only valid for the components comparison view.",
+          "cursor",
+          ["Remove cursor or select view=components."],
+        );
+      }
+      const offset =
+        view === "components"
+          ? decodeCursor(
+              cursor,
+              "comparison-components",
+              candidateProject.digest,
+              comparison.componentChanges.length,
+              optionsFingerprint,
+            )
+          : 0;
+      const responseDiagnostics: Diagnostic[] = [...comparison.diagnostics];
+      if (effectiveLimit !== limit) {
+        responseDiagnostics.push({
+          severity: "info",
+          code: "page-limit-reduced",
+          path: "limit",
+          message: "Component comparison pages with geometry are capped at 25 items.",
+        });
+      }
+
+      const baseData = {
+        comparisonVersion: comparison.comparisonVersion,
+        view,
+        compatibilityProfile,
+        topologyMode: comparison.topologyMode,
+        baseline: baselineProject,
+        candidate: candidateProject,
+        equivalence: comparison.equivalence,
+        profileAssessment: comparison.profileAssessment,
+        summary: comparison.summary,
+        schemaCandidates: comparison.schemaCandidates,
+        schemaCandidateBounds: comparison.schemaCandidateBounds,
+        disclosure: {
+          ...comparison.disclosure,
+          geometryIncluded: effectiveIncludeGeometry,
+        },
+        limitations: comparison.limitations,
+      };
+      let data: Record<string, unknown> = baseData;
+      let nextActions: NextAction[] = [];
+
+      if (view === "root") {
+        data = { ...baseData, root: comparison.root };
+        if (comparison.componentChanges.length > 0) {
+          nextActions = [
+            {
+              tool: "crumb_compare_designs",
+              reason: "Inspect the bounded component changes.",
+              arguments: {
+                baselinePath: baselineRef,
+                candidatePath: candidateRef,
+                expectedBaselineDigest: baselineProject.digest,
+                expectedCandidateDigest: candidateProject.digest,
+                view: "components",
+                limit: effectiveLimit,
+                includeGeometry,
+                topologyMode,
+              },
+            },
+          ];
+        }
+      } else if (view === "components") {
+        const paged = pageResult(
+          comparison.componentChanges,
+          offset,
+          effectiveLimit,
+          "comparison-components",
+          candidateProject.digest,
+          optionsFingerprint,
+        );
+        data = {
+          ...baseData,
+          page: paged.page,
+          componentChanges: paged.items,
+        };
+        nextActions =
+          paged.page.nextCursor === undefined
+            ? []
+            : [
+                {
+                  tool: "crumb_compare_designs",
+                  reason: "Continue the component comparison without overlap.",
+                  arguments: {
+                    baselinePath: baselineRef,
+                    candidatePath: candidateRef,
+                    expectedBaselineDigest: baselineProject.digest,
+                    expectedCandidateDigest: candidateProject.digest,
+                    view,
+                    cursor: paged.page.nextCursor,
+                    limit: effectiveLimit,
+                    includeGeometry,
+                    topologyMode,
+                  },
+                },
+              ];
+      } else {
+        if (comparison.summary.rootFieldChangeCount > 0) {
+          nextActions.push({
+            tool: "crumb_compare_designs",
+            reason: "Inspect the modeled root and metadata changes.",
+            arguments: {
+              baselinePath: baselineRef,
+              candidatePath: candidateRef,
+              expectedBaselineDigest: baselineProject.digest,
+              expectedCandidateDigest: candidateProject.digest,
+              view: "root",
+              topologyMode,
+            },
+          });
+        }
+        if (comparison.componentChanges.length > 0) {
+          nextActions.push({
+            tool: "crumb_compare_designs",
+            reason: "Inspect the bounded component changes.",
+            arguments: {
+              baselinePath: baselineRef,
+              candidatePath: candidateRef,
+              expectedBaselineDigest: baselineProject.digest,
+              expectedCandidateDigest: candidateProject.digest,
+              view: "components",
+              limit: effectiveLimit,
+              includeGeometry,
+              topologyMode,
+            },
+          });
+        }
+      }
+
+      return successResult({
+        summary:
+          comparison.equivalence.assessment === "exact"
+            ? "The baseline and candidate CRUMB saves are byte-identical."
+            : `Compared the .cru files under crumb.unity/1.3.5: ${comparison.equivalence.assessment}; ${comparison.componentChanges.length} component change${comparison.componentChanges.length === 1 ? "" : "s"} and ${comparison.summary.rootFieldChangeCount} root-field change${comparison.summary.rootFieldChangeCount === 1 ? "" : "s"}.`,
+        data,
+        diagnostics: responseDiagnostics,
+        context: operationContext,
+        nextActions,
+      });
+    } catch (error) {
+      return errorResult(error, {
+        fallback: "FORMAT_INVALID",
+        context: operationContext,
+      });
+    }
+  },
+);
+envelopeTools.set("crumb_compare_designs", {
+  inputSchema: CrumbCompareInputSchema,
+  outputSchema: CrumbComparisonOutputSchema,
+  registeredTool: crumbComparisonTool,
   context: makeCrumbContext,
 });
 

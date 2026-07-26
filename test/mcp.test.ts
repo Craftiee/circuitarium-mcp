@@ -12,6 +12,7 @@ import {
   serializeCru,
   type CruDocument,
 } from "../src/adapters/crumb/format.js";
+import { CrumbComparisonDataSchema } from "../src/domain/toolSchemas.js";
 
 interface Envelope {
   contractVersion: string;
@@ -32,6 +33,7 @@ const EXPECTED_TOOL_NAMES = [
   "electronics_validate_experiment",
   "crumb_component_catalog",
   "crumb_analyze_design",
+  "crumb_compare_designs",
   "crumb_inspect_design",
   "crumb_validate_design",
   "crumb_generate_fixture",
@@ -70,6 +72,8 @@ let generatedRef: string;
 let outsideDirectory: string;
 let outsidePath: string;
 let longNameRef: string;
+let comparisonBaselineRef: string;
+let comparisonCandidateRef: string;
 const privateNameTail = "PRIVATE_NAME_TAIL";
 
 before(async () => {
@@ -98,6 +102,26 @@ before(async () => {
     generateFixture("breadboard-led"),
     "utf8",
   );
+  comparisonBaselineRef = `${generatedRef}/comparison-baseline.cru`;
+  comparisonCandidateRef = `${generatedRef}/comparison-candidate.cru`;
+  const comparisonBaseline = generateFixture("breadboard-resistor");
+  const comparisonCandidate = comparisonBaseline.replace(
+    ">1000</anyType>",
+    ">2200</anyType>",
+  );
+  assert.notEqual(comparisonCandidate, comparisonBaseline);
+  await Promise.all([
+    writeFile(
+      join(generatedDirectory, "comparison-baseline.cru"),
+      comparisonBaseline,
+      "utf8",
+    ),
+    writeFile(
+      join(generatedDirectory, "comparison-candidate.cru"),
+      comparisonCandidate,
+      "utf8",
+    ),
+  ]);
   await client.connect(transport);
 });
 
@@ -152,6 +176,39 @@ test("tools/list exposes every envelope tool with input and output schemas", asy
   assert.equal(analyzeInputSchema.properties?.cursor?.maxLength, 2048);
   assert.equal(analyzeInputSchema.properties?.limit?.type, "integer");
   assert.equal(analyzeInputSchema.properties?.limit?.default, 50);
+
+  const compareInputSchema = listed.tools.find(
+    (tool) => tool.name === "crumb_compare_designs",
+  )?.inputSchema as {
+    properties?: Record<string, Record<string, unknown>>;
+    required?: string[];
+  };
+  assert.deepEqual(compareInputSchema.required, [
+    "baselinePath",
+    "candidatePath",
+  ]);
+  assert.equal(
+    compareInputSchema.properties?.baselinePath?.maxLength,
+    4096,
+  );
+  assert.equal(
+    compareInputSchema.properties?.candidatePath?.maxLength,
+    4096,
+  );
+  assert.equal(
+    compareInputSchema.properties?.expectedBaselineDigest?.maxLength,
+    71,
+  );
+  assert.equal(
+    compareInputSchema.properties?.expectedCandidateDigest?.maxLength,
+    71,
+  );
+  assert.equal(
+    compareInputSchema.properties?.compatibilityProfile?.default,
+    "crumb.unity/1.3.5",
+  );
+  assert.equal(compareInputSchema.properties?.view?.default, "summary");
+  assert.equal(compareInputSchema.properties?.limit?.default, 50);
 
   const fixtureInputSchema = listed.tools.find(
     (tool) => tool.name === "crumb_generate_fixture",
@@ -300,6 +357,11 @@ test("malformed arguments return typed INVALID_ARGUMENT envelopes", async () => 
       name: "crumb_analyze_design",
       arguments: {},
       argumentPath: "path",
+    },
+    {
+      name: "crumb_compare_designs",
+      arguments: {},
+      argumentPath: "baselinePath",
     },
     {
       name: "crumb_validate_design",
@@ -520,6 +582,426 @@ test("analysis summaries stay bounded and never leak untrusted names", async () 
   assert.ok(JSON.stringify(longNameResult).length < 25_000);
 });
 
+test("comparison reports bounded semantic changes with schema-safe pagination", async () => {
+  const comparisonSummaryResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: comparisonBaselineRef,
+      candidatePath: comparisonCandidateRef,
+      view: "summary",
+      includeGeometry: true,
+    },
+  });
+  assertCrumbCompatibilityContext(comparisonSummaryResult);
+  const comparisonSummaryEnvelope = envelopeOf(comparisonSummaryResult);
+  const comparisonSummary = dataOf(comparisonSummaryResult);
+  const comparisonBaseline = comparisonSummary.baseline as {
+    ref: string;
+    digest: string;
+  };
+  const comparisonCandidate = comparisonSummary.candidate as {
+    ref: string;
+    digest: string;
+  };
+  assert.equal(comparisonSummary.comparisonVersion, "crumb.compare/0.1");
+  assert.equal(comparisonSummary.view, "summary");
+  assert.equal(
+    comparisonSummary.compatibilityProfile,
+    "crumb.unity/1.3.5",
+  );
+  assert.equal(comparisonBaseline.ref, comparisonBaselineRef);
+  assert.equal(comparisonCandidate.ref, comparisonCandidateRef);
+  assert.match(comparisonBaseline.digest, /^sha256:[0-9a-f]{64}$/);
+  assert.match(comparisonCandidate.digest, /^sha256:[0-9a-f]{64}$/);
+  assert.notEqual(comparisonBaseline.digest, comparisonCandidate.digest);
+  assert.equal(
+    comparisonSummaryEnvelope.context.projectRef,
+    comparisonCandidateRef,
+  );
+  assert.equal(
+    comparisonSummaryEnvelope.context.projectDigest,
+    comparisonCandidate.digest,
+  );
+  assert.deepEqual(comparisonSummary.equivalence, {
+    byteEquivalent: false,
+    modeledContentEquivalent: false,
+    modeledRepresentationEquivalent: false,
+    coverage: "complete",
+    assessment: "changed",
+  });
+  assert.equal(
+    (comparisonSummary.summary as { modifiedComponentCount: number })
+      .modifiedComponentCount,
+    1,
+  );
+  assert.equal("root" in comparisonSummary, false);
+  assert.equal("componentChanges" in comparisonSummary, false);
+  assert.equal("page" in comparisonSummary, false);
+  assert.equal(
+    (comparisonSummary.disclosure as { geometryIncluded: boolean })
+      .geometryIncluded,
+    false,
+  );
+  assert.equal(
+    JSON.stringify(comparisonSummaryResult).includes(process.cwd()),
+    false,
+  );
+  assert.ok(
+    comparisonSummaryEnvelope.nextActions.some(
+      (action) =>
+        action.tool === "crumb_compare_designs" &&
+        action.arguments.view === "components",
+    ),
+  );
+
+  const comparisonRootResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: "fixtures/crumb/breadboard-resistor.cru",
+      candidatePath: "fixtures/crumb/breadboard-led.cru",
+      view: "root",
+      includeGeometry: true,
+    },
+  });
+  const comparisonRoot = dataOf(comparisonRootResult);
+  assert.equal(comparisonRoot.view, "root");
+  assert.deepEqual(
+    (comparisonRoot.root as { changedFields: string[] }).changedFields,
+    ["name"],
+  );
+  assert.equal("componentChanges" in comparisonRoot, false);
+  assert.equal(
+    (comparisonRoot.disclosure as { geometryIncluded: boolean })
+      .geometryIncluded,
+    false,
+  );
+
+  const comparisonComponentsResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: comparisonBaselineRef,
+      candidatePath: comparisonCandidateRef,
+      expectedBaselineDigest: comparisonBaseline.digest,
+      expectedCandidateDigest: comparisonCandidate.digest,
+      view: "components",
+      limit: 1,
+    },
+  });
+  const comparisonComponents = dataOf(comparisonComponentsResult);
+  const comparisonChanges = comparisonComponents.componentChanges as Array<{
+    changedFields: string[];
+    baseline?: { parameters: Record<string, { value: unknown }> };
+    candidate?: { parameters: Record<string, { value: unknown }> };
+  }>;
+  assert.equal(comparisonChanges.length, 1);
+  assert.deepEqual(comparisonChanges[0]?.changedFields, ["parameters"]);
+  assert.equal(
+    comparisonChanges[0]?.baseline?.parameters.resistance?.value,
+    1000,
+  );
+  assert.equal(
+    comparisonChanges[0]?.candidate?.parameters.resistance?.value,
+    2200,
+  );
+  assert.deepEqual(comparisonComponents.page, {
+    returned: 1,
+    total: 1,
+    limit: 1,
+  });
+  assert.deepEqual(comparisonComponents.disclosure, {
+    rawXmlIncluded: false,
+    sourceCodeIncluded: false,
+    embeddedBinaryIncluded: false,
+    thumbnailIncluded: false,
+    opaquePayloadContentIncluded: false,
+    userTextMode: "untrusted-bounded-preview-and-digest",
+    geometryIncluded: false,
+  });
+  assert.equal(
+    CrumbComparisonDataSchema.safeParse(comparisonComponents).success,
+    true,
+  );
+  assert.equal(
+    CrumbComparisonDataSchema.safeParse({
+      ...comparisonComponents,
+      rawXml: "SENSITIVE_RAW_XML",
+    }).success,
+    false,
+  );
+  const leakedComponent = structuredClone(comparisonComponents) as {
+    componentChanges: Array<{
+      candidate: Record<string, unknown>;
+    }>;
+  };
+  const leakedCandidate = leakedComponent.componentChanges[0]?.candidate;
+  assert.ok(leakedCandidate);
+  leakedCandidate.rawXml = "SENSITIVE_RAW_XML";
+  assert.equal(
+    CrumbComparisonDataSchema.safeParse(leakedComponent).success,
+    false,
+  );
+  const leakedSource = structuredClone(comparisonComponents) as {
+    componentChanges: Array<{
+      candidate: Record<string, unknown>;
+    }>;
+  };
+  const sourceCandidate = leakedSource.componentChanges[0]?.candidate;
+  assert.ok(sourceCandidate);
+  sourceCandidate.sourceCode = {
+    present: true,
+    characters: 17,
+    bytes: 17,
+    lines: 1,
+    sha256: `sha256:${"0".repeat(64)}`,
+    languageHint: "c-cpp-or-arduino",
+    included: false,
+    returnedCharacters: 0,
+    contentTruncated: false,
+    secondaryStringLength: 0,
+    content: "SENSITIVE_SOURCE",
+  };
+  assert.equal(
+    CrumbComparisonDataSchema.safeParse(leakedSource).success,
+    false,
+  );
+  const oversizedAnnotation = structuredClone(comparisonComponents) as {
+    componentChanges: Array<{
+      candidate: Record<string, unknown>;
+    }>;
+  };
+  const annotationCandidate =
+    oversizedAnnotation.componentChanges[0]?.candidate;
+  assert.ok(annotationCandidate);
+  annotationCandidate.annotation = {
+    present: true,
+    characters: 161,
+    bytes: 161,
+    sha256: `sha256:${"0".repeat(64)}`,
+    trust: "untrusted-user-authored",
+    preview: "A".repeat(161),
+    previewCharacters: 161,
+    previewTruncated: false,
+    contentIncluded: false,
+  };
+  assert.equal(
+    CrumbComparisonDataSchema.safeParse(oversizedAnnotation).success,
+    false,
+  );
+
+  const pagedComparisonResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: "fixtures/crumb/breadboard-resistor.cru",
+      candidatePath: "fixtures/crumb/breadboard-led.cru",
+      view: "components",
+      limit: 1,
+    },
+  });
+  const pagedComparison = dataOf(pagedComparisonResult);
+  const pagedComparisonInfo = pagedComparison.page as {
+    returned: number;
+    total: number;
+    nextCursor?: string;
+  };
+  assert.equal(pagedComparisonInfo.returned, 1);
+  assert.equal(pagedComparisonInfo.total, 4);
+  assert.ok(pagedComparisonInfo.nextCursor);
+
+  const continuedComparisonResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: "fixtures/crumb/breadboard-resistor.cru",
+      candidatePath: "fixtures/crumb/breadboard-led.cru",
+      view: "components",
+      limit: 1,
+      cursor: pagedComparisonInfo.nextCursor,
+    },
+  });
+  assert.equal(
+    (dataOf(continuedComparisonResult).page as { returned: number }).returned,
+    1,
+  );
+
+  const changedComparisonCursorResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: "fixtures/crumb/breadboard-resistor.cru",
+      candidatePath: "fixtures/crumb/breadboard.cru",
+      view: "components",
+      limit: 1,
+      cursor: pagedComparisonInfo.nextCursor,
+    },
+  });
+  const changedComparisonCursorEnvelope = envelopeOf(
+    changedComparisonCursorResult,
+  );
+  assert.equal(changedComparisonCursorResult.isError, true);
+  assert.equal(
+    changedComparisonCursorEnvelope.error?.code,
+    "INVALID_ARGUMENT",
+  );
+  assert.equal(
+    changedComparisonCursorEnvelope.error?.argumentPath,
+    "cursor",
+  );
+});
+
+test("comparison guards identities and maps failures to the correct side", async () => {
+  const staleComparisonResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: comparisonBaselineRef,
+      candidatePath: comparisonCandidateRef,
+      expectedBaselineDigest: `sha256:${"0".repeat(64)}`,
+    },
+  });
+  const staleComparisonEnvelope = envelopeOf(staleComparisonResult);
+  assert.equal(staleComparisonResult.isError, true);
+  assert.equal(staleComparisonEnvelope.error?.code, "PROJECT_STATE_CONFLICT");
+  assert.equal(
+    staleComparisonEnvelope.error?.argumentPath,
+    "expectedBaselineDigest",
+  );
+  assert.equal(
+    staleComparisonEnvelope.context.projectRef,
+    comparisonBaselineRef,
+  );
+  assert.ok(
+    (staleComparisonEnvelope.error?.recovery as string[]).some(
+      (entry) => entry.includes("without expectedBaselineDigest"),
+    ),
+  );
+
+  const invalidComparisonCursorResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: comparisonBaselineRef,
+      candidatePath: comparisonCandidateRef,
+      view: "components",
+      cursor: "not-a-comparison-cursor",
+    },
+  });
+  const invalidComparisonCursorEnvelope = envelopeOf(
+    invalidComparisonCursorResult,
+  );
+  assert.equal(invalidComparisonCursorResult.isError, true);
+  assert.equal(
+    invalidComparisonCursorEnvelope.error?.code,
+    "INVALID_ARGUMENT",
+  );
+  assert.equal(
+    invalidComparisonCursorEnvelope.error?.argumentPath,
+    "cursor",
+  );
+
+  const wrongComparisonProfileResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: comparisonBaselineRef,
+      candidatePath: comparisonCandidateRef,
+      compatibilityProfile: "crumb.godot/unverified",
+    },
+  });
+  const wrongComparisonProfileEnvelope = envelopeOf(
+    wrongComparisonProfileResult,
+  );
+  assert.equal(wrongComparisonProfileResult.isError, true);
+  assert.equal(
+    wrongComparisonProfileEnvelope.error?.code,
+    "INVALID_ARGUMENT",
+  );
+  assert.equal(
+    wrongComparisonProfileEnvelope.error?.argumentPath,
+    "compatibilityProfile",
+  );
+
+  const outsideComparisonResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: comparisonBaselineRef,
+      candidatePath: outsidePath,
+    },
+  });
+  const outsideComparisonEnvelope = envelopeOf(outsideComparisonResult);
+  assert.equal(outsideComparisonResult.isError, true);
+  assert.equal(outsideComparisonEnvelope.error?.code, "PATH_DENIED");
+  assert.equal(
+    outsideComparisonEnvelope.error?.argumentPath,
+    "candidatePath",
+  );
+  assert.equal(
+    JSON.stringify(outsideComparisonResult).includes(outsideDirectory),
+    false,
+  );
+
+  const unsupportedBaselineResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: "fixtures/crumb/breadboard.txt",
+      candidatePath: comparisonCandidateRef,
+    },
+  });
+  const unsupportedBaselineEnvelope = envelopeOf(
+    unsupportedBaselineResult,
+  );
+  assert.equal(unsupportedBaselineResult.isError, true);
+  assert.equal(
+    unsupportedBaselineEnvelope.error?.code,
+    "UNSUPPORTED_FORMAT",
+  );
+  assert.equal(
+    unsupportedBaselineEnvelope.error?.argumentPath,
+    "baselinePath",
+  );
+
+  const missingCandidateResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: comparisonBaselineRef,
+      candidatePath: `${generatedRef}/missing.cru`,
+    },
+  });
+  const missingCandidateEnvelope = envelopeOf(missingCandidateResult);
+  assert.equal(missingCandidateResult.isError, true);
+  assert.equal(missingCandidateEnvelope.error?.code, "NOT_FOUND");
+  assert.equal(
+    missingCandidateEnvelope.error?.argumentPath,
+    "candidatePath",
+  );
+
+  const budgetBaselineRef = `${generatedRef}/budget-baseline.cru`;
+  const budgetCandidateRef = `${generatedRef}/budget-candidate.cru`;
+  await Promise.all([
+    writeFile(
+      join(generatedDirectory, "budget-baseline.cru"),
+      Buffer.alloc(3 * 1024 * 1024, 0x20),
+    ),
+    writeFile(
+      join(generatedDirectory, "budget-candidate.cru"),
+      Buffer.alloc(3 * 1024 * 1024, 0x20),
+    ),
+  ]);
+  const overBudgetResult = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: budgetBaselineRef,
+      candidatePath: budgetCandidateRef,
+    },
+  });
+  const overBudgetEnvelope = envelopeOf(overBudgetResult);
+  assert.equal(overBudgetResult.isError, true);
+  assert.equal(overBudgetEnvelope.error?.code, "QUOTA_EXCEEDED");
+  assert.equal(
+    overBudgetEnvelope.error?.argumentPath,
+    "candidatePath",
+  );
+  assert.match(
+    String(overBudgetEnvelope.error?.message),
+    /combined comparison limit/,
+  );
+  assert.ok(JSON.stringify(overBudgetResult).length < 10_000);
+});
+
 test("pagination cursors and digest guards protect continued reads", async () => {
   const summaryResult = await client.callTool({
     name: "crumb_analyze_design",
@@ -691,6 +1173,25 @@ test("digests identify raw bytes and stale guards run before parsing", async () 
       `${guarded.name} must check the digest before parsing malformed XML`,
     );
   }
+
+  const guardedComparison = await client.callTool({
+    name: "crumb_compare_designs",
+    arguments: {
+      baselinePath: malformedRef,
+      candidatePath: comparisonCandidateRef,
+      expectedBaselineDigest: staleDigest,
+    },
+  });
+  const guardedComparisonEnvelope = envelopeOf(guardedComparison);
+  assert.equal(
+    guardedComparisonEnvelope.error?.code,
+    "PROJECT_STATE_CONFLICT",
+    "comparison must check the raw baseline digest before parsing malformed XML",
+  );
+  assert.equal(
+    guardedComparisonEnvelope.error?.argumentPath,
+    "expectedBaselineDigest",
+  );
 });
 
 test("validation reports invalid designs as data, and analysis refuses them", async () => {

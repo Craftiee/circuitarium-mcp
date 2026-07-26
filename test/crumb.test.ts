@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { CRUMB_FIXTURE_KINDS, generateFixture } from "../src/adapters/crumb/fixtures.js";
 import {
+  decodeCru,
   inspectCru,
   serializeCru,
   validateCru,
@@ -70,6 +71,55 @@ test("generated component payloads use the observed CRUMB positional types", () 
   ]);
 });
 
+test("GUID namespace aliases and inherited bindings follow XML namespace scope", () => {
+  const baseline = generateFixture("breadboard");
+  const aliased = baseline
+    .replaceAll("xmlns:q1=", "xmlns:q2=")
+    .replaceAll("q1:guid", "q2:guid");
+  assert.equal(validateCru(aliased).valid, true);
+
+  const inherited = baseline
+    .replaceAll(
+      ' xmlns:q1="http://microsoft.com/wsdl/types/"',
+      "",
+    )
+    .replace(
+      'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+      'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:q1="http://microsoft.com/wsdl/types/"',
+    );
+  assert.equal(validateCru(inherited).valid, true);
+});
+
+test("incorrect namespace bindings cannot masquerade as CRUMB typed values", () => {
+  const baseline = generateFixture("breadboard-resistor");
+  const wrongGuid = baseline.replaceAll(
+    "http://microsoft.com/wsdl/types/",
+    "urn:not-guid",
+  );
+  const wrongXsi = baseline.replace(
+    "http://www.w3.org/2001/XMLSchema-instance",
+    "urn:not-xsi",
+  );
+  const defaultNamespace = baseline.replace(
+    "<SaveData ",
+    '<SaveData xmlns="urn:not-crumb" ',
+  );
+
+  for (const candidate of [wrongGuid, wrongXsi]) {
+    const result = validateCru(candidate);
+    assert.equal(result.valid, false);
+    assert.equal(result.inspection, undefined);
+    assert.equal(result.diagnostics[0]?.code, "invalid-xml-or-root");
+    assert.match(result.diagnostics[0]?.message ?? "", /namespace|unbound/i);
+  }
+  const defaultResult = validateCru(defaultNamespace);
+  assert.equal(defaultResult.valid, false);
+  assert.equal(
+    defaultResult.diagnostics[0]?.code,
+    "invalid-xml-or-root",
+  );
+});
+
 test("unknown tie-point parent GUIDs are rejected", () => {
   const xml = generateFixture("breadboard-led").replace(
     "7f889f69-8140-493a-b1ef-6a519d869b1a</parentIdentifier>",
@@ -117,6 +167,7 @@ test("malformed known typed payloads fail atomically", () => {
       "<x>not-a-number</x>",
     ),
     led.replace("<id>456</id>", "<id>not-a-number</id>"),
+    resistor.replace("<id>581</id>", "<id>-1</id>"),
     resistor.replace(">1000</anyType>", ">not-a-number</anyType>"),
     resistor.replace(">1000</anyType>", ">0x10</anyType>"),
     resistor.replace(">1000</anyType>", ">0b10</anyType>"),
@@ -126,6 +177,7 @@ test("malformed known typed payloads fail atomically", () => {
       '<anyType xsi:type="xsd:int">1e2</anyType>',
     ),
     breadboard.replace("<x>0</x>", "<x>1E+100</x>"),
+    breadboard.replace("<x>0</x>", "<x>1e-50</x>"),
     breadboard.replace(
       "      </data>",
       '        <anyType xsi:type="ArrayOfBoolean"><boolean>true</boolean><boolean>not-a-boolean</boolean></anyType>\n      </data>',
@@ -141,6 +193,8 @@ test("malformed known typed payloads fail atomically", () => {
   ];
 
   for (const xml of cases) {
+    assert.throws(() => decodeCru(xml));
+    assert.throws(() => inspectCru(xml));
     const result = validateCru(xml);
     assert.equal(result.valid, false, xml.slice(0, 200));
     assert.equal(result.inspection, undefined);
@@ -198,6 +252,8 @@ test("namespace rebinding cannot disguise known xsi and xsd payloads", () => {
   ];
 
   for (const xml of cases) {
+    assert.throws(() => decodeCru(xml));
+    assert.throws(() => inspectCru(xml));
     const result = validateCru(xml);
     assert.equal(result.valid, false);
     assert.equal(result.inspection, undefined);
@@ -223,6 +279,8 @@ test("duplicate singleton containers cannot hide CRUMB content", () => {
     ),
   ];
   for (const xml of cases) {
+    assert.throws(() => decodeCru(xml));
+    assert.throws(() => inspectCru(xml));
     const result = validateCru(xml);
     assert.equal(result.valid, false);
     assert.equal(result.inspection, undefined);
@@ -262,6 +320,15 @@ test("serializer rejects runtime scalar values that contradict their xsi type", 
   assert.throws(
     () => serializeCru(document),
     /xsd:int settings require a numeric value/,
+  );
+  assert.throws(
+    () =>
+      serializeCru({
+        name: "Float32 Underflow",
+        components: [],
+        pivotPosition: { x: 1e-50, y: 0, z: 0 },
+      }),
+    /structurally invalid|spatial/i,
   );
 });
 

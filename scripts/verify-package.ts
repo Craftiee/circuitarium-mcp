@@ -476,8 +476,8 @@ try {
       ],
       consumerDirectory,
     ),
-    "13",
-    "installed package import must expose 13 tools without starting stdio",
+    "14",
+    "installed package import must expose 14 tools without starting stdio",
   );
   await assertMarkdownLinksResolve(installedRoot);
   runNpm(["ls", "--omit=dev", "--all"], consumerDirectory);

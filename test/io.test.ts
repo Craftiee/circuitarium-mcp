@@ -51,6 +51,40 @@ test("ELECTRONICS_MCP_ROOT remains a backward-compatible fallback", () => {
   );
 });
 
+test("file snapshots preserve a UTF-8 BOM and reject malformed UTF-8", async () => {
+  const directory = await mkdtemp(
+    join(CIRCUITARIUM_MCP_ROOT, ".circuitarium-utf8-test-"),
+  );
+  const plainPath = join(directory, "plain.cru");
+  const bomPath = join(directory, "bom.cru");
+  const invalidPath = join(directory, "invalid.cru");
+  const xml = '<?xml version="1.0" encoding="utf-8"?><SaveData />';
+  try {
+    await writeFile(plainPath, Buffer.from(xml, "utf8"));
+    await writeFile(
+      bomPath,
+      Buffer.concat([
+        Buffer.from([0xef, 0xbb, 0xbf]),
+        Buffer.from(xml, "utf8"),
+      ]),
+    );
+    await writeFile(invalidPath, Buffer.from([0xc3, 0x28]));
+
+    const plain = await readCruFile(plainPath);
+    const bom = await readCruFile(bomPath);
+    assert.equal(bom.xml.charCodeAt(0), 0xfeff);
+    assert.equal(bom.bytes.byteLength, plain.bytes.byteLength + 3);
+    assert.notDeepEqual(bom.bytes, plain.bytes);
+    const invalid = await readCruFile(invalidPath);
+    assert.throws(
+      () => invalid.xml,
+      /valid UTF-8 text/,
+    );
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+
 test("workspace listing respects recursion and skips ignored directories", async () => {
   const directory = await mkdtemp(
     join(CIRCUITARIUM_MCP_ROOT, ".circuitarium-walker-test-"),

@@ -53,6 +53,7 @@ one observed target:
 | Compatibility profile | `crumb.unity/1.3.5` |
 | MCP contract | `electronics.mcp/0.2` |
 | Component catalog | `crumb.catalog/0.2` |
+| Comparison contract | `crumb.compare/0.1` |
 
 These identifiers describe the tested installation. They do not imply support
 for every distribution of CRUMB 1.3.5, and they do not establish compatibility
@@ -97,6 +98,35 @@ payloads, resistor and LED field layouts/defaults, and the generated fixtures.
 The hidden breadboard and rail connectivity rules are an inference from
 repeated controlled attachments; those rules remain separately labeled and
 version-pinned.
+
+`crumb_compare_designs` helps record the difference between a controlled
+baseline and candidate while returning only bounded modeled data and artifact
+digests. A comparison result is evidence about those two exact files; it does
+not automatically promote a schema candidate, establish write support, or
+prove which application build authored either file.
+
+#### Sanitized Unity comparison acceptance
+
+On 2026-07-25, four minimal saves created in the tested CRUMB 1.3.5 / Steam
+build `17183476` installation were rechecked with `crumb.compare/0.1`. The
+files and their thumbnails are not redistributed. These exact-byte identities
+make the local acceptance run independently auditable without retaining a
+personal path:
+
+| Controlled state | Bytes | SHA-256 |
+|---|---:|---|
+| Blank | 272,534 | `16b7fb562a4a7704c7e666fb3207b8f9e9f2518f3f34ed3c6434fdd5b2152174` |
+| Breadboard | 336,719 | `271f5f4703e9436a4b5eafd23f5bda62919ee1757156a90b947f418bc1844cc3` |
+| Breadboard + resistor | 338,430 | `7f7693254026565ddd0f415ba68006476f6671b4878b2b57b6a48084322b8de9` |
+| Breadboard + resistor + LED | 340,300 | `1849b84897419f06b46fd792b8dbc5f409f4b4c8f5cda5b74a8db2edbb65a63b` |
+
+All three adjacent transitions returned `coverage: complete`,
+`assessment: changed`, one added component, and no removals or modified
+components. The unchanged-component counts were `0`, `1`, and `2`; inferred
+connection-group counts progressed `0 -> 0`, `0 -> 2`, and `2 -> 4`.
+Root-field changes were limited to the independently saved name/thumbnail
+identity. This acceptance confirms comparison behavior for these artifacts,
+not circuit simulation or automatic origin detection.
 
 ### Installed-build inspection
 

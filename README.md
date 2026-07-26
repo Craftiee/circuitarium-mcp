@@ -5,8 +5,9 @@
 
 Give Claude, ChatGPT/Codex, or a local MCP-capable model a safe, typed
 electronics workbench instead of asking it to guess at opaque circuit files.
-Circuitarium MCP currently provides 13 bounded tools for Unity-era CRUMB
-`.cru` saves, including netlist export and evidence-scoped electrical checks.
+Circuitarium MCP currently provides 14 bounded tools for Unity-era CRUMB
+`.cru` saves, including controlled-save comparison, netlist export, and
+evidence-scoped electrical checks.
 Project analysis is read-only; the sole file-writing tool emits only one of
 five fixed synthetic fixtures. The longer-term neutral layer is designed to
 support additional simulators without making CRUMB the universal data model.
@@ -35,8 +36,8 @@ claimed.
 experimental, model-neutral electronics tool server with
 application-specific integrations. Its first integration family is
 **CRUMBLE** — **C**ircuit **R**epresentation & **U**niversal **M**odel
-**B**ridge for **L**aboratory **E**lectronics. CRUMBLE reads and validates
-CRUMB `.cru` save files, recognizes a version-pinned subset of CRUMB
+**B**ridge for **L**aboratory **E**lectronics. CRUMBLE reads, validates, and
+compares CRUMB `.cru` save files, recognizes a version-pinned subset of CRUMB
 components, and generates a small set of independently authored synthetic
 fixtures. A separately licensed installation of CRUMB is needed only when a
 user chooses to test those files in the game; CRUMB itself is not included.
@@ -91,6 +92,15 @@ for the evidence categories used by the project.
   behavior.
 - Infer attachment groups using either explicit connections only or the
   version-pinned CRUMB 1.3.5 breadboard topology.
+- Compare a controlled baseline and candidate `.cru` under the explicitly
+  selected Unity compatibility profile without writing either file. The
+  comparison distinguishes byte identity, modeled equivalence,
+  parameter-value changes, lexical-only rewrites, attachments, geometry, and
+  unverified payload signatures while binding pagination to both digests.
+  Unknown XML fields, attributes, mixed content, namespace bindings used by
+  content, or subtrees force partial, inconclusive coverage and are represented
+  only by content-safe fingerprints. Unused, well-formed namespace
+  declarations are representation-neutral.
 - Export jumper-collapsed electrical nets with `VCC`/`GND` names on
   unambiguous DC-supply rails, leave mixed positive/ground supply roles
   explicitly unnamed, apply optional saved-switch-state merges with bounded
@@ -116,7 +126,8 @@ for the evidence categories used by the project.
 - Treat the save name as untrusted too: return only a 160-character preview
   with size, digest, and truncation metadata. Nested component and connection
   collections carry explicit `total`, `returned`, `limit`, and `truncated`
-  fields instead of growing without bound.
+  fields instead of growing without bound. Unknown payload observations return
+  at most 64 child-key names in aggregate for one component.
 - Validate a simulator-neutral circuit experiment.
 - Generate five synthetic CRUMB save fixtures:
   - blank workspace
@@ -187,6 +198,7 @@ Useful CLI commands:
 npm run cli -- list
 npm run cli -- inspect fixtures/crumb/breadboard.cru
 npm run cli -- analyze fixtures/crumb/breadboard-resistor.cru components 50
+npm run cli -- compare baseline.cru candidate.cru components 50
 npm run cli -- netlist fixtures/crumb/breadboard-led.cru
 npm run cli -- check fixtures/crumb/breadboard-led.cru
 npm run cli -- bom fixtures/crumb/breadboard-led.cru
@@ -220,6 +232,7 @@ For a concise model-host footing, use the
 | `crumb_ic_reference` | Answer IC pinout questions ("74HC138") from the version-pinned prefab registry | None |
 | `crumb_list_projects` | Discover workspace `.cru` files with sizes, timestamps, and digests | Reads listed files |
 | `crumb_analyze_design` | Return bounded semantic summaries, component pages, or inferred connection pages | Reads one file |
+| `crumb_compare_designs` | Compare two `.cru` files under `crumb.unity/1.3.5` with digest-guarded, bounded root and component changes | Reads two files |
 | `crumb_get_component` | Fetch one component with parameters, terminals, connection groups, and windowed firmware source | Reads one file |
 | `crumb_export_netlist` | Promote connection groups to electrical nets with jumper collapse, unambiguous supply naming, and optional switch-state merges | Reads one file |
 | `crumb_check_design` | Run static electrical rule checks (supply shorts, LED series resistance, floating pins, power ratings) | Reads one file |
@@ -232,12 +245,20 @@ All tools have input and output schemas. Successful tool execution and valid
 domain data are separate states: a validator can return `ok: true` with
 `data.valid: false`. See [the v0.2 tool contract](docs/contract.md).
 
-File tools reject non-`.cru` paths, files over 64 MiB, paths outside the root
-selected by `CIRCUITARIUM_MCP_ROOT` (or the legacy fallback), and overwrite
-attempts. Artifact references in results are workspace-relative rather than
-leaked absolute paths. Artifact metadata uses `adapterTestedCompatibility` to
-describe the adapter evidence; it does not claim that an arbitrary input file
-was created or tested in that CRUMB build.
+File tools reject non-`.cru` paths, malformed UTF-8, byte snapshots over
+64 MiB, paths outside the root selected by `CIRCUITARIUM_MCP_ROOT` (or the
+legacy fallback), and overwrite attempts. Semantic XML decoding has a separate
+3,145,728-character document bound, and a comparison pair is additionally
+capped at 5 MiB combined. SHA-256 artifact identities cover the exact file
+bytes, including an optional UTF-8 BOM. Artifact references in results are
+workspace-relative rather than leaked absolute paths. Artifact metadata uses
+`adapterTestedCompatibility` to describe the adapter evidence; it does not
+claim that an arbitrary input file was created or tested in that CRUMB build.
+
+The Unity decoder accepts XML 1.0 represented as UTF-8, enforces namespace
+well-formedness and strict typed scalar forms, and caps each parsed XML text
+node at 1 MiB. See the [format notes](docs/crumb-format.md) for the exact
+declaration, numeric, base64, namespace, and structural-limit rules.
 
 The file backend runs locally, but its capability reports
 `dataLeavesMachine: "depends"` because a cloud-backed MCP client or model host
@@ -271,6 +292,8 @@ See the [cross-model handoff example](examples/cross-model/handoff.md).
   bounded file I/O
 - `src/adapters/crumb/compatibility.ts` — the exact Unity-era interpretation
   profile and tested-build metadata
+- `src/adapters/crumb/compare.ts` — digest-guarded controlled-save comparison
+  with bounded, content-safe change reports
 - `src/adapters/crumb/icCatalog.ts` — CRUMB 1.3.5 tool-5 prefab and ordered-pin
   evidence
 - `src/server.ts` — local stdio MCP server
@@ -282,6 +305,8 @@ See the [cross-model handoff example](examples/cross-model/handoff.md).
 - `docs/crumb-format.md` — observed, version-pinned CRUMB schema notes
 - `docs/wokwi-audit.md` — official Wokwi CLI/MCP audit
 - `docs/architecture.md` — current boundary and scalable simulator roadmap
+- `docs/unity-adapter-plan.md` — Unity-first comparison, editing, and writer
+  acceptance gates
 - `docs/client-setup.md` — ChatGPT/Codex, Claude, API, and local-model routes
 - `docs/release-checklist.md` — local and GitHub publication gates
 - `ROADMAP.md` — adapter, portable project, simulation, and live-bridge stages

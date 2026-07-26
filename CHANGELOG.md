@@ -15,6 +15,13 @@ remains experimental.
   `crumb_check_design` (static electrical rule checks with evidence-tagged
   findings), `crumb_bom` (bill of materials by decoded part identity), and
   `crumb_ic_reference` (IC pinout lookup by prefab id or label query).
+- A fourteenth tool, `crumb_compare_designs`, performs digest-guarded,
+  read-only comparison of controlled baseline and candidate `.cru` files under
+  `crumb.unity/1.3.5`. It reports bounded root/component changes, distinguishes
+  byte identity from modeled equivalence, retains opaque-change evidence
+  without disclosing payloads, and never writes either input.
+- A Unity-first adapter plan with comparison, lossless-editing, and
+  component-writer acceptance gates.
 - New `review-crumb-design` and `identify-ic-pinout` capability workflows and a
   `net` vocabulary entry.
 - Semantic-analysis diagnostics for duplicate component ids and for
@@ -23,8 +30,8 @@ remains experimental.
 - Experiment validation now rejects one pin appearing on two nets
   (`endpoint-net-conflict`) and warns when a probe targets an endpoint on no
   net (`probe-endpoint-unconnected`).
-- A documented error-code table (including the 64 MiB `QUOTA_EXCEEDED`
-  mapping) in the contract.
+- A documented error-code table (including fixed file, comparison, and parser
+  budgets mapped to `QUOTA_EXCEEDED`) in the contract.
 - Adversarial-review hardening: project digests hash the raw file bytes (not
   the decoded text), electrical rules and net naming consult a full
   pre-truncation terminal index so oversized nets cannot hide shorts, ERC
@@ -126,6 +133,17 @@ remains experimental.
   repository CI.
 - Release packaging builds and prepares bundled runtime metadata only inside
   per-run isolated staging and tarball workspaces.
+- Unity parsing now enforces valid UTF-8 and XML 1.0 declarations, namespace
+  well-formedness, finite decimal and signed-int32 lexical forms, exact boolean
+  spellings, float32 modeling where Unity serializes single-precision values,
+  and canonical thumbnail base64.
+- Stable CRUMB byte reads are capped at 64 MiB, semantic XML documents at
+  3,145,728 characters, and comparison pairs at 5 MiB combined, with a 1 MiB
+  parsed-text-node cap, a 100,000-markup-delimiter cap, and a 64-key aggregate
+  budget for unknown payload observations per component.
+- Partial-node comparison retains conservative `opaque-payload`
+  classification alongside narrower modeled changes; unused, well-formed
+  namespace declarations remain representation-neutral.
 
 ## [0.2.0] - 2026-07-25
 
