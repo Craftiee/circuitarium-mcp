@@ -56,10 +56,8 @@ gitleaks git .
 - [x] Enable secret scanning and push protection when available.
 - [x] Enable TypeScript CodeQL scanning.
 - [x] Enable private vulnerability reporting.
-- [ ] **Release blocker:** configure a dedicated, monitored private
-      code-of-conduct reporting contact and replace the temporary notice in
-      `CODE_OF_CONDUCT.md`. Do not publish a placeholder or personal address
-      that will not be monitored.
+- [x] Configure a monitored private code-of-conduct reporting contact and
+      replace the temporary notice in `CODE_OF_CONDUCT.md`.
 - [x] Enable Discussions if the project will use them for support and design
       proposals.
 - [x] Add repository topics without implying unsupported Godot or live-simulator
