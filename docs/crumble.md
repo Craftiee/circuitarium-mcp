@@ -20,8 +20,9 @@ The callable `crumb.file` backend can:
 - recognize the version-pinned component signatures documented in
   [the format notes](crumb-format.md);
 - infer optional, version-pinned breadboard connectivity;
-- export jumper-collapsed electrical nets with supply-derived `VCC`/`GND`
-  names and optional saved-switch-state merges (`crumb_export_netlist`);
+- export jumper-collapsed electrical nets with unambiguous supply-derived
+  `VCC`/`GND` names, explicitly unnamed mixed-role supply nets, and optional
+  saved-switch-state merges (`crumb_export_netlist`);
 - run static electrical rule checks with evidence-tagged findings
   (`crumb_check_design`);
 - group components into a bill of materials by decoded part identity

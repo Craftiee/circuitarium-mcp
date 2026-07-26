@@ -3,7 +3,17 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { CRUMB_FIXTURE_KINDS, generateFixture } from "../src/adapters/crumb/fixtures.js";
-import { inspectCru, validateCru } from "../src/adapters/crumb/format.js";
+import {
+  inspectCru,
+  serializeCru,
+  validateCru,
+  type CruDocument,
+} from "../src/adapters/crumb/format.js";
+import {
+  MAX_CRU_COMPONENTS,
+  MAX_CRU_DATA_VALUES_PER_COMPONENT,
+  MAX_CRU_XML_DEPTH,
+} from "../src/domain/bounds.js";
 
 test("all generated CRUMB fixtures are structurally valid", () => {
   for (const kind of CRUMB_FIXTURE_KINDS) {
@@ -95,6 +105,197 @@ test("malformed XML is rejected", () => {
   assert.equal(result.diagnostics[0]?.code, "invalid-xml-or-root");
 });
 
+test("malformed known typed payloads fail atomically", () => {
+  const breadboard = generateFixture("breadboard");
+  const resistor = generateFixture("breadboard-resistor");
+  const led = generateFixture("breadboard-led");
+  const cases = [
+    breadboard.replace("<x>0</x>", "<x>not-a-number</x>"),
+    breadboard.replace("<w>1</w>", "<w>not-a-number</w>"),
+    resistor.replace(
+      "<x>55.8799973</x>",
+      "<x>not-a-number</x>",
+    ),
+    led.replace("<id>456</id>", "<id>not-a-number</id>"),
+    resistor.replace(">1000</anyType>", ">not-a-number</anyType>"),
+    resistor.replace(">1000</anyType>", ">0x10</anyType>"),
+    resistor.replace(">1000</anyType>", ">0b10</anyType>"),
+    resistor.replace(">1000</anyType>", ">1E+100</anyType>"),
+    led.replace(
+      '<anyType xsi:type="xsd:int">0</anyType>',
+      '<anyType xsi:type="xsd:int">1e2</anyType>',
+    ),
+    breadboard.replace("<x>0</x>", "<x>1E+100</x>"),
+    breadboard.replace(
+      "      </data>",
+      '        <anyType xsi:type="ArrayOfBoolean"><boolean>true</boolean><boolean>not-a-boolean</boolean></anyType>\n      </data>',
+    ),
+    breadboard.replace(
+      "      </data>",
+      '        <anyType xsi:type="xsd:boolean">not-a-boolean</anyType>\n      </data>',
+    ),
+    breadboard.replace(
+      "      </data>",
+      '        <anyType xsi:type="xsd:boolean">True</anyType>\n      </data>',
+    ),
+  ];
+
+  for (const xml of cases) {
+    const result = validateCru(xml);
+    assert.equal(result.valid, false, xml.slice(0, 200));
+    assert.equal(result.inspection, undefined);
+    assert.equal(result.diagnostics[0]?.code, "invalid-xml-or-root");
+    assert.match(result.diagnostics[0]?.message ?? "", /payload|Vector3S|QuaternionS/);
+  }
+});
+
+test("namespace rebinding cannot disguise known xsi and xsd payloads", () => {
+  const resistor = generateFixture("breadboard-resistor");
+  const breadboard = generateFixture("breadboard");
+  const cases = [
+    resistor.replace(
+      "<SaveData ",
+      '<SaveData xmlns="urn:wrong" ',
+    ),
+    resistor.replace(
+      "<components>",
+      '<components xmlns="urn:wrong">',
+    ),
+    resistor
+      .replace(
+        "<components>",
+        '<c:components xmlns:c="urn:hidden">',
+      )
+      .replace("</components>", "</c:components>"),
+    resistor.replace(
+      ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+      "",
+    ),
+    resistor.replace(
+      ' xmlns:xsd="http://www.w3.org/2001/XMLSchema"',
+      ' xmlns:xsd="urn:wrong"',
+    ),
+    resistor.replace(
+      '<anyType xsi:type="xsd:float">1000</anyType>',
+      '<anyType xmlns:xsd="urn:wrong" xsi:type="xsd:float">1000</anyType>',
+    ),
+    resistor.replace(
+      '<anyType xsi:type="xsd:float">1000</anyType>',
+      '<anyType xmlns="urn:wrong" xsi:type="xsd:float">1000</anyType>',
+    ),
+    resistor.replace(
+      '<anyType xsi:type="xsd:float">1000</anyType>',
+      '<anyType xmlns:xsi="urn:wrong" xsi:type="xsd:float">1000</anyType>',
+    ),
+    breadboard.replace(
+      ' xmlns:q1="http://microsoft.com/wsdl/types/"',
+      "",
+    ),
+    breadboard.replace(
+      'xmlns:q1="http://microsoft.com/wsdl/types/"',
+      'xmlns:q1="urn:wrong"',
+    ),
+  ];
+
+  for (const xml of cases) {
+    const result = validateCru(xml);
+    assert.equal(result.valid, false);
+    assert.equal(result.inspection, undefined);
+    assert.equal(result.diagnostics[0]?.code, "invalid-xml-or-root");
+    assert.match(result.diagnostics[0]?.message ?? "", /namespace|unbound/i);
+  }
+});
+
+test("duplicate singleton containers cannot hide CRUMB content", () => {
+  const breadboard = generateFixture("breadboard");
+  const cases = [
+    breadboard.replace(
+      "  <components>",
+      "  <components />\n  <components>",
+    ),
+    breadboard.replace(
+      "      <data>",
+      "      <data />\n      <data>",
+    ),
+    breadboard.replace(
+      "      <toolID>0</toolID>",
+      "      <toolID>0</toolID>\n      <toolID>0</toolID>",
+    ),
+  ];
+  for (const xml of cases) {
+    const result = validateCru(xml);
+    assert.equal(result.valid, false);
+    assert.equal(result.inspection, undefined);
+    assert.equal(result.diagnostics[0]?.code, "invalid-xml-or-root");
+    assert.match(result.diagnostics[0]?.message ?? "", /duplicate|exactly one/i);
+  }
+});
+
+test("serializer rejects runtime scalar values that contradict their xsi type", () => {
+  const document: CruDocument = {
+    name: "Malformed Scalar",
+    components: [
+      {
+        toolId: 3,
+        guid: "35f92d9a-cda9-44c7-b416-8c77f301248e",
+        geometry: [
+          { x: 0, y: 0, z: 0 },
+          { x: 1, y: 0, z: 0 },
+        ],
+        tiePoints: [
+          {
+            id: 0,
+            parentIdentifier: "05fc035f-92bb-4a1f-bf81-1ab25a51bb3a",
+          },
+          {
+            id: 1,
+            parentIdentifier: "05fc035f-92bb-4a1f-bf81-1ab25a51bb3a",
+          },
+        ],
+        settings: [
+          { type: "xsd:int", value: "not-an-int" } as never,
+        ],
+      },
+    ],
+  };
+
+  assert.throws(
+    () => serializeCru(document),
+    /xsd:int settings require a numeric value/,
+  );
+});
+
+test("parser work limits reject hostile depth and collection counts", () => {
+  const saveDataOpen =
+    '<SaveData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">';
+  const tooDeep =
+    saveDataOpen +
+    "<nested>".repeat(MAX_CRU_XML_DEPTH) +
+    "</nested>".repeat(MAX_CRU_XML_DEPTH) +
+    "</SaveData>";
+  const tooManyComponents =
+    `${saveDataOpen}<name>Many</name><components>` +
+    "<SaveComponent />".repeat(MAX_CRU_COMPONENTS + 1) +
+    "</components></SaveData>";
+  const tooManyValues =
+    `${saveDataOpen}<name>Many Values</name><components><SaveComponent>` +
+    "<toolID>0</toolID><data>" +
+    '<anyType xsi:type="xsd:string" />'.repeat(
+      MAX_CRU_DATA_VALUES_PER_COMPONENT + 1,
+    ) +
+    "</data></SaveComponent></components></SaveData>";
+
+  for (const xml of [tooDeep, tooManyComponents, tooManyValues]) {
+    const result = validateCru(xml);
+    assert.equal(result.valid, false);
+    assert.equal(
+      result.diagnostics[0]?.code,
+      "structural-work-limit-exceeded",
+    );
+    assert.equal(result.inspection, undefined);
+  }
+});
+
 test("oversized structural tokens are rejected without echoing their content", () => {
   const oversizedType = `${"t".repeat(256)}PRIVATE_TYPE_TAIL`;
   const oversizedNumeric = `${"0".repeat(1_024)}PRIVATE_NUMBER_TAIL`;
@@ -134,7 +335,7 @@ test("oversized structural tokens are rejected without echoing their content", (
       secret: "PRIVATE_NAME_TAIL",
       xml: generateFixture("breadboard").replace(
         "      </data>",
-        `        <anyType xsi:type="custom:payload"><${oversizedXmlName} /></anyType>\n      </data>`,
+        `        <anyType xmlns:custom="urn:test" xsi:type="custom:payload"><${oversizedXmlName} /></anyType>\n      </data>`,
       ),
     },
   ];

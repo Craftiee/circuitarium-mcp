@@ -44,6 +44,14 @@ the selected root, oversized inputs, unsupported extensions, and overwrites.
 These checks reduce risk; they do not make an untrusted host, model, plugin,
 workspace, or operating-system account safe.
 
+Reads use one opened file handle, a fixed byte ceiling, and before/after file
+identity checks. Directory discovery streams entries and skips symbolic links.
+Node does not expose a race-free directory-relative open/write primitive on
+every supported platform, so the configured workspace and its parent
+directories must not be concurrently replaced by an untrusted local process.
+This is a local same-account trust boundary, not a defense against a hostile
+user who can mutate the workspace while the server runs.
+
 Treat all circuit files, labels, and embedded source as untrusted input:
 
 - point `CIRCUITARIUM_MCP_ROOT` at a dedicated directory containing no secrets;

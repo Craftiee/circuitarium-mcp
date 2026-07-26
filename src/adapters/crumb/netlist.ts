@@ -5,9 +5,10 @@ import {
   type BoundedCollectionInfo,
 } from "../../domain/bounds.js";
 import type { Diagnostic } from "../../domain/experiment.js";
-import type {
-  CrumbAnalyzedComponent,
-  CrumbDesignAnalysis,
+import {
+  fullConnectionGroupMembership,
+  type CrumbAnalyzedComponent,
+  type CrumbDesignAnalysis,
 } from "./analyze.js";
 
 export interface CrumbNetMember {
@@ -35,6 +36,7 @@ export interface CrumbNet {
   wireIds: string[];
   wireBounds: BoundedCollectionInfo;
   mergedBySwitches: CrumbSwitchMerge[];
+  switchMergeBounds: BoundedCollectionInfo;
 }
 
 export interface CrumbNetlist {
@@ -189,15 +191,15 @@ export function buildNetlist(
       path: "nets",
       message:
         `${truncatedGroups.length} connection group(s) exceeded the ` +
-        `${MAX_CONNECTION_GROUP_MEMBERS_RETURNED}-member analysis bound; nets built ` +
-        "from them list only the retained members and switch closures beyond the bound are not applied.",
+        `${MAX_CONNECTION_GROUP_MEMBERS_RETURNED}-member response bound; serialized nets ` +
+        "list only retained members, while rule evaluation and switch closures use the full internal membership.",
     });
   }
 
   // componentId:terminalName -> owning analysis group id
   const groupByTerminal = new Map<string, string>();
   for (const group of groups) {
-    for (const member of group.componentTerminals) {
+    for (const member of fullConnectionGroupMembership(group).componentTerminals) {
       groupByTerminal.set(
         `${member.componentId.toLowerCase()}:${member.terminal}`,
         group.id,
@@ -210,7 +212,10 @@ export function buildNetlist(
     unionFind.add(group.id);
   }
 
-  const mergesByRoot = new Map<string, CrumbSwitchMerge[]>();
+  const switchMergeEdges: Array<{
+    groupId: string;
+    merge: CrumbSwitchMerge;
+  }> = [];
   let switchMergesApplied = 0;
   if (applySwitchStates) {
     for (const path of closedSwitchPaths(analysis.components)) {
@@ -229,11 +234,19 @@ export function buildNetlist(
         switchMergesApplied += 1;
       }
       unionFind.union(groupA, groupB);
-      const root = unionFind.find(groupA);
-      const merges = mergesByRoot.get(root) ?? [];
-      merges.push(merge);
-      mergesByRoot.set(root, merges);
+      switchMergeEdges.push({ groupId: groupA, merge });
     }
+  }
+
+  // Resolve provenance only after every union. A later closure can change a
+  // prior root, so recording under the intermediate root would lose earlier
+  // switch paths from the final net.
+  const mergesByRoot = new Map<string, CrumbSwitchMerge[]>();
+  for (const edge of switchMergeEdges) {
+    const root = unionFind.find(edge.groupId);
+    const merges = mergesByRoot.get(root) ?? [];
+    merges.push(edge.merge);
+    mergesByRoot.set(root, merges);
   }
 
   // Collect merged groups into nets, ordered by their smallest group number.
@@ -259,7 +272,8 @@ export function buildNetlist(
     const wireIds = new Set<string>();
     for (const groupId of groupIds) {
       const group = groupById.get(groupId)!;
-      for (const terminal of group.componentTerminals) {
+      const fullMembership = fullConnectionGroupMembership(group);
+      for (const terminal of fullMembership.componentTerminals) {
         if (terminal.componentKind === "jumper-wire") {
           continue;
         }
@@ -273,7 +287,7 @@ export function buildNetlist(
           terminal: terminal.terminal,
         });
       }
-      for (const wireId of group.explicitWireIds) {
+      for (const wireId of fullMembership.explicitWireIds) {
         wireIds.add(wireId);
         wireIdsSeen.add(wireId);
       }
@@ -303,6 +317,14 @@ export function buildNetlist(
       [...groupIds].sort((left, right) => groupNumber(left) - groupNumber(right)),
       MAX_CONNECTION_GROUP_MEMBERS_RETURNED,
     );
+    const boundedSwitchMerges = boundCollection(
+      (mergesByRoot.get(root) ?? []).sort((left, right) =>
+        `${left.componentId}:${left.closedPath}`.localeCompare(
+          `${right.componentId}:${right.closedPath}`,
+        ),
+      ),
+      MAX_CONNECTION_GROUP_MEMBERS_RETURNED,
+    );
     nets.push({
       id: netId,
       connectionGroupIds: boundedGroupIds.items,
@@ -311,11 +333,8 @@ export function buildNetlist(
       memberBounds: boundedMembers.bounds,
       wireIds: boundedWireIds.items,
       wireBounds: boundedWireIds.bounds,
-      mergedBySwitches: (mergesByRoot.get(root) ?? []).sort((left, right) =>
-        `${left.componentId}:${left.closedPath}`.localeCompare(
-          `${right.componentId}:${right.closedPath}`,
-        ),
-      ),
+      mergedBySwitches: boundedSwitchMerges.items,
+      switchMergeBounds: boundedSwitchMerges.bounds,
     });
   }
 
@@ -332,8 +351,10 @@ export function buildNetlist(
     const netId = terminalNetIndex.get(`${componentKey}:${terminal}`);
     return netId === undefined ? undefined : netsById.get(netId);
   };
-  let positiveNameCount = 0;
-  let groundNameCount = 0;
+  const supplyRolesByNet = new Map<
+    string,
+    { positiveSupplyIds: Set<string>; groundSupplyIds: Set<string> }
+  >();
   for (const supply of supplies) {
     const supplyKey = supply.id.toLowerCase();
     const positiveNet = netOfTerminal(supplyKey, "positive-output");
@@ -347,17 +368,56 @@ export function buildNetlist(
           `Supply ${supply.id} has positive-output and ground on the same net ` +
           `(${positiveNet.id}); the net is left unnamed. Run crumb_check_design for the electrical verdict.`,
       });
+    }
+
+    if (positiveNet !== undefined) {
+      const roles = supplyRolesByNet.get(positiveNet.id) ?? {
+        positiveSupplyIds: new Set<string>(),
+        groundSupplyIds: new Set<string>(),
+      };
+      roles.positiveSupplyIds.add(supply.id);
+      supplyRolesByNet.set(positiveNet.id, roles);
+    }
+    if (groundNet !== undefined) {
+      const roles = supplyRolesByNet.get(groundNet.id) ?? {
+        positiveSupplyIds: new Set<string>(),
+        groundSupplyIds: new Set<string>(),
+      };
+      roles.groundSupplyIds.add(supply.id);
+      supplyRolesByNet.set(groundNet.id, roles);
+    }
+  }
+
+  let positiveNameCount = 0;
+  let groundNameCount = 0;
+  for (const net of nets) {
+    const roles = supplyRolesByNet.get(net.id);
+    if (roles === undefined) {
       continue;
     }
-    if (positiveNet !== undefined && positiveNet.name === undefined) {
-      positiveNameCount += 1;
-      positiveNet.name = positiveNameCount === 1 ? "VCC" : `VCC${positiveNameCount}`;
-      positiveNet.nameSource = "dc-power-supply-terminal";
+    if (
+      roles.positiveSupplyIds.size > 0 &&
+      roles.groundSupplyIds.size > 0
+    ) {
+      diagnostics.push({
+        severity: "info",
+        code: "mixed-supply-terminal-net-unnamed",
+        path: `nets.${net.id}`,
+        message:
+          `Net ${net.id} joins positive and ground terminal roles from one or more supplies; ` +
+          "it is left unnamed because shared-reference and supply-isolation semantics are unverified.",
+      });
+      continue;
     }
-    if (groundNet !== undefined && groundNet.name === undefined) {
+    if (roles.positiveSupplyIds.size > 0) {
+      positiveNameCount += 1;
+      net.name = positiveNameCount === 1 ? "VCC" : `VCC${positiveNameCount}`;
+      net.nameSource = "dc-power-supply-terminal";
+    }
+    if (roles.groundSupplyIds.size > 0) {
       groundNameCount += 1;
-      groundNet.name = groundNameCount === 1 ? "GND" : `GND${groundNameCount}`;
-      groundNet.nameSource = "dc-power-supply-terminal";
+      net.name = groundNameCount === 1 ? "GND" : `GND${groundNameCount}`;
+      net.nameSource = "dc-power-supply-terminal";
     }
   }
 

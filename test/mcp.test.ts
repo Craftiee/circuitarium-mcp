@@ -8,6 +8,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 import { generateFixture } from "../src/adapters/crumb/fixtures.js";
+import {
+  serializeCru,
+  type CruDocument,
+} from "../src/adapters/crumb/format.js";
 
 interface Envelope {
   contractVersion: string;
@@ -479,6 +483,10 @@ test("analysis summaries stay bounded and never leak untrusted names", async () 
     cruNumericLexicalCharacters: 1024,
     cruGuidTokenCharacters: 64,
     cruXmlNameCharacters: 256,
+    cruXmlElements: 200_000,
+    cruXmlDepth: 64,
+    cruComponents: 10_000,
+    cruDataValuesPerComponent: 256,
   });
 
   const longNameResult = await client.callTool({
@@ -570,6 +578,22 @@ test("pagination cursors and digest guards protect continued reads", async () =>
     undefined,
   );
 
+  const changedAnalysisOptions = await client.callTool({
+    name: "crumb_analyze_design",
+    arguments: {
+      path: "fixtures/crumb/breadboard-resistor.cru",
+      view: "components",
+      limit: 1,
+      includeGeometry: true,
+      cursor: firstPageInfo.nextCursor,
+    },
+  });
+  assert.equal(
+    envelopeOf(changedAnalysisOptions).error?.code,
+    "INVALID_ARGUMENT",
+    "analysis cursors are bound to response-shaping options",
+  );
+
   const invalidCursorResult = await client.callTool({
     name: "crumb_analyze_design",
     arguments: {
@@ -604,6 +628,69 @@ test("pagination cursors and digest guards protect continued reads", async () =>
       (staleDigestEnvelope.nextActions[0]?.arguments ?? {}),
     false,
   );
+});
+
+test("digests identify raw bytes and stale guards run before parsing", async () => {
+  const invalidA = Buffer.from([0x80]);
+  const invalidB = Buffer.from([0x81]);
+  assert.equal(invalidA.toString("utf8"), invalidB.toString("utf8"));
+  const invalidARef = `${generatedRef}/invalid-byte-a.cru`;
+  const invalidBRef = `${generatedRef}/invalid-byte-b.cru`;
+  const malformedRef = `${generatedRef}/malformed-guard.cru`;
+  await Promise.all([
+    writeFile(join(generatedDirectory, "invalid-byte-a.cru"), invalidA),
+    writeFile(join(generatedDirectory, "invalid-byte-b.cru"), invalidB),
+    writeFile(
+      join(generatedDirectory, "malformed-guard.cru"),
+      "<SaveData><name>broken</SaveData>",
+      "utf8",
+    ),
+  ]);
+
+  const rawDigests: string[] = [];
+  for (const path of [invalidARef, invalidBRef]) {
+    const result = await client.callTool({
+      name: "crumb_validate_design",
+      arguments: { path },
+    });
+    rawDigests.push(envelopeOf(result).context.projectDigest as string);
+  }
+  assert.match(rawDigests[0] ?? "", /^sha256:[0-9a-f]{64}$/);
+  assert.match(rawDigests[1] ?? "", /^sha256:[0-9a-f]{64}$/);
+  assert.notEqual(
+    rawDigests[0],
+    rawDigests[1],
+    "byte-distinct invalid UTF-8 files must never share a decoded-text digest",
+  );
+
+  const staleDigest = `sha256:${"0".repeat(64)}`;
+  const guardedCalls = [
+    { name: "crumb_analyze_design", arguments: { view: "summary" } },
+    { name: "crumb_inspect_design", arguments: {} },
+    { name: "crumb_validate_design", arguments: {} },
+    {
+      name: "crumb_get_component",
+      arguments: { componentId: "missing" },
+    },
+    { name: "crumb_bom", arguments: {} },
+    { name: "crumb_export_netlist", arguments: {} },
+    { name: "crumb_check_design", arguments: {} },
+  ];
+  for (const guarded of guardedCalls) {
+    const result = await client.callTool({
+      name: guarded.name,
+      arguments: {
+        path: malformedRef,
+        expectedProjectDigest: staleDigest,
+        ...guarded.arguments,
+      },
+    });
+    assert.equal(
+      envelopeOf(result).error?.code,
+      "PROJECT_STATE_CONFLICT",
+      `${guarded.name} must check the digest before parsing malformed XML`,
+    );
+  }
 });
 
 test("validation reports invalid designs as data, and analysis refuses them", async () => {
@@ -790,6 +877,69 @@ test("single-component fetch returns detail, connections, and typed NOT_FOUND", 
   assert.equal(missingEnvelope.error?.argumentPath, "componentId");
 });
 
+test("single-component fetch focuses membership past connection display bounds", async () => {
+  const boardId = "05fc035f-92bb-4a1f-bf81-1ab25a51bb3a";
+  const requestedId = "fffffff0-1111-4111-8111-fffffffffff0";
+  const connected = (guid: string): CruDocument["components"][number] => ({
+    toolId: 99,
+    guid,
+    geometry: [
+      { x: 0, y: 0, z: 0 },
+      { x: 1, y: 0, z: 0 },
+    ],
+    tiePoints: [
+      { id: 0, parentIdentifier: boardId },
+      { id: 1, parentIdentifier: boardId },
+    ],
+    settings: [],
+  });
+  const xml = serializeCru({
+    name: "Focused Oversized Membership",
+    components: [
+      {
+        toolId: 0,
+        guid: boardId,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+      },
+      ...Array.from({ length: 70 }, (_, index) =>
+        connected(
+          `${index.toString(16).padStart(8, "0")}-0000-4000-8000-000000000000`,
+        ),
+      ),
+      connected(requestedId),
+    ],
+  });
+  const ref = `${generatedRef}/focused-oversized.cru`;
+  await writeFile(
+    join(generatedDirectory, "focused-oversized.cru"),
+    xml,
+    "utf8",
+  );
+
+  const result = await client.callTool({
+    name: "crumb_get_component",
+    arguments: { path: ref, componentId: requestedId },
+  });
+  const envelope = envelopeOf(result);
+  const detail = dataOf(result);
+  const connections = detail.connections as Array<{
+    componentTerminals: Array<{ componentId: string }>;
+  }>;
+  assert.equal(connections.length, 1);
+  assert.ok(
+    connections[0]?.componentTerminals.some(
+      (terminal) => terminal.componentId === requestedId,
+    ),
+  );
+  assert.ok(
+    envelope.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "connection-membership-truncated",
+    ),
+  );
+});
+
 test("BOM groups parts and keeps totals with bounded lines", async () => {
   const bomResult = await client.callTool({
     name: "crumb_bom",
@@ -859,6 +1009,26 @@ test("netlist export pages nets and reports floating terminals", async () => {
     "INVALID_ARGUMENT",
     "netlist cursors are not valid for analyze views",
   );
+
+  for (const changedOptions of [
+    { topologyMode: "direct-only" },
+    { applySwitchStates: true },
+  ]) {
+    const changedNetlistOptions = await client.callTool({
+      name: "crumb_export_netlist",
+      arguments: {
+        path: "fixtures/crumb/breadboard-led.cru",
+        limit: 1,
+        cursor: page.nextCursor,
+        ...changedOptions,
+      },
+    });
+    assert.equal(
+      envelopeOf(changedNetlistOptions).error?.code,
+      "INVALID_ARGUMENT",
+      "netlist cursors are bound to topology and saved-switch options",
+    );
+  }
 });
 
 test("electrical rule check returns findings as data with evidence tags", async () => {

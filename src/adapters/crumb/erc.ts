@@ -76,9 +76,10 @@ function clampIds(ids: readonly string[]): string[] {
 }
 
 function switchConditionClause(nets: Array<CrumbNet | undefined>): string {
-  const merges = nets
-    .filter((net): net is CrumbNet => net !== undefined)
-    .flatMap((net) => net.mergedBySwitches);
+  const presentNets = nets.filter(
+    (net): net is CrumbNet => net !== undefined,
+  );
+  const merges = presentNets.flatMap((net) => net.mergedBySwitches);
   if (merges.length === 0) {
     return "";
   }
@@ -88,8 +89,17 @@ function switchConditionClause(nets: Array<CrumbNet | undefined>): string {
     .join("; ");
   return (
     " The path exists via saved switch position(s) and is conditional on them: " +
-    `${sample}${merges.length > 3 ? "; …" : ""}.`
+    `${sample}${
+      merges.length > 3 ||
+      presentNets.some((net) => net.switchMergeBounds.truncated)
+        ? "; …"
+        : ""
+    }.`
   );
+}
+
+function railPairKey(left: CrumbNet, right: CrumbNet): string {
+  return JSON.stringify([left.id, right.id].sort());
 }
 
 export function checkNetlist(
@@ -127,6 +137,40 @@ export function checkNetlist(
         groundNet: terminalNet(component.id, "ground"),
       };
     });
+  const positiveSuppliesByNet = new Map<string, SupplyEndpoints[]>();
+  const groundSuppliesByNet = new Map<string, SupplyEndpoints[]>();
+  const suppliesByRailPair = new Map<string, SupplyEndpoints[]>();
+  for (const supply of supplies) {
+    if (supply.positiveNet !== undefined) {
+      const positive =
+        positiveSuppliesByNet.get(supply.positiveNet.id) ?? [];
+      positive.push(supply);
+      positiveSuppliesByNet.set(supply.positiveNet.id, positive);
+    }
+    if (supply.groundNet !== undefined) {
+      const ground = groundSuppliesByNet.get(supply.groundNet.id) ?? [];
+      ground.push(supply);
+      groundSuppliesByNet.set(supply.groundNet.id, ground);
+    }
+    if (
+      supply.positiveNet !== undefined &&
+      supply.groundNet !== undefined &&
+      supply.positiveNet !== supply.groundNet
+    ) {
+      const key = railPairKey(supply.positiveNet, supply.groundNet);
+      const pair = suppliesByRailPair.get(key) ?? [];
+      pair.push(supply);
+      suppliesByRailPair.set(key, pair);
+    }
+  }
+  for (const pair of suppliesByRailPair.values()) {
+    pair.sort(
+      (left, right) =>
+        (right.dcVoltage ?? Number.NEGATIVE_INFINITY) -
+          (left.dcVoltage ?? Number.NEGATIVE_INFINITY) ||
+        left.supplyId.localeCompare(right.supplyId),
+    );
+  }
 
   // Rule: supply-net-short — one supply's positive output and ground on the
   // same net is a dead short across that source.
@@ -157,17 +201,25 @@ export function checkNetlist(
   // different supply's ground is how split/stacked rails are built; whether
   // CRUMB models supply isolation is unverified, so this is informational.
   for (const net of netlist.nets) {
-    const positivesHere = supplies.filter(
-      (supply) => supply.positiveNet === net,
+    const positivesHere = positiveSuppliesByNet.get(net.id) ?? [];
+    const groundsHere = groundSuppliesByNet.get(net.id) ?? [];
+    const positiveIds = new Set(
+      positivesHere.map((supply) => supply.supplyId),
     );
-    const groundsHere = supplies.filter((supply) => supply.groundNet === net);
-    const crossPairs = positivesHere.filter((positive) =>
-      groundsHere.some((ground) => ground.supplyId !== positive.supplyId),
+    const groundIds = new Set(
+      groundsHere.map((supply) => supply.supplyId),
     );
-    const sameSupplyShort = supplies.some(
-      (supply) => supply.positiveNet === net && supply.groundNet === net,
+    const sameSupplyShort = [...positiveIds].some((id) =>
+      groundIds.has(id),
     );
-    if (crossPairs.length > 0 && !sameSupplyShort) {
+    const crossSupplyTie =
+      positiveIds.size > 0 &&
+      groundIds.size > 0 &&
+      [...positiveIds].some(
+        (positiveId) =>
+          groundIds.size > 1 || !groundIds.has(positiveId),
+      );
+    if (crossSupplyTie && !sameSupplyShort) {
       const involved = [
         ...new Set([
           ...positivesHere.map((supply) => supply.supplyId),
@@ -249,13 +301,10 @@ export function checkNetlist(
     if (terminalA === undefined || terminalB === undefined) {
       continue;
     }
-    for (const supply of supplies) {
-      const bridgesSupply =
-        (supply.positiveNet === terminalA && supply.groundNet === terminalB) ||
-        (supply.positiveNet === terminalB && supply.groundNet === terminalA);
-      if (!bridgesSupply) {
-        continue;
-      }
+    const supply = suppliesByRailPair.get(
+      railPairKey(terminalA, terminalB),
+    )?.[0];
+    if (supply !== undefined) {
       const conditional = switchConditionClause([terminalA, terminalB]);
       findings.push({
         ruleId: "led-direct-across-supply",
@@ -270,7 +319,6 @@ export function checkNetlist(
         netIds: clampIds([terminalA.id, terminalB.id]),
         componentIds: clampIds([component.id, supply.supplyId]),
       });
-      break;
     }
   }
 
@@ -295,16 +343,10 @@ export function checkNetlist(
     if (terminalA === undefined || terminalB === undefined) {
       continue;
     }
-    for (const supply of supplies) {
-      if (supply.dcVoltage === undefined) {
-        continue;
-      }
-      const across =
-        (supply.positiveNet === terminalA && supply.groundNet === terminalB) ||
-        (supply.positiveNet === terminalB && supply.groundNet === terminalA);
-      if (!across) {
-        continue;
-      }
+    const supply = suppliesByRailPair
+      .get(railPairKey(terminalA, terminalB))
+      ?.find((candidate) => candidate.dcVoltage !== undefined);
+    if (supply?.dcVoltage !== undefined) {
       const watts = (supply.dcVoltage * supply.dcVoltage) / resistance;
       if (watts > maxPower) {
         findings.push({
@@ -405,7 +447,7 @@ export function checkNetlist(
       "Supply on/off state is ignored; rules report hazards as if every supply were on at its saved voltage.",
       "ic-power-pin-floating only detects fully unconnected power pins; it does not verify the pin reaches a supply net.",
       "Saved switch positions affect nets only when the netlist was built with applySwitchStates=true; findings on switch-merged nets are conditional on those saved positions.",
-      "Nets built from connection groups that exceeded analysis bounds may be missing members; see net-membership-incomplete diagnostics.",
+      "Serialized net memberships are response-bounded; electrical rules use the complete internal terminal index.",
       "No electrical simulation is run; parameter-based checks assume saved values are operating values.",
       `At most ${MAX_ERC_FINDINGS_RETURNED} findings are returned with at most ${MAX_FINDING_IDS} net/component ids each; totals retain the full counts.`,
       `At most ${MAX_DIAGNOSTIC_SAMPLES_RETURNED} floating terminals are reported per analysis.`,

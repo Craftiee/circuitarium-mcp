@@ -7,8 +7,12 @@ import {
   MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED,
   MAX_COMPONENT_TERMINALS_RETURNED,
   MAX_CONNECTION_GROUP_MEMBERS_RETURNED,
+  MAX_CRU_COMPONENTS,
+  MAX_CRU_DATA_VALUES_PER_COMPONENT,
   MAX_CRU_GUID_TOKEN_CHARACTERS,
   MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
+  MAX_CRU_XML_DEPTH,
+  MAX_CRU_XML_ELEMENTS,
   MAX_CRU_XML_NAME_CHARACTERS,
   MAX_CRU_XSI_TYPE_CHARACTERS,
   MAX_DESIGN_NAME_PREVIEW_CHARACTERS,
@@ -589,6 +593,12 @@ export const CrumbAnalysisDataSchema = z.object({
         MAX_CRU_GUID_TOKEN_CHARACTERS,
       ),
       cruXmlNameCharacters: z.literal(MAX_CRU_XML_NAME_CHARACTERS),
+      cruXmlElements: z.literal(MAX_CRU_XML_ELEMENTS),
+      cruXmlDepth: z.literal(MAX_CRU_XML_DEPTH),
+      cruComponents: z.literal(MAX_CRU_COMPONENTS),
+      cruDataValuesPerComponent: z.literal(
+        MAX_CRU_DATA_VALUES_PER_COMPONENT,
+      ),
     }),
   }),
 });
@@ -712,6 +722,7 @@ const CrumbNetSchema = z.object({
       }),
     )
     .max(MAX_CONNECTION_GROUP_MEMBERS_RETURNED),
+  switchMergeBounds: BoundedCollectionInfoSchema,
 });
 
 export const CrumbNetlistDataSchema = z.object({

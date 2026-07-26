@@ -19,9 +19,9 @@ Read commands run the same registered MCP tools as the stdio server, with the
 same validation, bounds, and result envelopes:
   list [dir]
   inspect <file.cru>
-  analyze <file.cru> [summary|components|connections] [limit]
+  analyze <file.cru> [summary|components|connections] [limit] [cursor]
   component <file.cru> <componentId>
-  netlist <file.cru>
+  netlist <file.cru> [limit] [cursor]
   check <file.cru>
   bom <file.cru>
   ic [label-or-package-query]
@@ -87,7 +87,13 @@ async function main(): Promise<void> {
       const path = requirePath(positional[0], "analyze");
       const view = positional[1] ?? "summary";
       const limit = Number.parseInt(positional[2] ?? "50", 10);
-      await runTool("crumb_analyze_design", { path, view, limit });
+      const cursor = positional[3];
+      await runTool("crumb_analyze_design", {
+        path,
+        view,
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
       return;
     }
     case "component": {
@@ -100,8 +106,12 @@ async function main(): Promise<void> {
       return;
     }
     case "netlist": {
+      const limit = Number.parseInt(positional[1] ?? "50", 10);
+      const cursor = positional[2];
       await runTool("crumb_export_netlist", {
         path: requirePath(positional[0], "netlist"),
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
       });
       return;
     }

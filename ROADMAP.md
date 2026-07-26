@@ -27,8 +27,8 @@ or CRUMB 2.x/Godot compatibility.
   evidence and reopen tests exist.
 - Collect minimal, controlled saves from a public Godot release when one is
   available to the project.
-- Add round-trip tests that preserve unknown fields before enabling general
-  editing.
+- Extend the byte-preserving round-trip core with evidence-backed move,
+  removal, and placement operations before enabling public general editing.
 - Expand fixture generation only from independently authored controlled cases.
 - Seek a documented save contract or local plugin API from the CRUMB developer.
 

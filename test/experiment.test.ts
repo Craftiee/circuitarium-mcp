@@ -92,6 +92,49 @@ test("a duplicate endpoint on the same net stays a warning, not a conflict", () 
   );
 });
 
+test("endpoint identity cannot collide through colon-delimited names", () => {
+  const input = structuredClone(validExperiment) as Record<string, any>;
+  input.components = [
+    { id: "a:b", kind: "source", parameters: {} },
+    { id: "a", kind: "source", parameters: {} },
+    { id: "sink-one", kind: "sink", parameters: {} },
+    { id: "sink-two", kind: "sink", parameters: {} },
+  ];
+  input.nets = [
+    {
+      id: "first",
+      endpoints: [
+        { componentId: "a:b", pin: "c" },
+        { componentId: "sink-one", pin: "in" },
+      ],
+    },
+    {
+      id: "second",
+      endpoints: [
+        { componentId: "a", pin: "b:c" },
+        { componentId: "sink-two", pin: "in" },
+      ],
+    },
+  ];
+  input.probes = [
+    {
+      id: "tuple-probe",
+      endpoint: { componentId: "a", pin: "b:c" },
+      quantity: "logic",
+    },
+  ];
+
+  const result = validateExperiment(input);
+  assert.equal(result.valid, true, JSON.stringify(result.diagnostics));
+  assert.ok(
+    result.diagnostics.every(
+      (diagnostic) =>
+        diagnostic.code !== "endpoint-net-conflict" &&
+        diagnostic.code !== "probe-endpoint-unconnected",
+    ),
+  );
+});
+
 test("probes on endpoints missing from every net warn as unconnected", () => {
   const input = structuredClone(validExperiment);
   input.probes.push({

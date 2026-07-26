@@ -1,9 +1,9 @@
-import { realpathSync } from "node:fs";
+import { constants, realpathSync } from "node:fs";
 import {
   lstat,
   mkdir,
-  readdir,
-  readFile,
+  open,
+  opendir,
   realpath,
   stat,
   writeFile,
@@ -19,7 +19,18 @@ export class WorkspacePathDeniedError extends Error {}
 export class UnsupportedCruPathError extends Error {}
 
 /** The file exceeds the fixed byte safety limit. */
-export class CruFileTooLargeError extends Error {}
+export class CruFileTooLargeError extends Error {
+  constructor(
+    message: string,
+    readonly observedBytes?: number,
+    readonly observedMtime?: string,
+  ) {
+    super(message);
+  }
+}
+
+/** The file changed while one supposedly coherent snapshot was being read. */
+export class CruFileChangedDuringReadError extends Error {}
 
 /** The path exists but is not a regular file. */
 export class NotAFileError extends Error {}
@@ -141,24 +152,97 @@ async function requireWritablePath(
 
 export async function readCruFile(
   path: string,
-): Promise<{ path: string; xml: string; bytes: Buffer }> {
+  options: { maxBytes?: number } = {},
+): Promise<{ path: string; xml: string; bytes: Buffer; mtime: string }> {
   const absolutePath = absoluteWorkspacePath(path);
   requireCruExtension(absolutePath);
   const safePath = await requireReadablePath(absolutePath);
-  const file = await stat(safePath);
-  if (!file.isFile()) {
-    throw new NotAFileError(`Not a file: ${safePath}`);
-  }
-  if (file.size > MAX_CRU_BYTES) {
-    throw new CruFileTooLargeError(
-      `CRUMB file is ${file.size} bytes; the current safety limit is ${MAX_CRU_BYTES} bytes`,
+  const root = await realpath(CIRCUITARIUM_MCP_ROOT);
+  const noFollow = constants.O_NOFOLLOW ?? 0;
+  const handle = await open(safePath, constants.O_RDONLY | noFollow);
+  try {
+    const openedFile = await handle.stat();
+    const byteLimit = Math.min(
+      MAX_CRU_BYTES,
+      options.maxBytes ?? MAX_CRU_BYTES,
     );
+    if (!Number.isInteger(byteLimit) || byteLimit < 0) {
+      throw new RangeError("maxBytes must be a non-negative integer");
+    }
+    if (!openedFile.isFile()) {
+      throw new NotAFileError(`Not a file: ${safePath}`);
+    }
+    if (openedFile.size > byteLimit) {
+      throw new CruFileTooLargeError(
+        `CRUMB file is ${openedFile.size} bytes; the current read limit is ${byteLimit} bytes`,
+        openedFile.size,
+        openedFile.mtime.toISOString(),
+      );
+    }
+
+    // Windows does not expose O_NOFOLLOW through Node. Re-resolve the opened
+    // pathname and compare its current identity with the handle so a static
+    // symlink or an ordinary replacement race fails closed on every platform.
+    const currentPath = await realpath(safePath);
+    requireContained(root, currentPath);
+    const currentFile = await stat(currentPath);
+    if (
+      openedFile.dev !== currentFile.dev ||
+      openedFile.ino !== currentFile.ino
+    ) {
+      throw new WorkspacePathDeniedError(
+        `Path changed while it was being opened: ${safePath}`,
+      );
+    }
+
+    const chunks: Buffer[] = [];
+    let bytesReadTotal = 0;
+    while (bytesReadTotal <= byteLimit) {
+      const remaining = byteLimit + 1 - bytesReadTotal;
+      const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, remaining));
+      const { bytesRead } = await handle.read(
+        chunk,
+        0,
+        chunk.byteLength,
+        bytesReadTotal,
+      );
+      if (bytesRead === 0) {
+        break;
+      }
+      chunks.push(chunk.subarray(0, bytesRead));
+      bytesReadTotal += bytesRead;
+    }
+    if (bytesReadTotal > byteLimit) {
+      throw new CruFileTooLargeError(
+        `CRUMB file exceeds the ${byteLimit}-byte read limit`,
+        bytesReadTotal,
+        openedFile.mtime.toISOString(),
+      );
+    }
+    const completedFile = await handle.stat();
+    if (
+      completedFile.size !== openedFile.size ||
+      completedFile.mtimeMs !== openedFile.mtimeMs ||
+      completedFile.size !== bytesReadTotal
+    ) {
+      throw new CruFileChangedDuringReadError(
+        `CRUMB file changed while it was being read: ${safePath}`,
+      );
+    }
+
+    // The raw bytes travel alongside the decoded text so digests identify the
+    // exact file content; hashing the decoded string would let byte-distinct
+    // files collide through U+FFFD replacement.
+    const bytes = Buffer.concat(chunks, bytesReadTotal);
+    return {
+      path: safePath,
+      xml: bytes.toString("utf8"),
+      bytes,
+      mtime: completedFile.mtime.toISOString(),
+    };
+  } finally {
+    await handle.close();
   }
-  // The raw bytes travel alongside the decoded text so digests identify the
-  // exact file content; hashing the decoded string would let byte-distinct
-  // files collide through U+FFFD replacement.
-  const bytes = await readFile(safePath);
-  return { path: safePath, xml: bytes.toString("utf8"), bytes };
 }
 
 export async function writeCruFile(
@@ -207,9 +291,20 @@ const MAX_DIRECTORY_SCAN_ENTRIES = 10_000;
  */
 export async function listCruFiles(
   dir = ".",
-  options: { recursive?: boolean } = {},
+  options: { recursive?: boolean; scanEntryLimit?: number } = {},
 ): Promise<CruWorkspaceListing> {
   const recursive = options.recursive ?? true;
+  const scanEntryLimit =
+    options.scanEntryLimit ?? MAX_DIRECTORY_SCAN_ENTRIES;
+  if (
+    !Number.isInteger(scanEntryLimit) ||
+    scanEntryLimit < 1 ||
+    scanEntryLimit > MAX_DIRECTORY_SCAN_ENTRIES
+  ) {
+    throw new RangeError(
+      `scanEntryLimit must be an integer from 1 to ${MAX_DIRECTORY_SCAN_ENTRIES}`,
+    );
+  }
   const root = await realpath(CIRCUITARIUM_MCP_ROOT);
   const start = await realpath(absoluteWorkspacePath(dir));
   requireContained(root, start);
@@ -223,12 +318,13 @@ export async function listCruFiles(
   let scanTruncated = false;
   while (pending.length > 0 && !scanTruncated) {
     const current = pending.shift()!;
-    for (const dirent of await readdir(current, { withFileTypes: true })) {
-      scannedEntries += 1;
-      if (scannedEntries > MAX_DIRECTORY_SCAN_ENTRIES) {
+    const directory = await opendir(current);
+    for await (const dirent of directory) {
+      if (scannedEntries >= scanEntryLimit) {
         scanTruncated = true;
         break;
       }
+      scannedEntries += 1;
       if (dirent.isSymbolicLink()) {
         continue;
       }

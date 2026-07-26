@@ -27,7 +27,7 @@ CRUMB-specific integration family. The branding does not change the stable
 Build first:
 
 ```powershell
-npm install
+npm ci
 npm run build
 ```
 
@@ -40,6 +40,24 @@ The production entrypoint is:
 MCP clients generally require an absolute path. Replace the examples below
 with the absolute path to your clone; do not copy the angle-bracket placeholder
 literally.
+
+## Source checkout versus npm
+
+The repository contains a smoke-tested `circuitarium-mcp` package command, but
+the command is not available through `npx` until the first public npm release
+has actually been published. Before that release, use the source checkout and
+absolute `dist/src/server.js` path documented below.
+
+After a registry release, an MCP client can launch the same stdio server with:
+
+```text
+Command: npx
+Arguments: -y circuitarium-mcp
+```
+
+Keep the client's working directory or `CIRCUITARIUM_MCP_ROOT` pointed at the
+intended circuit workspace. An npm installation does not bundle user projects
+or make repository-relative fixture paths appear in that workspace.
 
 The default file boundary is the working directory. Set
 `CIRCUITARIUM_MCP_ROOT` to the intended shared project directory when the

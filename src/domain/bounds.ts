@@ -19,6 +19,10 @@ export const MAX_CRU_XSI_TYPE_CHARACTERS = 256;
 export const MAX_CRU_NUMERIC_LEXICAL_CHARACTERS = 1_024;
 export const MAX_CRU_GUID_TOKEN_CHARACTERS = 64;
 export const MAX_CRU_XML_NAME_CHARACTERS = 256;
+export const MAX_CRU_XML_ELEMENTS = 200_000;
+export const MAX_CRU_XML_DEPTH = 64;
+export const MAX_CRU_COMPONENTS = 10_000;
+export const MAX_CRU_DATA_VALUES_PER_COMPONENT = 256;
 
 export interface BoundedCollectionInfo {
   total: number;

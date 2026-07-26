@@ -62,12 +62,16 @@ or question-mark recent-file thumbnail. The fixture generator supplies a small
 valid 560×480 PNG. Inspection does not return the embedded thumbnail by
 default.
 
-The decoder rejects XML `DOCTYPE` and entity declarations. Scalar lexical forms,
-including scientific notation such as `1E-06`, are retained alongside decoded
-values where later round-trip work may need them. Before response shaping, it
-also rejects structural tokens above fixed limits: 256 characters for
-`xsi:type`, 1,024 for numeric lexical text, 64 for GUID/parent-GUID tokens, and
-256 for XML element names. Fixed diagnostics identify the field and limit
+The semantic decoder rejects XML `DOCTYPE` and entity declarations. Its scalar
+`lexical` fields are decoded parser values, not a promise of byte-faithful XML
+spelling. The separate
+[round-trip canonicalization contract](cru-roundtrip-canonicalization.md)
+indexes exact byte spans when preservation is required. Before response
+shaping, parsing also rejects structural tokens above fixed limits: 256
+characters for `xsi:type`, 1,024 for numeric lexical text, 64 for
+GUID/parent-GUID tokens, and 256 for XML element names. Work limits cap XML at
+200,000 elements and 64 levels, saves at 10,000 components, and each component
+at 256 direct data values. Fixed diagnostics identify the field and limit
 without echoing rejected content.
 
 The root `name` is user-authored and untrusted. Inspection and analysis return

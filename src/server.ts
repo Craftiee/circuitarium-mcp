@@ -13,7 +13,10 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { analyzeCru } from "./adapters/crumb/analyze.js";
+import {
+  analyzeCru,
+  fullConnectionGroupMembership,
+} from "./adapters/crumb/analyze.js";
 import { buildBom } from "./adapters/crumb/bom.js";
 import { listCrumbComponentDefinitions } from "./adapters/crumb/catalog.js";
 import { CRUMB_COMPATIBILITY_PROFILE } from "./adapters/crumb/compatibility.js";
@@ -38,6 +41,7 @@ import {
   listCrumbIcs,
 } from "./adapters/crumb/icCatalog.js";
 import {
+  CruFileChangedDuringReadError,
   CruFileTooLargeError,
   listCruFiles,
   MAX_CRU_BYTES,
@@ -63,8 +67,12 @@ import {
   MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED,
   MAX_COMPONENT_TERMINALS_RETURNED,
   MAX_CONNECTION_GROUP_MEMBERS_RETURNED,
+  MAX_CRU_COMPONENTS,
+  MAX_CRU_DATA_VALUES_PER_COMPONENT,
   MAX_CRU_GUID_TOKEN_CHARACTERS,
   MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
+  MAX_CRU_XML_DEPTH,
+  MAX_CRU_XML_ELEMENTS,
   MAX_CRU_XML_NAME_CHARACTERS,
   MAX_CRU_XSI_TYPE_CHARACTERS,
   MAX_DESIGN_NAME_PREVIEW_CHARACTERS,
@@ -492,6 +500,15 @@ function classifyError(
       ],
     };
   }
+  if (error instanceof CruFileChangedDuringReadError) {
+    return {
+      code: "PROJECT_STATE_CONFLICT",
+      category: "project",
+      message: "The project changed while one coherent file snapshot was being read.",
+      retryable: true,
+      recovery: ["Wait for the save operation to finish, then retry the read."],
+    };
+  }
   if (error instanceof UnsupportedCruPathError) {
     return {
       code: "UNSUPPORTED_FORMAT",
@@ -623,14 +640,19 @@ type AnalysisView = "summary" | "components" | "connections";
 type PagedView = "components" | "connections" | "netlist";
 
 interface PageCursor {
-  version: 1;
+  version: 2;
   view: PagedView;
   offset: number;
   projectDigest: string;
+  optionsFingerprint: string;
 }
 
 function encodeCursor(cursor: PageCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function paginationOptionsFingerprint(options: Record<string, unknown>): string {
+  return sha256(canonicalJson(options));
 }
 
 function decodeCursor(
@@ -638,6 +660,7 @@ function decodeCursor(
   view: PagedView | "summary",
   projectDigest: string,
   total: number,
+  optionsFingerprint: string,
 ): number {
   if (value === undefined) {
     return 0;
@@ -654,9 +677,10 @@ function decodeCursor(
       Buffer.from(value, "base64url").toString("utf8"),
     ) as Partial<PageCursor>;
     if (
-      decoded.version !== 1 ||
+      decoded.version !== 2 ||
       decoded.view !== view ||
       decoded.projectDigest !== projectDigest ||
+      decoded.optionsFingerprint !== optionsFingerprint ||
       !Number.isInteger(decoded.offset) ||
       decoded.offset! < 0 ||
       decoded.offset! > total
@@ -666,7 +690,7 @@ function decodeCursor(
     return decoded.offset!;
   } catch {
     throw invalidArgument(
-      "The cursor is invalid, belongs to another view, or targets a changed project.",
+      "The cursor is invalid, belongs to another view or option set, or targets a changed project.",
       "cursor",
       ["Restart pagination without a cursor using the current project ref."],
     );
@@ -679,6 +703,7 @@ function pageResult<T>(
   limit: number,
   view: PagedView,
   projectDigest: string,
+  optionsFingerprint: string,
 ) {
   const pageItems = items.slice(offset, offset + limit);
   const nextOffset = offset + pageItems.length;
@@ -691,10 +716,11 @@ function pageResult<T>(
       ...(nextOffset < items.length
         ? {
             nextCursor: encodeCursor({
-              version: 1,
+              version: 2,
               view,
               offset: nextOffset,
               projectDigest,
+              optionsFingerprint,
             }),
           }
         : {}),
@@ -1044,7 +1070,22 @@ const crumbAnalysisTool = server.registerTool(
           : view === "connections"
             ? analysis.connectivity.groups.length
             : 0;
-      const offset = decodeCursor(cursor, view, project.digest, total);
+      const optionsFingerprint = paginationOptionsFingerprint({
+        topologyMode,
+        ...(view === "components"
+          ? {
+              includeGeometry,
+              includeSourceCode,
+            }
+          : {}),
+      });
+      const offset = decodeCursor(
+        cursor,
+        view,
+        project.digest,
+        total,
+        optionsFingerprint,
+      );
       const responseDiagnostics = [
         ...structuralValidation.diagnostics,
         ...analysis.diagnostics,
@@ -1121,6 +1162,11 @@ const crumbAnalysisTool = server.registerTool(
               MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
             cruGuidTokenCharacters: MAX_CRU_GUID_TOKEN_CHARACTERS,
             cruXmlNameCharacters: MAX_CRU_XML_NAME_CHARACTERS,
+            cruXmlElements: MAX_CRU_XML_ELEMENTS,
+            cruXmlDepth: MAX_CRU_XML_DEPTH,
+            cruComponents: MAX_CRU_COMPONENTS,
+            cruDataValuesPerComponent:
+              MAX_CRU_DATA_VALUES_PER_COMPONENT,
           },
         },
       };
@@ -1134,6 +1180,7 @@ const crumbAnalysisTool = server.registerTool(
           effectiveLimit,
           "components",
           project.digest,
+          optionsFingerprint,
         );
         data = { ...baseData, page: paged.page, components: paged.items };
         nextActions = paged.page.nextCursor
@@ -1173,6 +1220,7 @@ const crumbAnalysisTool = server.registerTool(
           effectiveLimit,
           "connections",
           project.digest,
+          optionsFingerprint,
         );
         data = { ...baseData, page: paged.page, connections: paged.items };
         nextActions = paged.page.nextCursor
@@ -1496,23 +1544,40 @@ const crumbListProjectsTool = server.registerTool(
       for (const entry of bounded.items) {
         if (!includeDigests) {
           entries.push({ ...entry, digestOmittedReason: "not-requested" as const });
-        } else if (entry.bytes > MAX_CRU_BYTES) {
-          entries.push({
-            ...entry,
-            digestOmittedReason: "file-exceeds-size-limit" as const,
-          });
-        } else if (digestBytesRead + entry.bytes > MAX_DIGEST_BYTES_PER_LISTING) {
+        } else if (digestBytesRead >= MAX_DIGEST_BYTES_PER_LISTING) {
           entries.push({
             ...entry,
             digestOmittedReason: "digest-budget-exhausted" as const,
           });
         } else {
           try {
-            const file = await readCruFile(entry.ref);
+            const file = await readCruFile(entry.ref, {
+              maxBytes: MAX_DIGEST_BYTES_PER_LISTING - digestBytesRead,
+            });
             digestBytesRead += file.bytes.byteLength;
-            entries.push({ ...entry, digest: sha256(file.bytes) });
-          } catch {
-            entries.push({ ...entry, digestOmittedReason: "unreadable" as const });
+            entries.push({
+              ref: entry.ref,
+              bytes: file.bytes.byteLength,
+              mtime: file.mtime,
+              digest: sha256(file.bytes),
+            });
+          } catch (error) {
+            if (error instanceof CruFileTooLargeError) {
+              entries.push({
+                ref: entry.ref,
+                bytes: error.observedBytes ?? entry.bytes,
+                mtime: error.observedMtime ?? entry.mtime,
+                digestOmittedReason:
+                  (error.observedBytes ?? entry.bytes) > MAX_CRU_BYTES
+                    ? "file-exceeds-size-limit"
+                    : "digest-budget-exhausted",
+              });
+            } else {
+              entries.push({
+                ...entry,
+                digestOmittedReason: "unreadable" as const,
+              });
+            }
           }
         }
       }
@@ -1648,18 +1713,40 @@ const crumbGetComponentTool = server.registerTool(
           ],
         });
       }
-      const relatedGroups = loaded.analysis.connectivity.groups.filter((group) =>
-        group.componentTerminals.some(
-          (terminal) =>
-            terminal.componentId.toLowerCase() === component.id.toLowerCase(),
-        ),
-      );
+      const componentKey = component.id.toLowerCase();
+      const relatedGroups = loaded.analysis.connectivity.groups
+        .filter((group) =>
+          fullConnectionGroupMembership(group).componentTerminals.some(
+            (terminal) =>
+              terminal.componentId.toLowerCase() === componentKey,
+          ),
+        )
+        .map((group) => {
+          const fullTerminals =
+            fullConnectionGroupMembership(group).componentTerminals;
+          const focused = fullTerminals.filter(
+            (terminal) =>
+              terminal.componentId.toLowerCase() === componentKey,
+          );
+          const retained = group.componentTerminals.filter(
+            (terminal) =>
+              terminal.componentId.toLowerCase() !== componentKey,
+          );
+          return {
+            ...group,
+            componentTerminals: [...focused, ...retained].slice(
+              0,
+              MAX_CONNECTION_GROUP_MEMBERS_RETURNED,
+            ),
+          };
+        });
       const boundedGroups = boundCollection(relatedGroups, 32);
       const componentDiagnosticPrefix = `components.${component.index}`;
       const diagnostics: Diagnostic[] = [
         ...loaded.structuralDiagnostics,
         ...loaded.analysis.diagnostics.filter(
           (diagnostic) =>
+            diagnostic.code === "connection-membership-truncated" ||
             diagnostic.path === componentDiagnosticPrefix ||
             diagnostic.path.startsWith(`${componentDiagnosticPrefix}.`),
         ),
@@ -1730,8 +1817,10 @@ const crumbGetComponentTool = server.registerTool(
                   arguments: {
                     path: loaded.ref,
                     componentId: component.id,
+                    includeGeometry,
                     includeSourceCode: true,
                     sourceOffset: sourceWindow.nextOffset ?? 0,
+                    topologyMode,
                     expectedProjectDigest: loaded.project.digest,
                   },
                 },
@@ -1742,6 +1831,7 @@ const crumbGetComponentTool = server.registerTool(
                   reason: "See every electrical net this component participates in.",
                   arguments: {
                     path: loaded.ref,
+                    topologyMode,
                     expectedProjectDigest: loaded.project.digest,
                   },
                 },
@@ -1947,11 +2037,16 @@ const crumbNetlistTool = server.registerTool(
         },
       );
       const netlist = buildNetlist(loaded.analysis, { applySwitchStates });
+      const optionsFingerprint = paginationOptionsFingerprint({
+        topologyMode,
+        applySwitchStates,
+      });
       const offset = decodeCursor(
         cursor,
         "netlist",
         loaded.project.digest,
         netlist.nets.length,
+        optionsFingerprint,
       );
       const paged = pageResult(
         netlist.nets,
@@ -1959,6 +2054,7 @@ const crumbNetlistTool = server.registerTool(
         limit,
         "netlist",
         loaded.project.digest,
+        optionsFingerprint,
       );
       const diagnostics: Diagnostic[] = [
         ...loaded.structuralDiagnostics,

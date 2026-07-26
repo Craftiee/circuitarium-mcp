@@ -3,6 +3,26 @@
 [![CI](https://github.com/Craftiee/circuitarium-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Craftiee/circuitarium-mcp/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
+Give Claude, ChatGPT/Codex, or a local MCP-capable model a safe, typed
+electronics workbench instead of asking it to guess at opaque circuit files.
+Circuitarium MCP currently provides 13 bounded tools for Unity-era CRUMB
+`.cru` saves, including netlist export and evidence-scoped electrical checks.
+Project analysis is read-only; the sole file-writing tool emits only one of
+five fixed synthetic fixtures. The longer-term neutral layer is designed to
+support additional simulators without making CRUMB the universal data model.
+
+```powershell
+git clone https://github.com/Craftiee/circuitarium-mcp.git
+cd circuitarium-mcp
+npm ci
+npm run check
+```
+
+Then connect the compiled `dist/src/server.js` stdio entrypoint using the
+[model-host setup guide](docs/client-setup.md). The current boundary is file
+analysis: no live CRUMB control, arbitrary editing, or circuit simulation is
+claimed.
+
 > [!IMPORTANT]
 > Circuitarium MCP and its CRUMBLE integration are independent, unofficial
 > community interoperability work. They are not affiliated with, endorsed by,
@@ -71,9 +91,10 @@ for the evidence categories used by the project.
   behavior.
 - Infer attachment groups using either explicit connections only or the
   version-pinned CRUMB 1.3.5 breadboard topology.
-- Export jumper-collapsed electrical nets with `VCC`/`GND` names inferred from
-  DC supply terminals, optional saved-switch-state merges with explicit
-  provenance, and paging for large designs.
+- Export jumper-collapsed electrical nets with `VCC`/`GND` names on
+  unambiguous DC-supply rails, leave mixed positive/ground supply roles
+  explicitly unnamed, apply optional saved-switch-state merges with bounded
+  provenance, and page large designs.
 - Run static electrical rule checks over the inferred nets: supply shorts,
   LEDs directly across the rails, bypassed two-terminal parts, resistors above
   their power rating, floating IC power pins, and floating terminals — each
@@ -111,6 +132,10 @@ for the evidence categories used by the project.
 - Guard continued reads with `expectedProjectDigest`; if the shared artifact
   changed, the tool stops with `PROJECT_STATE_CONFLICT` instead of analyzing
   stale handoff state.
+- Preserve valid CRUMB files byte-for-byte through an internal, guarded
+  round-trip core, including unknown nested payloads and original XML lexical
+  forms. This is the safety foundation for future mutation tools, not a claim
+  that arbitrary editing is exposed today.
 
 All five generated fixtures were manually opened in the tested CRUMB 1.3.5
 build and produced the intended visible components. That controlled observation
@@ -149,8 +174,12 @@ git clone https://github.com/Craftiee/circuitarium-mcp.git
 cd circuitarium-mcp
 npm ci
 npm run check
-npm run start:mcp
+node dist/src/server.js
 ```
+
+The packaged `circuitarium-mcp` command is install-smoke-tested in CI. Until
+the first npm release is published, use the source-checkout instructions
+above; do not assume the registry package exists yet.
 
 Useful CLI commands:
 
@@ -192,7 +221,7 @@ For a concise model-host footing, use the
 | `crumb_list_projects` | Discover workspace `.cru` files with sizes, timestamps, and digests | Reads listed files |
 | `crumb_analyze_design` | Return bounded semantic summaries, component pages, or inferred connection pages | Reads one file |
 | `crumb_get_component` | Fetch one component with parameters, terminals, connection groups, and windowed firmware source | Reads one file |
-| `crumb_export_netlist` | Promote connection groups to named electrical nets with jumper collapse and optional switch-state merges | Reads one file |
+| `crumb_export_netlist` | Promote connection groups to electrical nets with jumper collapse, unambiguous supply naming, and optional switch-state merges | Reads one file |
 | `crumb_check_design` | Run static electrical rule checks (supply shorts, LED series resistance, floating pins, power ratings) | Reads one file |
 | `crumb_bom` | Group components into a bill of materials by part identity | Reads one file |
 | `crumb_inspect_design` | Return a format-level `.cru` inventory | Reads one file |

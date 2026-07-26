@@ -473,13 +473,16 @@ CRUMB without adapter evidence.
 ### `crumb_export_netlist`
 
 Promotes inferred connection groups to electrical nets: jumper wires are
-collapsed out of net membership (kept as `wireIds` provenance), nets touching a
-recognized DC supply's terminals are named `VCC`/`GND` (numbered when several
-supplies exist), and `applySwitchStates: true` additionally merges nets across
-saved slide-switch and DIP-switch positions with per-net `mergedBySwitches`
-provenance. Results are paged with the same digest-bound opaque cursors as
-analysis. Nets are static file inference under the selected topology mode, not
-simulation output.
+collapsed out of net membership (kept as `wireIds` provenance), unambiguous
+nets touching recognized DC supply terminals are named `VCC`/`GND` (numbered
+when several independent rails exist), and nets mixing positive and ground
+roles remain unnamed because supply-isolation semantics are unverified.
+`applySwitchStates: true` additionally merges nets across saved slide-switch
+and DIP-switch positions. Per-net `mergedBySwitches` is response-bounded and
+paired with `switchMergeBounds`; rule evaluation retains the complete internal
+provenance. Results are paged with opaque cursors bound to the project digest,
+view, topology mode, and saved-switch options. Nets are static file inference
+under the selected topology mode, not simulation output.
 
 ### `crumb_check_design`
 

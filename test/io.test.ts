@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,8 +7,10 @@ import test from "node:test";
 import {
   CIRCUITARIUM_MCP_ROOT,
   ELECTRONICS_MCP_ROOT,
+  listCruFiles,
   readCruFile,
   resolveCircuitariumMcpRoot,
+  WorkspacePathDeniedError,
 } from "../src/adapters/crumb/io.js";
 
 test("CRUMB file reads are confined to CIRCUITARIUM_MCP_ROOT", async () => {
@@ -47,4 +49,114 @@ test("ELECTRONICS_MCP_ROOT remains a backward-compatible fallback", () => {
     }),
     legacyRoot,
   );
+});
+
+test("workspace listing respects recursion and skips ignored directories", async () => {
+  const directory = await mkdtemp(
+    join(CIRCUITARIUM_MCP_ROOT, ".circuitarium-walker-test-"),
+  );
+  try {
+    await mkdir(join(directory, "nested"));
+    await mkdir(join(directory, ".hidden"));
+    await mkdir(join(directory, "node_modules"));
+    await Promise.all([
+      writeFile(join(directory, "root.cru"), "", "utf8"),
+      writeFile(join(directory, "nested", "nested.cru"), "", "utf8"),
+      writeFile(join(directory, ".hidden", "hidden.cru"), "", "utf8"),
+      writeFile(join(directory, "node_modules", "dependency.cru"), "", "utf8"),
+    ]);
+
+    const shallow = await listCruFiles(directory, { recursive: false });
+    assert.deepEqual(
+      shallow.entries.map((entry) => entry.ref.split("/").at(-1)),
+      ["root.cru"],
+    );
+
+    const recursive = await listCruFiles(directory);
+    assert.deepEqual(
+      recursive.entries.map((entry) => entry.ref.split("/").at(-1)),
+      ["nested.cru", "root.cru"],
+    );
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+
+test("workspace listing skips symbolic-link directories", async (context) => {
+  const directory = await mkdtemp(
+    join(CIRCUITARIUM_MCP_ROOT, ".circuitarium-symlink-test-"),
+  );
+  const outsideDirectory = await mkdtemp(
+    join(tmpdir(), "circuitarium-symlink-outside-"),
+  );
+  try {
+    const realDirectory = join(directory, "real");
+    await mkdir(realDirectory);
+    await writeFile(join(realDirectory, "inside.cru"), "", "utf8");
+    await writeFile(join(outsideDirectory, "outside.cru"), "", "utf8");
+    try {
+      await symlink(
+        realDirectory,
+        join(directory, "linked"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      await symlink(
+        outsideDirectory,
+        join(directory, "outside-linked"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EPERM" || code === "EACCES" || code === "ENOTSUP") {
+        context.skip(`Directory links are unavailable on this runner (${code})`);
+        return;
+      }
+      throw error;
+    }
+
+    const listing = await listCruFiles(directory);
+    assert.equal(listing.entries.length, 1);
+    const [entry] = listing.entries;
+    assert.ok(entry);
+    assert.match(entry.ref, /\/real\/inside\.cru$/);
+    assert.doesNotMatch(entry.ref, /\/linked\//);
+    assert.doesNotMatch(entry.ref, /\/outside-linked\//);
+  } finally {
+    await rm(directory, { recursive: true });
+    await rm(outsideDirectory, { recursive: true });
+  }
+});
+
+test("workspace listing rejects a start directory outside the configured root", async () => {
+  const outsideDirectory = await mkdtemp(
+    join(tmpdir(), "circuitarium-walker-outside-"),
+  );
+  try {
+    await assert.rejects(
+      listCruFiles(outsideDirectory),
+      WorkspacePathDeniedError,
+    );
+  } finally {
+    await rm(outsideDirectory, { recursive: true });
+  }
+});
+
+test("workspace listing enforces its streaming scan budget", async () => {
+  const directory = await mkdtemp(
+    join(CIRCUITARIUM_MCP_ROOT, ".circuitarium-budget-test-"),
+  );
+  try {
+    await Promise.all(
+      Array.from({ length: 5 }, (_, index) =>
+        writeFile(join(directory, `${index}.cru`), "", "utf8"),
+      ),
+    );
+    const listing = await listCruFiles(directory, { scanEntryLimit: 2 });
+
+    assert.equal(listing.scannedEntries, 2);
+    assert.equal(listing.scanTruncated, true);
+    assert.ok(listing.entries.length <= 2);
+  } finally {
+    await rm(directory, { recursive: true });
+  }
 });

@@ -161,6 +161,34 @@ export interface CrumbConnectionGroup {
   };
 }
 
+export interface CrumbFullConnectionGroupMembership {
+  physicalAttachments: readonly CrumbConnectionGroup["physicalAttachments"][number][];
+  componentTerminals: readonly CrumbConnectionGroup["componentTerminals"][number][];
+  explicitWireIds: readonly string[];
+}
+
+const fullConnectionMembershipByGroup = new WeakMap<
+  CrumbConnectionGroup,
+  CrumbFullConnectionGroupMembership
+>();
+
+/**
+ * Returns the complete internal membership used for electrical analysis.
+ * Public connection-group arrays are deliberately display-bounded, so rule
+ * evaluation must use this accessor instead of those serialized arrays.
+ */
+export function fullConnectionGroupMembership(
+  group: CrumbConnectionGroup,
+): CrumbFullConnectionGroupMembership {
+  return (
+    fullConnectionMembershipByGroup.get(group) ?? {
+      physicalAttachments: group.physicalAttachments,
+      componentTerminals: group.componentTerminals,
+      explicitWireIds: group.explicitWireIds,
+    }
+  );
+}
+
 export interface CrumbDesignAnalysis {
   analysisVersion: "crumb.analysis/0.2";
   format: "crumb-cru";
@@ -225,11 +253,48 @@ function normalizedType(type: string): string {
   return type.endsWith(":guid") ? "guid" : type;
 }
 
-function matchesSignature(rawTypes: string[], signature: string[]): boolean {
+function decodedKindMatchesType(
+  value: CruDecodedDataValue,
+  normalized: string,
+): boolean {
+  switch (normalized) {
+    case "guid":
+      return value.kind === "guid";
+    case "Vector3S":
+      return value.kind === "vector3";
+    case "QuaternionS":
+      return value.kind === "quaternion";
+    case "ArrayOfVector3S":
+      return value.kind === "vector3-array";
+    case "ArrayOfTiePointID":
+      return value.kind === "tie-point-array";
+    case "ArrayOfBoolean":
+      return value.kind === "boolean-array";
+    case "xsd:boolean":
+      return value.kind === "boolean";
+    case "xsd:int":
+    case "xsd:float":
+    case "xsd:double":
+      return value.kind === "number";
+    case "xsd:string":
+      return value.kind === "string";
+    case "xsd:base64Binary":
+      return value.kind === "unknown";
+    default:
+      return true;
+  }
+}
+
+function matchesSignature(
+  values: CruDecodedDataValue[],
+  signature: string[],
+): boolean {
   return (
-    rawTypes.length === signature.length &&
-    rawTypes.every(
-      (type, index) => normalizedType(type) === signature[index],
+    values.length === signature.length &&
+    values.every(
+      (value, index) =>
+        normalizedType(value.type) === signature[index] &&
+        decodedKindMatchesType(value, signature[index] ?? ""),
     )
   );
 }
@@ -437,7 +502,7 @@ function analyzeComponent(
           ...(definition.alternateDataTypes ?? []),
         ];
   const matchedSignatureIndex = signatures.findIndex((signature) =>
-    matchesSignature(allRawDataTypes, signature),
+    matchesSignature(component.values, signature),
   );
   const isNormalIcSignature =
     component.toolId === 5 && matchedSignatureIndex === 0;
@@ -784,7 +849,7 @@ function connectionGroups(
         MAX_CONNECTION_GROUP_MEMBERS_RETURNED,
       );
 
-      return {
+      const group: CrumbConnectionGroup = {
         id: `connection-${index + 1}`,
         physicalAttachments: physicalAttachments.items,
         componentTerminals: componentTerminals.items,
@@ -798,6 +863,12 @@ function connectionGroups(
           ).length,
         },
       };
+      fullConnectionMembershipByGroup.set(group, {
+        physicalAttachments: allPhysicalAttachments,
+        componentTerminals: allComponentTerminals,
+        explicitWireIds: allExplicitWireIds,
+      });
+      return group;
     });
   const boundedOutOfRangeAttachments = boundCollection(
     outOfRangeAttachments,

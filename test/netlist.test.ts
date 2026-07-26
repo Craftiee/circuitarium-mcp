@@ -207,6 +207,88 @@ test("saved slide-switch positions merge nets only on request, with provenance",
   );
 });
 
+test("later switch unions retain every earlier closure on the final net", () => {
+  const base = serializeCru({
+    name: "Switch Provenance Chain",
+    components: [
+      {
+        toolId: 0,
+        guid: BOARD_GUID,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+      },
+    ],
+  });
+  const firstSwitchId = "ff22ce70-2222-4a7a-b202-d4467ab10d69";
+  const secondSwitchId = "0022ce70-2222-4a7a-b202-d4467ab10d69";
+  const xml = spliceComponents(
+    spliceComponents(
+      base,
+      slideSwitchXml(firstSwitchId, BOARD_GUID, 1, 25, 75, 50),
+    ),
+    slideSwitchXml(secondSwitchId, BOARD_GUID, 1, 0, 100, 25),
+  );
+  const analysis = analyzeCru(xml);
+  const netlist = buildNetlist(analysis, { applySwitchStates: true });
+  const merged = netlist.nets.find(
+    (net) => net.switchMergeBounds.total === 2,
+  );
+
+  assert.equal(netlist.stats.switchMergesApplied, 2);
+  assert.ok(merged, JSON.stringify(netlist.nets));
+  assert.deepEqual(
+    merged.mergedBySwitches.map((entry) => entry.componentId).sort(),
+    [firstSwitchId, secondSwitchId].sort(),
+  );
+  assert.deepEqual(merged.switchMergeBounds, {
+    total: 2,
+    returned: 2,
+    limit: 128,
+    truncated: false,
+  });
+});
+
+test("switch provenance is response-bounded without violating the net schema", () => {
+  const base = serializeCru({
+    name: "Switch Provenance Bound",
+    components: [
+      {
+        toolId: 0,
+        guid: BOARD_GUID,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+      },
+    ],
+  });
+  const switches = Array.from({ length: 129 }, (_, index) =>
+    slideSwitchXml(
+      `${index.toString(16).padStart(8, "0")}-2222-4a7a-b202-d4467ab10d69`,
+      BOARD_GUID,
+      1,
+      0,
+      10,
+      5,
+    ),
+  ).join("\n");
+  const xml = base.replace(
+    "  </components>",
+    `${switches}\n  </components>`,
+  );
+  const netlist = buildNetlist(analyzeCru(xml), { applySwitchStates: true });
+  const merged = netlist.nets.find(
+    (net) => net.switchMergeBounds.truncated,
+  );
+
+  assert.ok(merged);
+  assert.equal(merged.mergedBySwitches.length, 128);
+  assert.deepEqual(merged.switchMergeBounds, {
+    total: 129,
+    returned: 128,
+    limit: 128,
+    truncated: true,
+  });
+});
+
 test("single-terminal nets are reported as floating terminals", () => {
   const xml = serializeCru({
     name: "Floating Test",
@@ -256,6 +338,49 @@ test("a supply with both terminals on one net stays unnamed with a diagnostic", 
     ),
   );
   assert.ok(netlist.nets.every((net) => net.name === undefined));
+});
+
+test("mixed supply-terminal roles stay unnamed regardless of component order", () => {
+  const base = serializeCru({
+    name: "Stacked Supply Naming",
+    components: [
+      {
+        toolId: 0,
+        guid: BOARD_GUID,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+      },
+    ],
+  });
+  const supplyA = "aa11ce70-1111-4a7a-b202-d4467ab10d69";
+  const supplyB = "bb22ce70-2222-4a7a-b202-d4467ab10d69";
+  const supplyAXml = supplyXml(supplyA, BOARD_GUID, 5, 0, 5);
+  const supplyBXml = supplyXml(supplyB, BOARD_GUID, 5, 10, 1);
+
+  for (const xml of [
+    spliceComponents(spliceComponents(base, supplyAXml), supplyBXml),
+    spliceComponents(spliceComponents(base, supplyBXml), supplyAXml),
+  ]) {
+    const netlist = buildNetlist(analyzeCru(xml));
+    const mixedNetId = netlist.terminalNetIndex.get(
+      `${supplyA}:positive-output`,
+    );
+    assert.ok(mixedNetId);
+    assert.equal(
+      netlist.terminalNetIndex.get(`${supplyB}:ground`),
+      mixedNetId,
+    );
+    assert.equal(
+      netlist.nets.find((net) => net.id === mixedNetId)?.name,
+      undefined,
+    );
+    assert.ok(
+      netlist.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "mixed-supply-terminal-net-unnamed",
+      ),
+    );
+  }
 });
 
 function manyTerminalComponentXml(

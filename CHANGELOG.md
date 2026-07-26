@@ -34,6 +34,25 @@ remains experimental.
   findings on switch-merged nets state their conditionality, per-component
   diagnostics match exact path segments, and workspace-listing digests stop
   at a per-call byte budget (`digest-budget-exhausted`).
+- Cross-review follow-up hardening: single oversized connection groups retain
+  complete internal terminal membership for netlist/ERC, focused component
+  reads cannot disappear past response bounds, switch provenance survives
+  later unions and carries explicit truncation metadata, mixed supply roles
+  stay deterministically unnamed, and pagination cursors bind topology and
+  switch-state options.
+- Known typed payloads now fail atomically on malformed vectors, quaternions,
+  tie points, boolean arrays, and scalar lexical forms instead of silently
+  losing terminals or parameters. XML work limits cap depth, element count,
+  component count, and per-component payload count before analysis.
+- Workspace enumeration now streams directory entries under a tested scan
+  quota, directly tests symlink and containment behavior, and returns digest,
+  size, and modification time from one stable opened snapshot.
+- Neutral endpoint identity now uses collision-free tuples, so colons in
+  component IDs or pin names cannot create false net conflicts.
+- A byte-preserving CRUMB round-trip core now retains unknown payloads and
+  lexical XML exactly, indexes edits by guarded byte span, validates every
+  replacement artifact, and documents canonical spellings for future mutation
+  tools. Public write tools remain disabled pending in-game reopen evidence.
 - Circuitarium MCP umbrella branding and the CRUMBLE identity for
   CRUMB-specific integrations.
 - A CRUMBLE integration guide documenting evidence profiles, stable protocol
@@ -49,6 +68,12 @@ remains experimental.
   data, connection membership, summaries, and diagnostics.
 - Typed `INVALID_ARGUMENT` envelopes for malformed registered-tool calls while
   retaining strict published input schemas.
+- An installable `circuitarium-mcp` package entrypoint and typed ESM export
+  with an allowlisted artifact, installed-package import/MCP handshakes, and
+  release-version coherence checks.
+- SHA-pinned CI, package/coverage gates, dependency review, CodeQL scanning,
+  and a protected tag-driven npm publication workflow.
+- A controlled-observation issue form for community CRUMB format evidence.
 
 ### Changed
 
@@ -93,6 +118,14 @@ remains experimental.
   cannot be mistaken for an input-file origin claim.
 - Local-backend data egress is reported as host-dependent, and fixed fixture
   generation is distinguished from general circuit building.
+- Pull-request CI no longer duplicates branch-push and pull-request matrices;
+  macOS compatibility coverage and a non-blocking current-Node canary are
+  included.
+- The executable package publishes the MCP SDK's bundled, shrinkwrapped,
+  audited dependency tree so consumers retain the security override used by
+  repository CI.
+- Release packaging builds and prepares bundled runtime metadata only inside
+  per-run isolated staging and tarball workspaces.
 
 ## [0.2.0] - 2026-07-25
 

@@ -4,13 +4,18 @@ import { deflateSync } from "node:zlib";
 import {
   boundDiagnostics,
   describeUntrustedText,
+  MAX_CRU_COMPONENTS,
+  MAX_CRU_DATA_VALUES_PER_COMPONENT,
   MAX_CRU_GUID_TOKEN_CHARACTERS,
   MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
+  MAX_CRU_XML_DEPTH,
+  MAX_CRU_XML_ELEMENTS,
   MAX_CRU_XML_NAME_CHARACTERS,
   MAX_CRU_XSI_TYPE_CHARACTERS,
   type BoundedTextInfo,
 } from "../../domain/bounds.js";
 import type { Diagnostic } from "../../domain/experiment.js";
+import { assertCruXmlConventions } from "./xmlNamespaces.js";
 
 export interface Vector3 {
   x: number;
@@ -37,10 +42,11 @@ export interface CruTiePoint {
   parentIdentifier: string;
 }
 
-export interface CruTypedScalar {
-  type: "xsd:float" | "xsd:double" | "xsd:int" | "xsd:boolean" | "xsd:string";
-  value: string | number | boolean;
-}
+export type CruTypedScalar =
+  | { type: "xsd:float" | "xsd:double"; value: number }
+  | { type: "xsd:int"; value: number }
+  | { type: "xsd:boolean"; value: boolean }
+  | { type: "xsd:string"; value: string };
 
 export interface CruConnectedComponent {
   toolId: number;
@@ -182,8 +188,11 @@ const parser = new XMLParser({
   attributeNamePrefix: "@_",
   textNodeName: "#text",
   parseTagValue: false,
-  trimValues: true,
+  trimValues: false,
 });
+const XSD_DECIMAL_NUMBER_PATTERN =
+  /^[+-]?(?:(?:[0-9]+(?:\.[0-9]*)?)|(?:\.[0-9]+))(?:[eE][+-]?[0-9]+)?$/;
+const XSD_INTEGER_PATTERN = /^[+-]?[0-9]+$/;
 
 /** The bytes are not a structurally acceptable CRUMB save. */
 export class CruFormatError extends Error {}
@@ -195,6 +204,98 @@ class CruStructuralLimitError extends CruFormatError {
     limit: number,
   ) {
     super(`A CRUMB ${label} exceeds the ${limit}-character structural limit.`);
+  }
+}
+
+class CruWorkLimitError extends CruFormatError {
+  constructor(
+    readonly diagnosticPath: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function findMarkupEnd(xml: string, start: number): number {
+  let quote: '"' | "'" | undefined;
+  for (let index = start; index < xml.length; index += 1) {
+    const character = xml[index];
+    if (quote !== undefined) {
+      if (character === quote) {
+        quote = undefined;
+      }
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ">") {
+      return index;
+    }
+  }
+  return xml.length - 1;
+}
+
+function enforceXmlWorkLimits(xml: string): void {
+  let elementCount = 0;
+  let depth = 0;
+  let cursor = 0;
+  while (cursor < xml.length) {
+    const open = xml.indexOf("<", cursor);
+    if (open < 0) {
+      break;
+    }
+    if (xml.startsWith("<!--", open)) {
+      const close = xml.indexOf("-->", open + 4);
+      cursor = close < 0 ? xml.length : close + 3;
+      continue;
+    }
+    if (xml.startsWith("<![CDATA[", open)) {
+      const close = xml.indexOf("]]>", open + 9);
+      cursor = close < 0 ? xml.length : close + 3;
+      continue;
+    }
+    if (xml.startsWith("<?", open)) {
+      const close = xml.indexOf("?>", open + 2);
+      cursor = close < 0 ? xml.length : close + 2;
+      continue;
+    }
+    if (
+      /^<!\s*(?:DOCTYPE|ENTITY)\b/i.test(
+        xml.slice(open, Math.min(xml.length, open + 32)),
+      )
+    ) {
+      throw new CruFormatError(
+        "DOCTYPE and ENTITY declarations are not allowed in CRUMB files",
+      );
+    }
+
+    const close = findMarkupEnd(xml, open + 1);
+    const closing = xml[open + 1] === "/";
+    const declaration = xml[open + 1] === "!";
+    let last = close - 1;
+    while (last > open && /\s/.test(xml[last] ?? "")) {
+      last -= 1;
+    }
+    const selfClosing = xml[last] === "/";
+    if (closing) {
+      depth = Math.max(0, depth - 1);
+    } else if (!declaration) {
+      elementCount += 1;
+      if (elementCount > MAX_CRU_XML_ELEMENTS) {
+        throw new CruWorkLimitError(
+          "SaveData",
+          `CRUMB XML exceeds the ${MAX_CRU_XML_ELEMENTS}-element parsing limit.`,
+        );
+      }
+      if (!selfClosing) {
+        depth += 1;
+        if (depth > MAX_CRU_XML_DEPTH) {
+          throw new CruWorkLimitError(
+            "SaveData",
+            `CRUMB XML exceeds the ${MAX_CRU_XML_DEPTH}-level nesting limit.`,
+          );
+        }
+      }
+    }
+    cursor = close + 1;
   }
 }
 
@@ -227,22 +328,53 @@ function textOf(value: unknown): string | undefined {
 }
 
 function numberOf(value: unknown): number | undefined {
-  const text = textOf(value);
-  if (text === undefined || text.length === 0) {
+  const lexical = textOf(value);
+  const text = lexical?.trim();
+  if (lexical === undefined || text === undefined || text.length === 0) {
     return undefined;
   }
   requireStructuralToken(
-    text,
+    lexical,
     MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
     "numeric lexical token",
     "SaveData",
   );
+  if (!XSD_DECIMAL_NUMBER_PATTERN.test(text)) {
+    return undefined;
+  }
   const parsedNumber = Number(text);
   return Number.isFinite(parsedNumber) ? parsedNumber : undefined;
 }
 
+function integerOf(value: unknown): number | undefined {
+  const lexical = textOf(value);
+  const text = lexical?.trim();
+  if (lexical === undefined || text === undefined || text.length === 0) {
+    return undefined;
+  }
+  requireStructuralToken(
+    lexical,
+    MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
+    "numeric lexical token",
+    "SaveData",
+  );
+  if (!XSD_INTEGER_PATTERN.test(text)) {
+    return undefined;
+  }
+  const parsedNumber = Number(text);
+  return Number.isSafeInteger(parsedNumber) ? parsedNumber : undefined;
+}
+
+function isFiniteFloat32(value: number): boolean {
+  const floatValue = Math.fround(value);
+  return (
+    Number.isFinite(floatValue) &&
+    (value === 0 || floatValue !== 0)
+  );
+}
+
 function booleanOf(value: unknown): boolean | undefined {
-  const text = textOf(value)?.toLowerCase();
+  const text = textOf(value)?.trim();
   if (text === "true" || text === "1") {
     return true;
   }
@@ -260,7 +392,14 @@ function vectorOf(value: unknown): Vector3 | undefined {
   const x = numberOf(record.x);
   const y = numberOf(record.y);
   const z = numberOf(record.z);
-  return x === undefined || y === undefined || z === undefined ? undefined : { x, y, z };
+  return x === undefined ||
+    y === undefined ||
+    z === undefined ||
+    !isFiniteFloat32(x) ||
+    !isFiniteFloat32(y) ||
+    !isFiniteFloat32(z)
+    ? undefined
+    : { x, y, z };
 }
 
 function quaternionOf(value: unknown): Quaternion | undefined {
@@ -272,7 +411,14 @@ function quaternionOf(value: unknown): Quaternion | undefined {
   const x = numberOf(record.x);
   const y = numberOf(record.y);
   const z = numberOf(record.z);
-  return w === undefined || x === undefined || y === undefined || z === undefined
+  return w === undefined ||
+    x === undefined ||
+    y === undefined ||
+    z === undefined ||
+    !isFiniteFloat32(w) ||
+    !isFiniteFloat32(x) ||
+    !isFiniteFloat32(y) ||
+    !isFiniteFloat32(z)
     ? undefined
     : { w, x, y, z };
 }
@@ -289,74 +435,126 @@ function decodeDataValue(value: unknown): CruDecodedDataValue {
     "SaveData.components.SaveComponent.data.anyType.@xsi:type",
   );
 
-  if (type.endsWith(":guid") && text !== undefined) {
+  if (type.endsWith(":guid")) {
+    if (text === undefined || text.trim().length === 0) {
+      throw new CruFormatError("A typed GUID payload is empty or malformed.");
+    }
+    const guid = text.trim();
     requireStructuralToken(
       text,
       MAX_CRU_GUID_TOKEN_CHARACTERS,
       "GUID token",
       "SaveData.components.SaveComponent.data.anyType",
     );
-    return { type, kind: "guid", value: text };
+    return { type, kind: "guid", value: guid };
   }
   if (type === "Vector3S") {
     const vector = vectorOf(record);
-    if (vector) {
-      return { type, kind: "vector3", value: vector };
+    if (vector === undefined) {
+      throw new CruFormatError(
+        "A Vector3S payload is missing a finite x, y, or z value.",
+      );
     }
+    return { type, kind: "vector3", value: vector };
   }
   if (type === "QuaternionS") {
     const quaternion = quaternionOf(record);
-    if (quaternion) {
-      return { type, kind: "quaternion", value: quaternion };
+    if (quaternion === undefined) {
+      throw new CruFormatError(
+        "A QuaternionS payload is missing a finite w, x, y, or z value.",
+      );
     }
+    return { type, kind: "quaternion", value: quaternion };
   }
   if (type === "ArrayOfVector3S") {
-    const vectors = asArray(record?.Vector3S)
-      .map(vectorOf)
-      .filter((vector): vector is Vector3 => vector !== undefined);
+    if (record === undefined) {
+      throw new CruFormatError("An ArrayOfVector3S payload is malformed.");
+    }
+    const vectors = asArray(record.Vector3S).map((entry) => {
+      const vector = vectorOf(entry);
+      if (vector === undefined) {
+        throw new CruFormatError(
+          "An ArrayOfVector3S payload contains a malformed vector.",
+        );
+      }
+      return vector;
+    });
     return { type, kind: "vector3-array", value: vectors };
   }
   if (type === "ArrayOfTiePointID") {
-    const tiePoints = asArray(record?.TiePointID)
-      .map((rawTiePoint) => {
-        if (!rawTiePoint || typeof rawTiePoint !== "object") {
-          return undefined;
-        }
-        const tiePoint = rawTiePoint as Record<string, unknown>;
-        const id = numberOf(tiePoint.id);
-        const parentIdentifier = textOf(tiePoint.parentIdentifier);
-        if (parentIdentifier !== undefined) {
-          requireStructuralToken(
-            parentIdentifier,
-            MAX_CRU_GUID_TOKEN_CHARACTERS,
-            "tie-point parent GUID token",
-            "SaveData.components.SaveComponent.data.ArrayOfTiePointID.parentIdentifier",
-          );
-        }
-        return id === undefined || parentIdentifier === undefined
-          ? undefined
-          : { id, parentIdentifier };
-      })
-      .filter((tiePoint): tiePoint is CruTiePoint => tiePoint !== undefined);
+    if (record === undefined) {
+      throw new CruFormatError("An ArrayOfTiePointID payload is malformed.");
+    }
+    const tiePoints = asArray(record.TiePointID).map((rawTiePoint) => {
+      if (!rawTiePoint || typeof rawTiePoint !== "object") {
+        throw new CruFormatError(
+          "An ArrayOfTiePointID payload contains a malformed tie point.",
+        );
+      }
+      const tiePoint = rawTiePoint as Record<string, unknown>;
+      const id = integerOf(tiePoint.id);
+      const parentLexical = textOf(tiePoint.parentIdentifier);
+      const parentIdentifier = parentLexical?.trim();
+      if (parentLexical !== undefined) {
+        requireStructuralToken(
+          parentLexical,
+          MAX_CRU_GUID_TOKEN_CHARACTERS,
+          "tie-point parent GUID token",
+          "SaveData.components.SaveComponent.data.ArrayOfTiePointID.parentIdentifier",
+        );
+      }
+      if (
+        id === undefined ||
+        !Number.isInteger(id) ||
+        id < 0 ||
+        parentIdentifier === undefined ||
+        parentIdentifier.length === 0
+      ) {
+        throw new CruFormatError(
+          "An ArrayOfTiePointID payload contains an invalid id or parent identifier.",
+        );
+      }
+      return { id, parentIdentifier };
+    });
     return { type, kind: "tie-point-array", value: tiePoints };
   }
   if (type === "ArrayOfBoolean") {
-    const booleans = asArray(record?.boolean ?? record?.Boolean)
-      .map(booleanOf)
-      .filter((entry): entry is boolean => entry !== undefined);
+    if (record === undefined) {
+      throw new CruFormatError("An ArrayOfBoolean payload is malformed.");
+    }
+    const booleans = asArray(record.boolean ?? record.Boolean).map((entry) => {
+      const boolean = booleanOf(entry);
+      if (boolean === undefined) {
+        throw new CruFormatError(
+          "An ArrayOfBoolean payload contains an invalid boolean.",
+        );
+      }
+      return boolean;
+    });
     return { type, kind: "boolean-array", value: booleans };
   }
   if (type === "xsd:boolean") {
     const parsedBoolean = booleanOf(value);
-    if (parsedBoolean !== undefined) {
-      return { type, kind: "boolean", value: parsedBoolean, lexical: text ?? "" };
+    if (parsedBoolean === undefined) {
+      throw new CruFormatError("An xsd:boolean payload has an invalid lexical value.");
     }
+    return { type, kind: "boolean", value: parsedBoolean, lexical: text ?? "" };
   }
   if (type === "xsd:int" || type === "xsd:float" || type === "xsd:double") {
-    const parsedNumber = numberOf(value);
-    if (parsedNumber !== undefined) {
-      return { type, kind: "number", value: parsedNumber, lexical: text ?? "" };
+    const parsedNumber = type === "xsd:int" ? integerOf(value) : numberOf(value);
+    if (
+      parsedNumber === undefined ||
+      (type === "xsd:float" && !isFiniteFloat32(parsedNumber)) ||
+      (type === "xsd:int" &&
+        (!Number.isInteger(parsedNumber) ||
+          parsedNumber < -2_147_483_648 ||
+          parsedNumber > 2_147_483_647))
+    ) {
+      throw new CruFormatError(
+        `An ${type} payload has an invalid lexical or numeric value.`,
+      );
     }
+    return { type, kind: "number", value: parsedNumber, lexical: text ?? "" };
   }
   if (type === "xsd:string") {
     return { type, kind: "string", value: text ?? "", lexical: text ?? "" };
@@ -479,12 +677,37 @@ function connectedComponentXml(component: CruConnectedComponent): string[] {
   }
   lines.push("        </anyType>");
   for (const setting of component.settings) {
-    const value =
-      typeof setting.value === "number"
-        ? scalar(setting.value)
-        : typeof setting.value === "boolean"
-          ? String(setting.value)
-          : escapeXml(setting.value);
+    let value: string;
+    const rawValue: unknown = setting.value;
+    if (setting.type === "xsd:boolean") {
+      if (typeof rawValue !== "boolean") {
+        throw new Error("xsd:boolean settings require a boolean value");
+      }
+      value = String(rawValue);
+    } else if (setting.type === "xsd:string") {
+      if (typeof rawValue !== "string") {
+        throw new Error("xsd:string settings require a string value");
+      }
+      value = escapeXml(rawValue);
+    } else {
+      if (typeof rawValue !== "number") {
+        throw new Error(`${setting.type} settings require a numeric value`);
+      }
+      if (
+        setting.type === "xsd:int" &&
+        (!Number.isInteger(rawValue) ||
+          rawValue < -2_147_483_648 ||
+          rawValue > 2_147_483_647)
+      ) {
+        throw new Error("xsd:int settings require a signed 32-bit integer");
+      }
+      if (setting.type === "xsd:float" && !isFiniteFloat32(rawValue)) {
+        throw new Error(
+          "xsd:float settings require a finite representable 32-bit value",
+        );
+      }
+      value = scalar(rawValue);
+    }
     lines.push(`        <anyType xsi:type="${setting.type}">${value}</anyType>`);
   }
   lines.push("      </data>");
@@ -562,17 +785,14 @@ export function serializeCru(
 }
 
 export function decodeCru(xml: string): CruDecodedDocument {
-  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) {
-    throw new CruFormatError(
-      "DOCTYPE and ENTITY declarations are not allowed in CRUMB files",
-    );
-  }
+  enforceXmlWorkLimits(xml);
   const validation = XMLValidator.validate(xml);
   if (validation !== true) {
     throw new CruFormatError(
       `Invalid XML at line ${validation.err.line}, column ${validation.err.col}: ${validation.err.msg}`,
     );
   }
+  assertCruXmlConventions(xml);
 
   const parsed = parser.parse(xml) as Record<string, unknown>;
   const root = parsed.SaveData as Record<string, unknown> | undefined;
@@ -585,12 +805,25 @@ export function decodeCru(xml: string): CruDecodedDocument {
     componentContainer && typeof componentContainer === "object"
       ? asArray(componentContainer.SaveComponent)
       : [];
+  if (rawComponents.length > MAX_CRU_COMPONENTS) {
+    throw new CruWorkLimitError(
+      "SaveData.components",
+      `CRUMB save exceeds the ${MAX_CRU_COMPONENTS}-component parsing limit.`,
+    );
+  }
   const components: CruDecodedComponent[] = rawComponents.map((rawComponent, index) => {
     const component = rawComponent as Record<string, unknown>;
-    const toolId = numberOf(component.toolID) ?? Number.NaN;
+    const toolId = integerOf(component.toolID) ?? Number.NaN;
     const data = component.data as Record<string, unknown> | undefined;
-    const values =
-      data && typeof data === "object" ? asArray(data.anyType).map(decodeDataValue) : [];
+    const rawValues =
+      data && typeof data === "object" ? asArray(data.anyType) : [];
+    if (rawValues.length > MAX_CRU_DATA_VALUES_PER_COMPONENT) {
+      throw new CruWorkLimitError(
+        `SaveData.components.SaveComponent.${index}.data`,
+        `CRUMB component exceeds the ${MAX_CRU_DATA_VALUES_PER_COMPONENT}-value parsing limit.`,
+      );
+    }
+    const values = rawValues.map(decodeDataValue);
     const guidValue = values[0];
     const guid = guidValue?.kind === "guid" ? guidValue.value : undefined;
     return {
@@ -676,16 +909,22 @@ export function validateCru(xml: string): CruValidation {
   } catch (error) {
     const structuralLimit =
       error instanceof CruStructuralLimitError ? error : undefined;
+    const workLimit = error instanceof CruWorkLimitError ? error : undefined;
     return {
       valid: false,
       diagnostics: boundDiagnostics([
         {
           severity: "error",
           code:
-            structuralLimit === undefined
-              ? "invalid-xml-or-root"
-              : "structural-token-too-long",
-          path: structuralLimit?.diagnosticPath ?? "",
+            structuralLimit !== undefined
+              ? "structural-token-too-long"
+              : workLimit !== undefined
+                ? "structural-work-limit-exceeded"
+                : "invalid-xml-or-root",
+          path:
+            structuralLimit?.diagnosticPath ??
+            workLimit?.diagnosticPath ??
+            "",
           message: error instanceof Error ? error.message : String(error),
         },
       ]),

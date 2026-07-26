@@ -111,6 +111,54 @@ function ercFor(xml: string) {
   return checkNetlist(analysis, netlist);
 }
 
+test("a supply short remains visible past a single-group display bound", () => {
+  const fillerComponents = Array.from({ length: 70 }, (_, index) =>
+    twoTerminalComponent(
+      99,
+      `${index.toString(16).padStart(8, "0")}-0000-4000-8000-000000000000`,
+      BOARD_GUID,
+      0,
+      1,
+      [],
+    ),
+  );
+  const supplyId = "fffffff0-1111-4111-8111-fffffffffff0";
+  const xml = spliceComponents(
+    boardDocument(fillerComponents, "Oversized Supply Short"),
+    supplyXml(supplyId, BOARD_GUID, 5, 2, 3),
+  );
+  const analysis = analyzeCru(xml);
+  const oversizedGroup = analysis.connectivity.groups.find(
+    (group) => group.membershipBounds.componentTerminals.truncated,
+  );
+  assert.ok(oversizedGroup);
+  assert.deepEqual(oversizedGroup.membershipBounds.componentTerminals, {
+    total: 142,
+    returned: 128,
+    limit: 128,
+    truncated: true,
+  });
+
+  const netlist = buildNetlist(analysis);
+  const positiveNet = netlist.terminalNetIndex.get(
+    `${supplyId}:positive-output`,
+  );
+  const groundNet = netlist.terminalNetIndex.get(`${supplyId}:ground`);
+  assert.ok(positiveNet);
+  assert.equal(groundNet, positiveNet);
+
+  const report = checkNetlist(analysis, netlist);
+  assert.equal(report.valid, false);
+  assert.ok(
+    report.findings.some(
+      (finding) =>
+        finding.ruleId === "supply-net-short" &&
+        finding.componentIds.includes(supplyId),
+    ),
+    JSON.stringify(report.findings),
+  );
+});
+
 test("a LED straight across the supply rails is an error", () => {
   // Supply: + on row 100 (tie 500), - on row 101 (tie 505).
   // LED bridges rows 100 and 101 directly.
