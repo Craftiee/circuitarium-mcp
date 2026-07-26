@@ -38,13 +38,19 @@ recuse themselves when another maintainer can review it.
 ## Reporting
 
 Do not publish sensitive incident details in a repository issue. Use the
-project's private maintainer contact when one is listed. Until that contact is
-configured, use [GitHub's private abuse-reporting
+project's private maintainer contact when one is listed.
+
+> **Release blocker:** A dedicated private conduct-reporting contact has not
+> been configured. The maintainer must replace this notice with a real,
+> monitored private route before tagging `v0.2.0`. Do not substitute a fake or
+> unmonitored placeholder address.
+
+Until that route is configured, use [GitHub's private abuse-reporting
 form](https://support.github.com/contact/report-abuse) for conduct that violates
 GitHub policy. For other project conduct, open an issue containing no incident
 details and ask a maintainer to establish a private channel. Maintainers must
-not request sensitive details in public. This temporary route must be replaced
-with a dedicated private contact before a tagged release.
+not request sensitive details in public. This temporary route is not a
+substitute for the required project contact.
 
 Reports will be handled as privately as practical, reviewed promptly and
 fairly, and shared only with people needed to investigate or protect those

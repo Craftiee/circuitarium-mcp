@@ -173,14 +173,16 @@ general editor or placement tool is exposed.
 
 ### Distribution and verification boundary
 
-The source checkout and npm artifact expose the same stdio server, CLI tool
-envelopes, and typed ESM entrypoint. Packaging is allowlisted and verified from
-an isolated packed tarball: CI installs that exact artifact in a clean consumer,
-imports the tool registry without accidentally starting stdio, and completes an
-MCP handshake through the packaged executable. Pull requests additionally run
-the supported Node/OS matrix, lint, coverage, dependency review, CodeQL, and
-deterministic fixture verification. These gates establish build and packaging
-integrity; they do not add circuit-simulation or CRUMB-runtime capabilities.
+The source checkout and npm artifact expose the same stdio server and tool
+envelopes. For the `0.2.x` release line, the npm package supports only the
+`circuitarium-mcp` executable; source exports used internally by the repository
+are not a JavaScript compatibility promise. Packaging is allowlisted and
+verified from an isolated packed tarball: CI installs that exact artifact in a
+clean consumer and completes an MCP handshake through the packaged executable.
+Pull requests additionally run the supported Node/OS matrix, lint, coverage,
+dependency review, CodeQL, and deterministic fixture verification. These gates
+establish build and packaging integrity; they do not add circuit-simulation or
+CRUMB-runtime capabilities.
 
 ## Why a neutral electronics layer matters
 

@@ -24,14 +24,25 @@ Circuitarium is the general-purpose umbrella. CRUMBLE — Circuit Representation
 CRUMB-specific integration family. The branding does not change the stable
 `electronics_*`, `crumb_*`, or `electronics.mcp/0.2` protocol identifiers.
 
-Build first:
+For the published `0.2.x` package, launch the stdio server with:
+
+```powershell
+npx -y circuitarium-mcp@0.2.0
+```
+
+Set `CIRCUITARIUM_MCP_ROOT` in the host configuration to the narrowest
+directory containing the circuit files that host may access. Copyable
+configurations for Codex, Claude Code, VS Code, LM Studio, and Jan are in
+[the client-config examples](../examples/client-configs/README.md).
+
+For a source checkout, build first:
 
 ```powershell
 npm ci
 npm run build
 ```
 
-The production entrypoint is:
+Its production entrypoint is:
 
 ```text
 <repository-path>/dist/src/server.js
@@ -41,23 +52,21 @@ MCP clients generally require an absolute path. Replace the examples below
 with the absolute path to your clone; do not copy the angle-bracket placeholder
 literally.
 
-## Source checkout versus npm
+## Package versus source checkout
 
-The repository contains a smoke-tested `circuitarium-mcp` package command, but
-the command is not available through `npx` until the first public npm release
-has actually been published. Before that release, use the source checkout and
-absolute `dist/src/server.js` path documented below.
-
-After a registry release, an MCP client can launch the same stdio server with:
+The tagged package and source checkout launch the same stdio server. Prefer the
+immutable released version in client configuration:
 
 ```text
 Command: npx
-Arguments: -y circuitarium-mcp
+Arguments: -y circuitarium-mcp@0.2.0
 ```
 
-Keep the client's working directory or `CIRCUITARIUM_MCP_ROOT` pointed at the
-intended circuit workspace. An npm installation does not bundle user projects
-or make repository-relative fixture paths appear in that workspace.
+Use a source checkout when contributing or testing an unreleased change. Keep
+the client's working directory or `CIRCUITARIUM_MCP_ROOT` pointed at the
+intended circuit workspace in either case. An npm installation does not bundle
+user projects or make repository-relative fixture paths appear in that
+workspace.
 
 The default file boundary is the working directory. Set
 `CIRCUITARIUM_MCP_ROOT` to the intended shared project directory when the
@@ -99,21 +108,21 @@ Refer to the current OpenAI MCP setup documentation:
 
 <https://developers.openai.com/codex/mcp/>
 
-For a local STDIO server, use:
+For the released local stdio server, use:
 
 ```text
-Command: node
-Arguments: C:\absolute\path\to\circuitarium-mcp\dist\src\server.js
-Working directory: C:\absolute\path\to\circuitarium-mcp
+Command: npx
+Arguments: -y circuitarium-mcp@0.2.0
+Environment: CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace
 ```
 
 Equivalent project-scoped Codex configuration:
 
 ```toml
 [mcp_servers.circuitarium]
-command = "node"
-args = ["C:\\absolute\\path\\to\\circuitarium-mcp\\dist\\src\\server.js"]
-cwd = "C:\\absolute\\path\\to\\circuitarium-mcp"
+command = "npx"
+args = ["-y", "circuitarium-mcp@0.2.0"]
+env = { CIRCUITARIUM_MCP_ROOT = "C:\\absolute\\path\\to\\circuit-workspace" }
 startup_timeout_sec = 20
 tool_timeout_sec = 60
 ```
@@ -122,9 +131,9 @@ On macOS or Linux, the corresponding paths look like:
 
 ```toml
 [mcp_servers.circuitarium]
-command = "node"
-args = ["/absolute/path/to/circuitarium-mcp/dist/src/server.js"]
-cwd = "/absolute/path/to/circuitarium-mcp"
+command = "npx"
+args = ["-y", "circuitarium-mcp@0.2.0"]
+env = { CIRCUITARIUM_MCP_ROOT = "/absolute/path/to/circuit-workspace" }
 startup_timeout_sec = 20
 tool_timeout_sec = 60
 ```
@@ -134,24 +143,30 @@ server needs no OpenAI key.
 
 ## Claude Code and Claude Desktop
 
-Claude Code can register the local stdio entrypoint:
+Claude Code can register the released local stdio server:
 
 ```powershell
-claude mcp add --transport stdio circuitarium -- node "C:\absolute\path\to\circuitarium-mcp\dist\src\server.js"
+claude mcp add --transport stdio --env CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace --scope local circuitarium -- npx -y circuitarium-mcp@0.2.0
 ```
 
 On macOS or Linux:
 
 ```bash
-claude mcp add --transport stdio circuitarium -- node "/absolute/path/to/circuitarium-mcp/dist/src/server.js"
+claude mcp add --transport stdio \
+  --env CIRCUITARIUM_MCP_ROOT=/absolute/path/to/circuit-workspace \
+  --scope local \
+  circuitarium -- npx -y circuitarium-mcp@0.2.0
 ```
 
 Official reference:
 <https://docs.anthropic.com/en/docs/claude-code/mcp>
 
-Claude Desktop packaging and configuration can change independently of this
-repository. Follow Anthropic's current desktop documentation if a packaged
-extension is required; this repository does not currently ship an `.mcpb`.
+Claude Desktop users can download
+`circuitarium-mcp-0.2.0.mcpb` from the matching
+[GitHub Release](https://github.com/Craftiee/circuitarium-mcp/releases) and
+open it. The protected release workflow builds that bundle from the same
+verified npm tarball, validates its manifest, and smoke-tests its 14-tool stdio
+server against a synthetic fixture before attaching it.
 
 The host uses the Claude access already configured there. The electronics
 server itself does not need an Anthropic API key.

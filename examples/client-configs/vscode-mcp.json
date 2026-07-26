@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "circuitarium": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "circuitarium-mcp@0.2.0"],
+      "env": {
+        "CIRCUITARIUM_MCP_ROOT": "${workspaceFolder}"
+      }
+    }
+  }
+}

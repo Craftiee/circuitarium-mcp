@@ -90,7 +90,15 @@ jobs:
         run: npm run test:coverage
 
       - name: Verify installable package
+        id: package
+        env:
+          CIRCUITARIUM_KEEP_PACKAGE: "1"
         run: npm run package:check
+
+      - name: Verify one-click MCPB bundle
+        env:
+          CIRCUITARIUM_PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
+        run: npm run mcpb:check
 
   dependency-review:
     name: Dependency review

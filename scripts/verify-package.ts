@@ -42,15 +42,11 @@ interface PackResult {
 
 interface PackageManifest {
   bin?: Record<string, string>;
-  exports?: {
-    "."?: {
-      import?: string;
-      types?: string;
-    };
-    "./package.json"?: string;
-  };
+  exports?: Record<string, unknown>;
+  main?: unknown;
+  mcpName?: unknown;
   name?: string;
-  types?: string;
+  types?: unknown;
   version?: string;
 }
 
@@ -98,6 +94,7 @@ const stagedFiles = [
   "SUPPORT.md",
   "npm-shrinkwrap.json",
   "package.json",
+  "server.json",
   "tsconfig.json",
 ] as const;
 const keepTarball = process.env.CIRCUITARIUM_KEEP_PACKAGE === "1";
@@ -131,19 +128,36 @@ function runNpm(arguments_: string[], cwd: string): string {
   return result.stdout;
 }
 
-function runNode(arguments_: string[], cwd: string): string {
-  const result = spawnSync(process.execPath, arguments_, {
-    cwd,
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  if (result.status !== 0) {
-    throw new Error(
-      `node ${arguments_.join(" ")} failed:\n${result.stderr || result.stdout}`,
+function assertPackageImportsBlocked(consumerRoot: string): void {
+  for (const specifier of [
+    "circuitarium-mcp",
+    "circuitarium-mcp/dist/src/server.js",
+  ]) {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `await import(${JSON.stringify(specifier)});`,
+      ],
+      {
+        cwd: consumerRoot,
+        encoding: "utf8",
+        env: process.env,
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+    assert.notEqual(
+      result.status,
+      0,
+      `${specifier} unexpectedly exposed a JavaScript package API`,
+    );
+    assert.match(
+      result.stderr,
+      /ERR_PACKAGE_PATH_NOT_EXPORTED/u,
+      `${specifier} failed for a reason other than the executable-only export map`,
     );
   }
-  return result.stdout;
 }
 
 async function withTimeout<T>(
@@ -393,6 +407,7 @@ try {
   const includedPaths = new Set(result.files.map((file) => file.path));
   for (const requiredPath of [
     "package.json",
+    "server.json",
     "README.md",
     "LICENSE",
     "NOTICE",
@@ -455,30 +470,18 @@ try {
     installedManifest.bin?.["circuitarium-mcp"],
     "dist/src/server.js",
   );
-  assert.deepEqual(installedManifest.exports?.["."], {
-    types: "./dist/src/server.d.ts",
-    import: "./dist/src/server.js",
-  });
-  assert.equal(
-    installedManifest.exports?.["./package.json"],
-    "./package.json",
+  assert.deepEqual(
+    installedManifest.exports,
+    {},
+    "the first public package must remain executable-only",
   );
-  assert.equal(installedManifest.types, "./dist/src/server.d.ts");
+  assert.equal(installedManifest.main, undefined);
+  assert.equal(installedManifest.types, undefined);
   assert.equal(
-    runNode(
-      [
-        "--input-type=module",
-        "--eval",
-        [
-          'import { listRegisteredToolNames } from "circuitarium-mcp";',
-          "process.stdout.write(String(listRegisteredToolNames().length));",
-        ].join(""),
-      ],
-      consumerDirectory,
-    ),
-    "14",
-    "installed package import must expose 14 tools without starting stdio",
+    installedManifest.mcpName,
+    "io.github.Craftiee/circuitarium",
   );
+  assertPackageImportsBlocked(consumerDirectory);
   await assertMarkdownLinksResolve(installedRoot);
   runNpm(["ls", "--omit=dev", "--all"], consumerDirectory);
   const dependencyTree = JSON.parse(

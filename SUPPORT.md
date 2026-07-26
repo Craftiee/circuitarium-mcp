@@ -7,7 +7,8 @@ not CRUMB itself or any other simulator.
 ## Questions and feature ideas
 
 Use [GitHub Discussions](https://github.com/Craftiee/circuitarium-mcp/discussions)
-when enabled. Otherwise,
+for questions, setup help, and design proposals. For actionable bugs and
+features,
 [open an issue](https://github.com/Craftiee/circuitarium-mcp/issues/new/choose)
 and describe the user goal, model host, operating system, Node.js version,
 backend, and adapter version.
@@ -30,10 +31,10 @@ permission. Prefer a minimal save containing one independently placed component.
 
 ## Compatibility scope
 
-The public alpha's CRUMBLE integration supports the observed CRUMB 1.3.5
-Unity-era file format only. CRUMB 2.x/Godot support and live simulation control
-are not currently provided. Unknown formats should be reported as
-compatibility gaps rather than silently treated as supported.
+The `0.2.x` CRUMBLE integration supports the observed CRUMB 1.3.5 Unity-era
+file format only. CRUMB 2.x/Godot support and live simulation control are not
+currently provided. Unknown formats should be reported as compatibility gaps
+rather than silently treated as supported.
 
 For installation, billing, gameplay, or product-support questions about CRUMB,
 contact its developer through the official CRUMB support channels.
