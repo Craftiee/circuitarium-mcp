@@ -8,9 +8,10 @@ reproducible evidence.
 
 ## Current source milestone: Unreleased 0.3.0
 
-This section describes the 20-tool source tree. The published 0.2.1 npm
-package and MCPB remain the prior 14-tool CRUMBLE release and do not contain
-the Logisim-evolution adapter.
+This section describes the 20-tool, seven-Resource, four-Prompt source tree.
+The published 0.2.1 npm package and MCPB remain the prior 14-tool CRUMBLE
+release and do not contain the Logisim-evolution adapter or knowledge
+surfaces.
 
 - Stable `electronics.mcp/0.2` result envelope and capability discovery.
 - Portable experiment validation.
@@ -22,6 +23,10 @@ the Logisim-evolution adapter.
 - A small, synthetic, non-overwriting CRUMBLE fixture generator.
 - Cross-model artifact handoff using workspace-relative references and SHA-256
   digests.
+- Bounded MCP Resources for compatibility profiles, the CRUMBLE catalog,
+  synthetic examples, electrical review, and digital-logic testing.
+- User-invoked MCP Prompts for review, controlled comparison, Logisim
+  verification, and cross-model handoff.
 - Version-pinned Logisim-evolution 4.1.0 project discovery, strict `.circ`
   structure, explicitly partial neutral IR/netlist export, official-JAR
   project-load statistics, bounded truth tables, and test vectors.

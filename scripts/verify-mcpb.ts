@@ -15,6 +15,10 @@ import { fileURLToPath } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import {
+	KNOWLEDGE_PROMPT_NAMES,
+	KNOWLEDGE_RESOURCE_URIS,
+} from "../src/domain/knowledge.js";
 
 interface PackageManifest {
 	name?: string;
@@ -455,6 +459,45 @@ try {
 			tools.tools.some((tool) => tool.name === "electronics_capabilities"),
 		);
 		assert.ok(tools.tools.some((tool) => tool.name === "crumb_check_design"));
+		const resources = await withTimeout(
+			client.listResources(),
+			10_000,
+			"MCPB resources/list",
+		);
+		assert.deepEqual(
+			resources.resources.map((resource) => resource.uri),
+			[...KNOWLEDGE_RESOURCE_URIS],
+		);
+		const prompts = await withTimeout(
+			client.listPrompts(),
+			10_000,
+			"MCPB prompts/list",
+		);
+		assert.deepEqual(
+			prompts.prompts.map((prompt) => prompt.name),
+			[...KNOWLEDGE_PROMPT_NAMES],
+		);
+		const knowledge = await withTimeout(
+			client.readResource({ uri: "circuitarium://capabilities" }),
+			10_000,
+			"MCPB resources/read",
+		);
+		assert.equal(knowledge.contents[0]?.mimeType, "application/json");
+		const reviewPrompt = await withTimeout(
+			client.getPrompt({
+				name: "review-circuit-design",
+				arguments: {
+					backend: "crumb.file",
+					projectRef: "synthetic-led.cru",
+				},
+			}),
+			10_000,
+			"MCPB prompts/get",
+		);
+		assert.match(
+			reviewPrompt.description ?? "",
+			/Circuitarium circuit artifact/u,
+		);
 		assert.equal(client.getServerVersion()?.version, packageManifest.version);
 
 		const checkResult = await withTimeout(
@@ -537,7 +580,7 @@ try {
 			? "packaged static Logisim smoke passed; optional JAR not configured"
 			: "packaged static and 4.1.0 self-reported JAR smoke passed";
 	process.stdout.write(
-		`Verified ${bundlePath}: manifest v0.3, ${EXPECTED_TOOL_COUNT} tools, synthetic ERC smoke test passed; ${logisimSummary}.\n`,
+		`Verified ${bundlePath}: manifest v0.3, ${EXPECTED_TOOL_COUNT} tools, ${KNOWLEDGE_RESOURCE_URIS.length} resources, ${KNOWLEDGE_PROMPT_NAMES.length} prompts, synthetic ERC smoke test passed; ${logisimSummary}.\n`,
 	);
 } catch (error) {
 	verificationError = error;

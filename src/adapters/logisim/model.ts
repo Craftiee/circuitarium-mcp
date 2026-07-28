@@ -248,6 +248,114 @@ export function logisimAttributeValue(
 	return undefined;
 }
 
+const JAVA_IDENTIFIER_START = /[\p{L}\p{Nl}\p{Sc}\p{Pc}]/u;
+const JAVA_IDENTIFIER_PART = /[\p{Nd}\p{Mc}\p{Mn}]/u;
+const JAVA_IDENTIFIER_IGNORABLE_FORMAT = /\p{Cf}/u;
+const JAVA_WHITESPACE_SEPARATOR = /[\p{Zs}\p{Zl}\p{Zp}]/u;
+const JAVA_TITLE_CASE_OVERRIDES: Readonly<Record<string, string>> = Object.freeze({
+	"\u01c4": "\u01c5",
+	"\u01c5": "\u01c5",
+	"\u01c6": "\u01c5",
+	"\u01c7": "\u01c8",
+	"\u01c8": "\u01c8",
+	"\u01c9": "\u01c8",
+	"\u01ca": "\u01cb",
+	"\u01cb": "\u01cb",
+	"\u01cc": "\u01cb",
+	"\u01f1": "\u01f2",
+	"\u01f2": "\u01f2",
+	"\u01f3": "\u01f2",
+});
+
+function isJavaIdentifierStart(character: string): boolean {
+	return JAVA_IDENTIFIER_START.test(character);
+}
+
+function isJavaIdentifierIgnorable(character: string): boolean {
+	const codeUnit = character.charCodeAt(0);
+	return (
+		(codeUnit >= 0x0000 && codeUnit <= 0x0008) ||
+		(codeUnit >= 0x000e && codeUnit <= 0x001b) ||
+		(codeUnit >= 0x007f && codeUnit <= 0x009f) ||
+		JAVA_IDENTIFIER_IGNORABLE_FORMAT.test(character)
+	);
+}
+
+function isJavaIdentifierPart(character: string): boolean {
+	return (
+		isJavaIdentifierStart(character) ||
+		JAVA_IDENTIFIER_PART.test(character) ||
+		isJavaIdentifierIgnorable(character)
+	);
+}
+
+function isJavaWhitespace(character: string): boolean {
+	const codeUnit = character.charCodeAt(0);
+	if (
+		(codeUnit >= 0x0009 && codeUnit <= 0x000d) ||
+		(codeUnit >= 0x001c && codeUnit <= 0x001f)
+	) {
+		return true;
+	}
+	if (codeUnit === 0x00a0 || codeUnit === 0x2007 || codeUnit === 0x202f) {
+		return false;
+	}
+	return JAVA_WHITESPACE_SEPARATOR.test(character);
+}
+
+function javaTitleCaseCodeUnit(character: string): string {
+	const override = JAVA_TITLE_CASE_OVERRIDES[character];
+	if (override !== undefined) {
+		return override;
+	}
+	const upper = character.toUpperCase();
+	return upper.length === 1 ? upper : character;
+}
+
+/**
+ * Mirrors the pinned Logisim-evolution 4.1.0 `Analyze.toValidLabel` path used
+ * before TTY mode recognizes reserved pin labels. Like Java's implementation,
+ * this walks UTF-16 code units, ignores non-identifier punctuation, title-cases
+ * a word after whitespace, and moves leading identifier-part characters to the
+ * end once a valid identifier-start character is found. It is version-pinned
+ * runtime-safety logic, not a general public identifier-normalization API.
+ */
+export function normalizeLogisim410TtyPinLabel(
+	label: string | null,
+): string | null {
+	if (label === null) {
+		return null;
+	}
+	let deferredPrefix = "";
+	let normalized = "";
+	let afterWhitespace = false;
+	for (let index = 0; index < label.length; index += 1) {
+		const character = label[index];
+		if (character === undefined) {
+			continue;
+		}
+		if (isJavaIdentifierStart(character)) {
+			normalized += afterWhitespace
+				? javaTitleCaseCodeUnit(character)
+				: character;
+			afterWhitespace = false;
+		} else if (isJavaIdentifierPart(character)) {
+			if (normalized.length > 0) {
+				normalized += character;
+			} else {
+				deferredPrefix += character;
+			}
+			afterWhitespace = false;
+		} else if (isJavaWhitespace(character)) {
+			afterWhitespace = true;
+		}
+	}
+	if (deferredPrefix.length > 0 && normalized.length > 0) {
+		normalized += deferredPrefix;
+	}
+	return normalized.length === 0 ? null : normalized;
+}
+
 function pinDirection(
 	attributes: readonly LogisimNamedAttribute[],
 ): Pick<LogisimPinSemantics, "direction" | "directionSource"> {

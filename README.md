@@ -43,18 +43,29 @@ choose a narrow circuit workspace, then ask the model to call
 [![npm](https://img.shields.io/npm/v/circuitarium-mcp.svg)](https://www.npmjs.com/package/circuitarium-mcp)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Give Claude, ChatGPT/Codex, or a local MCP-capable model a safe, typed
+Give Claude, ChatGPT/Codex, or a local MCP-capable model a bounded, typed
 electronics workbench instead of asking it to guess at opaque circuit files.
-The **Unreleased 0.3.0 source tree** provides 20 bounded tools: Unity-era CRUMB
+The **Unreleased 0.3.0 source tree** provides 20 bounded tools, seven read-only
+knowledge resources, and four reusable workflow prompts: Unity-era CRUMB
 `.cru` analysis plus version-pinned Logisim-evolution `.circ` analysis, partial
-neutral IR, and optional configured-JAR truth tables and test vectors. Until
-0.3.0 is actually published, use a source checkout to test those six Logisim
-tools; `npx ...@0.2.1` continues to install the prior 14-tool release.
+neutral IR, optional configured-JAR truth tables and test vectors, and
+on-demand guidance for electrical review and digital-logic testing. Until
+0.3.0 is actually published, use a source checkout to test that expanded MCP
+surface; `npx ...@0.2.1` continues to install the prior 14-tool release.
 Project analysis never modifies an input circuit; the sole Circuitarium
 artifact-writing tool emits only one of five fixed synthetic fixtures.
 JAR-backed Logisim execution may update Logisim's per-user Java preferences
 and therefore advertises `readOnlyHint: false`. The longer-term neutral layer is designed to
 support additional simulators without making CRUMB the universal data model.
+
+> [!WARNING]
+> Circuitarium MCP provides experimental educational analysis, not physical
+> safety certification or approval to energize hardware. Static ERC, inferred
+> connectivity, Logisim results, and model-written explanations can all be
+> incomplete or wrong. Do not rely on them alone for mains voltage, battery
+> charging, medical, automotive, life-safety, high-energy, or regulatory work.
+> Use authoritative manufacturer documentation, appropriate physical
+> measurements, and qualified engineering review wherever consequences matter.
 
 ![Circuitarium MCP checks a synthetic LED fixture, builds its BOM, and exports its netlist](https://raw.githubusercontent.com/Craftiee/circuitarium-mcp/main/docs/assets/circuitarium-terminal-demo.gif)
 
@@ -99,7 +110,11 @@ The separation is deliberate:
 
 Start with `electronics_capabilities` when a model is unfamiliar with the
 server. It returns the callable backends, truthful limitations, vocabulary, and
-recommended workflows in machine-readable form.
+recommended workflows in machine-readable form. MCP clients that support
+Resources can attach only the relevant profile, catalog, or review guide
+instead of spending a tool call or injecting the entire knowledge set into
+every conversation. Clients that support Prompts can explicitly invoke the
+packaged review, comparison, Logisim verification, or handoff workflow.
 
 The public names do not replace established protocol identifiers.
 `electronics_*` remains the neutral tool namespace, `crumb_*` remains the
@@ -125,6 +140,12 @@ for the evidence categories used by the project.
 
 ## What works now
 
+- Expose seven deterministic, read-only MCP Resources for capability
+  orientation, both compatibility profiles, the bounded CRUMBLE catalog,
+  synthetic examples, low-voltage electrical review, and digital-logic test
+  planning.
+- Expose four user-invoked MCP Prompts for circuit review, controlled CRUMB
+  comparison, Logisim verification, and digest-guarded cross-model handoff.
 - Inspect and structurally validate CRUMB `.cru` files.
 - Analyze 18 known CRUMB tool-ID schemas: boards, jumpers, passives, ICs, LEDs,
   power supplies, tactile/slide/DIP switches, potentiometers, labels,
@@ -350,6 +371,65 @@ All tools have input and output schemas. Successful tool execution and valid
 domain data are separate states: a validator can return `ok: true` with
 `data.valid: false`. See [the v0.2 tool contract](docs/contract.md).
 
+## MCP knowledge resources and prompts
+
+Resources are deterministic, bounded, read-only reference payloads. They do
+not inspect the workspace and never contain CRUMB binaries/assets or
+third-party circuit files. Use a Tool when the model needs live artifact or
+runtime evidence; use a Resource when the host only needs stable context.
+
+| Resource URI | Contents |
+|---|---|
+| `circuitarium://capabilities` | Static backend, workflow, vocabulary, resource, and prompt index |
+| `circuitarium://profiles/crumb.unity/1.3.5` | Unity-era CRUMBLE evidence boundary |
+| `circuitarium://profiles/logisim-evolution/4.1.0` | Logisim static/JAR evidence boundary |
+| `circuitarium://catalogs/crumb.unity/1.3.5/components` | 18 component schemas, 21 IC observations, and evidence meanings |
+| `circuitarium://examples/synthetic` | Redistributable CRUMB fixture kinds and Logisim full-adder example |
+| `circuitarium://knowledge/electrical-review/0.1` | Low-voltage design-review checklist and safety boundary |
+| `circuitarium://knowledge/digital-logic-testing/0.1` | Combinational/sequential test-planning guidance |
+
+The canonical backend IDs carried in tool envelopes and cross-model handoffs
+are `crumb.file` and `logisim.evolution`. The `review-circuit-design` Prompt
+uses the shorter selector `backend: "crumb"` or `backend: "logisim"` only as a
+Prompt argument; do not persist those aliases as `context.backendId`.
+
+Prompt arguments identify artifacts, but the receiving model must map them to
+the exact Tool input names:
+
+| Prompt | Exact Tool-argument mapping |
+|---|---|
+| `review-circuit-design` | `projectRef` -> `path`; `projectDigest` -> `expectedProjectDigest`; `circuit` -> `circuit` for Logisim |
+| `compare-crumb-designs` | `baselineRef` -> `baselinePath`; `candidateRef` -> `candidatePath`; `baselineDigest` -> `expectedBaselineDigest`; `candidateDigest` -> `expectedCandidateDigest`; `topologyMode` -> `topologyMode` |
+| `verify-logisim-design` | `projectRef` -> `path`; `projectDigest` -> `expectedProjectDigest`; `circuit` -> `circuit`; `vectorRef` -> `vectorPath`; `vectorDigest` -> `expectedVectorDigest` |
+| `handoff-circuit-project` | `projectRef` -> `path`; `projectDigest` -> `expectedProjectDigest`; optional `circuit` -> `circuit`; `backend` already uses a canonical backend ID |
+
+Always inspect the envelope-level `ok` first. On Logisim analysis, runtime
+preflight is `data.runtimeSafety.safe` and neutral conversion evidence is under
+`data.neutralIr.completeness`, `data.neutralIr.losses`, and
+`data.neutralIr.lossBounds`. Truth tables have no pass/fail `data.valid`; check
+`data.rowBounds.truncated` before describing returned coverage. Test-vector
+assertions use `data.valid`, `data.failures`, and `data.failureBounds`. CRUMB
+comparison coverage and verdicts are under `data.equivalence.coverage` and
+`data.equivalence.assessment`; CRUMB ERC uses `data.valid`.
+
+The four prompts are `review-circuit-design`, `compare-crumb-designs`,
+`verify-logisim-design`, and `handoff-circuit-project`. Prompts package an
+explicit workflow for the user to invoke; they do not sample a model, execute
+tools, or grant write access by themselves. Core artifact workflows remain
+available through `electronics_capabilities` and the 20 Tools when a host does
+not expose Resources or Prompts; the two longer review guides are optional
+host-attached context.
+
+The synthetic-example Resource is a catalog, not a file installer. The source
+tree and npm/MCPB artifacts carry the independently authored Logisim
+full-adder, but Tool access remains confined to `CIRCUITARIUM_MCP_ROOT`. Copy
+`full-adder.circ` and `full-adder.vec` into that configured workspace before
+calling a Logisim Tool, then use their workspace-relative refs. Likewise,
+repository-only `fixtures/crumb/...` paths in static workflow examples are
+illustrative; an installed server should use a user project or
+`crumb_generate_fixture`. See the
+[example-specific instructions](examples/logisim/README.md).
+
 CRUMB file tools reject non-`.cru` paths, malformed UTF-8, byte snapshots over
 64 MiB, paths outside the root selected by `CIRCUITARIUM_MCP_ROOT` (or the
 legacy fallback), and overwrite attempts. Semantic XML decoding has a separate
@@ -413,6 +493,8 @@ projects; test-vector calls can additionally guard `expectedVectorDigest`.
 - `src/domain/experiment.ts` — neutral experiment schema and semantic validation
 - `src/domain/contract.ts` — model-neutral v0.2 result and error envelope
 - `src/domain/capabilities.ts` — callable backend registry and model workflows
+- `src/domain/knowledge.ts` — bounded MCP Resources and reusable workflow
+  Prompts
 - `src/domain/project-ir.ts` — small simulator-neutral project/netlist IR and
   explicit conversion-loss vocabulary
 - `src/adapters/crumb/` — `.cru` decoding, catalog, analysis, fixtures, and
