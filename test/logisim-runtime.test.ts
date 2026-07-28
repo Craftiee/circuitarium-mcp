@@ -540,6 +540,7 @@ test("missing projects and invalid vectors have distinct errors", async () => {
 
   await assert.rejects(
     runLogisimTestVector("valid.circ", "main", "bad.txt", {
+      environment: { DISPLAY: ":99" },
       runtime: fakeRuntime,
       runner,
       inspectPath: everyPathIsAFile,
