@@ -7,8 +7,9 @@ import {
   MAX_RESULT_DIAGNOSTICS_RETURNED,
 } from "./bounds.js";
 
+export { SERVER_VERSION } from "../identity.js";
+
 export const CONTRACT_VERSION = "electronics.mcp/0.2" as const;
-export const SERVER_VERSION = "0.2.0" as const;
 
 export const DiagnosticSchema = z.object({
   severity: z.enum(["error", "warning", "info"]),

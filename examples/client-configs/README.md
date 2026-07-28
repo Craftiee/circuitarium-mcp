@@ -1,6 +1,6 @@
 # MCP client configurations
 
-These examples launch the published `circuitarium-mcp@0.2.0` package over
+These examples launch the published `circuitarium-mcp@0.2.1` package over
 standard input/output. Before copying one, replace
 `/absolute/path/to/circuit-workspace` with the smallest directory that should
 contain the `.cru` files the model may inspect or generate.
@@ -19,7 +19,7 @@ directory, drive root, or unrelated source tree.
 | Jan | [`jan.md`](jan.md) |
 
 Claude Desktop users can instead download
-`circuitarium-mcp-0.2.0.mcpb` from the matching GitHub Release and open it.
+`circuitarium-mcp-0.2.1.mcpb` from the matching GitHub Release and open it.
 The installer asks for the circuit workspace and bundles the server's Node.js
 dependencies; no manual JSON edit is required.
 

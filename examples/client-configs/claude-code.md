@@ -7,13 +7,13 @@ workspace placeholder first:
 claude mcp add --transport stdio \
   --env CIRCUITARIUM_MCP_ROOT=/absolute/path/to/circuit-workspace \
   --scope local \
-  circuitarium -- npx -y circuitarium-mcp@0.2.0
+  circuitarium -- npx -y circuitarium-mcp@0.2.1
 ```
 
 On PowerShell, use one line:
 
 ```powershell
-claude mcp add --transport stdio --env CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace --scope local circuitarium -- npx -y circuitarium-mcp@0.2.0
+claude mcp add --transport stdio --env CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace --scope local circuitarium -- npx -y circuitarium-mcp@0.2.1
 ```
 
 Verify the registration with:

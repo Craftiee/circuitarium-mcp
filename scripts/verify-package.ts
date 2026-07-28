@@ -21,6 +21,7 @@ import {
   resolve,
   sep,
 } from "node:path";
+import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -61,9 +62,27 @@ interface SdkManifest {
   version?: string;
 }
 
+interface ShrinkwrapManifest {
+  name?: unknown;
+  packages?: Record<
+    string,
+    {
+      bin?: Record<string, string>;
+      name?: unknown;
+      version?: unknown;
+    }
+  >;
+  version?: unknown;
+}
+
 const SDK_VERSION = "1.29.0";
 const UPSTREAM_HONO_RANGE = "^1.19.9";
 const AUDITED_HONO_VERSION = "2.0.11";
+const EXPECTED_TOOL_COUNT = 14;
+const MAX_TARBALL_BYTES = 5 * 1024 * 1024;
+const MAX_UNPACKED_BYTES = 20 * 1024 * 1024;
+const MAX_PACKAGE_FILES = 4_000;
+const STARTUP_TIMEOUT_MS = 10_000;
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = resolve(tmpdir());
 const sourceSdkManifestPath = resolve(
@@ -131,6 +150,7 @@ function runNpm(arguments_: string[], cwd: string): string {
 function assertPackageImportsBlocked(consumerRoot: string): void {
   for (const specifier of [
     "circuitarium-mcp",
+    "circuitarium-mcp/dist/src/bin.js",
     "circuitarium-mcp/dist/src/server.js",
   ]) {
     const result = spawnSync(
@@ -185,6 +205,14 @@ async function withTimeout<T>(
 
 function sha256(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+function formatBytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MiB (${bytes} bytes)`;
+}
+
+function formatMilliseconds(milliseconds: number): string {
+  return `${Math.round(milliseconds)} ms`;
 }
 
 function parseSdkManifest(
@@ -379,6 +407,43 @@ function installedBinCommand(consumerRoot: string): {
   return { args: [], command: shimPath, shimPath };
 }
 
+function runInstalledPackageBin(arguments_: string[], cwd: string) {
+  const npmEntrypoint = process.env.npm_execpath;
+  if (!npmEntrypoint) {
+    throw new Error("installed binary verification must run through npm");
+  }
+  const result = spawnSync(
+    process.execPath,
+    [
+      npmEntrypoint,
+      "exec",
+      "--offline",
+      "--",
+      "circuitarium-mcp",
+      ...arguments_,
+    ],
+    {
+      cwd,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        npm_config_audit: "false",
+        npm_config_fund: "false",
+        npm_config_loglevel: "error",
+      },
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: STARTUP_TIMEOUT_MS,
+      windowsHide: true,
+    },
+  );
+  assert.equal(
+    result.error,
+    undefined,
+    `installed binary failed to run: ${result.error?.message}`,
+  );
+  return result;
+}
+
 let verificationError: unknown;
 try {
   stagingDirectory = await mkdtemp(
@@ -400,9 +465,18 @@ try {
   packageTarball = assertSafeTarballPath(result.filename, packageDirectory);
   assert.equal(result.name, "circuitarium-mcp");
   assert.ok(result.size > 0);
-  assert.ok(result.size < 5 * 1024 * 1024);
-  assert.ok(result.unpackedSize < 24 * 1024 * 1024);
-  assert.ok(result.files.length < 5_000);
+  assert.ok(
+    result.size <= MAX_TARBALL_BYTES,
+    `tarball ${result.size} bytes exceeds ${MAX_TARBALL_BYTES}-byte budget`,
+  );
+  assert.ok(
+    result.unpackedSize <= MAX_UNPACKED_BYTES,
+    `unpacked package ${result.unpackedSize} bytes exceeds ${MAX_UNPACKED_BYTES}-byte budget`,
+  );
+  assert.ok(
+    result.files.length <= MAX_PACKAGE_FILES,
+    `package has ${result.files.length} files; budget is ${MAX_PACKAGE_FILES}`,
+  );
 
   const includedPaths = new Set(result.files.map((file) => file.path));
   for (const requiredPath of [
@@ -421,6 +495,7 @@ try {
     "SUPPORT.md",
     "docs/client-setup.md",
     "examples/model-host/minimal-system-prompt.txt",
+    "dist/src/bin.js",
     "dist/src/server.js",
   ]) {
     assert.ok(includedPaths.has(requiredPath), `package omits ${requiredPath}`);
@@ -435,6 +510,11 @@ try {
       path,
       /^node_modules\/(?:@biomejs|@types|tsx|typescript)(?:\/|$)/i,
       `package includes development dependency ${path}`,
+    );
+    assert.doesNotMatch(
+      path,
+      /^docs\/assets(?:\/|$)/i,
+      `package includes repository-only media ${path}`,
     );
   }
 
@@ -468,7 +548,7 @@ try {
   assert.equal(installedManifest.version, result.version);
   assert.equal(
     installedManifest.bin?.["circuitarium-mcp"],
-    "dist/src/server.js",
+    "dist/src/bin.js",
   );
   assert.deepEqual(
     installedManifest.exports,
@@ -480,6 +560,24 @@ try {
   assert.equal(
     installedManifest.mcpName,
     "io.github.Craftiee/circuitarium",
+  );
+  const installedShrinkwrap = JSON.parse(
+    await readFile(resolve(installedRoot, "npm-shrinkwrap.json"), "utf8"),
+  ) as ShrinkwrapManifest;
+  assert.equal(installedShrinkwrap.name, installedManifest.name);
+  assert.equal(installedShrinkwrap.version, installedManifest.version);
+  assert.equal(
+    installedShrinkwrap.packages?.[""]?.name,
+    installedManifest.name,
+  );
+  assert.equal(
+    installedShrinkwrap.packages?.[""]?.version,
+    installedManifest.version,
+  );
+  assert.equal(
+    installedShrinkwrap.packages?.[""]?.bin?.["circuitarium-mcp"],
+    installedManifest.bin?.["circuitarium-mcp"],
+    "shrinkwrap root bin must match the package manifest",
   );
   assertPackageImportsBlocked(consumerDirectory);
   await assertMarkdownLinksResolve(installedRoot);
@@ -505,42 +603,118 @@ try {
 
   const installedServer = resolve(installedRoot, "dist", "src", "server.js");
   assert.equal((await stat(installedServer)).isFile(), true);
+  const installedEntrypoint = resolve(installedRoot, "dist", "src", "bin.js");
+  assert.equal((await stat(installedEntrypoint)).isFile(), true);
   const bin = installedBinCommand(consumerDirectory);
   assert.equal((await stat(bin.shimPath)).isFile(), true);
+  const helpResult = runInstalledPackageBin(["--help"], consumerDirectory);
+  assert.equal(helpResult.status, 0);
+  assert.match(helpResult.stdout, /^Circuitarium MCP/u);
+  assert.match(helpResult.stdout, /Usage:/u);
+  assert.equal(helpResult.stderr, "");
+  const versionResult = runInstalledPackageBin(
+    ["--version"],
+    consumerDirectory,
+  );
+  assert.equal(versionResult.status, 0);
+  assert.equal(
+    versionResult.stdout,
+    `circuitarium-mcp ${result.version}\n`,
+  );
+  assert.equal(versionResult.stderr, "");
+  const invalidResult = runInstalledPackageBin(
+    ["--unknown"],
+    consumerDirectory,
+  );
+  assert.equal(invalidResult.status, 2);
+  assert.equal(invalidResult.stdout, "");
+  assert.match(invalidResult.stderr, /Unsupported argument/u);
+  assert.match(invalidResult.stderr, /--help/u);
   const transport = new StdioClientTransport({
     command: bin.command,
     args: bin.args,
     cwd: consumerDirectory,
     stderr: "pipe",
   });
+  let serverStderr = "";
+  transport.stderr?.on("data", (chunk: unknown) => {
+    serverStderr += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+  });
   const client = new Client({
     name: "circuitarium-package-smoke",
     version: "1.0.0",
   });
+  let initializeMilliseconds = 0;
+  let toolsListMilliseconds = 0;
+  let toolCount = 0;
   try {
-    await withTimeout(client.connect(transport), 10_000, "MCP initialize");
-    const tools = await withTimeout(client.listTools(), 10_000, "MCP tools/list");
+    const initializeStartedAt = performance.now();
+    await withTimeout(
+      client.connect(transport),
+      STARTUP_TIMEOUT_MS,
+      "MCP initialize",
+    );
+    initializeMilliseconds = performance.now() - initializeStartedAt;
+    const toolsListStartedAt = performance.now();
+    const tools = await withTimeout(
+      client.listTools(),
+      STARTUP_TIMEOUT_MS,
+      "MCP tools/list",
+    );
+    toolsListMilliseconds = performance.now() - toolsListStartedAt;
+    toolCount = tools.tools.length;
     assert.ok(
       tools.tools.some((tool) => tool.name === "electronics_capabilities"),
       "installed server does not expose electronics_capabilities",
+    );
+    assert.equal(
+      toolCount,
+      EXPECTED_TOOL_COUNT,
+      "installed server exposes an unexpected tool count",
     );
     assert.equal(client.getServerVersion()?.version, result.version);
   } finally {
     await client.close();
   }
+  assert.equal(
+    serverStderr,
+    "",
+    `piped MCP launch wrote unexpected stderr: ${serverStderr}`,
+  );
 
   if (keepTarball && process.env.GITHUB_OUTPUT) {
     assert.equal(isAbsolute(packageTarball), true);
     assert.equal((await stat(packageTarball)).isFile(), true);
     await appendFile(
       process.env.GITHUB_OUTPUT,
-      `tarball=${packageTarball}\n`,
+      [
+        `tarball=${packageTarball}`,
+        `tarball_bytes=${result.size}`,
+        `unpacked_bytes=${result.unpackedSize}`,
+        `file_count=${result.files.length}`,
+        `initialize_ms=${Math.round(initializeMilliseconds)}`,
+        `tools_list_ms=${Math.round(toolsListMilliseconds)}`,
+        "",
+      ].join("\n"),
       "utf8",
     );
   }
   packageVerified = true;
   process.stdout.write(
-    `Verified ${packageTarball}: ${result.files.length} files, ${result.unpackedSize} unpacked bytes, installed MCP bin handshake passed.\n`,
+    [
+      "Circuitarium package and startup audit: PASS",
+      `  Tarball:       ${formatBytes(result.size)} / ${formatBytes(MAX_TARBALL_BYTES)}`,
+      `  Unpacked:      ${formatBytes(result.unpackedSize)} / ${formatBytes(MAX_UNPACKED_BYTES)}`,
+      `  Files:         ${result.files.length} / ${MAX_PACKAGE_FILES}`,
+      `  MCP initialize ${formatMilliseconds(initializeMilliseconds)} / ${STARTUP_TIMEOUT_MS} ms timeout`,
+      `  MCP tools/list ${formatMilliseconds(toolsListMilliseconds)} / ${STARTUP_TIMEOUT_MS} ms timeout`,
+      `  Tools:         ${toolCount} / ${EXPECTED_TOOL_COUNT}`,
+      "  Piped stderr:  clean",
+      ...(keepTarball
+        ? [`  Retained at:   ${packageTarball}`]
+        : ["  Artifact:      verified in a temporary workspace, then cleaned"]),
+      "",
+    ].join("\n"),
   );
 } catch (error) {
   verificationError = error;

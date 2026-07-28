@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "circuitarium-mcp",
   "display_name": "Circuitarium MCP",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A model-neutral electronics workbench with an unofficial, version-pinned CRUMB .cru file integration.",
   "long_description": "Inspect, validate, compare, inventory, export, and electrically review Unity-era CRUMB .cru files through 14 bounded MCP tools. Circuitarium is independent community interoperability work: it includes no CRUMB game code, assets, or circuit designs and does not claim live simulation or arbitrary editing.",
   "author": {

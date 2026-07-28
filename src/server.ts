@@ -111,8 +111,9 @@ import {
   CrumbWorkspaceDataSchema,
   ExperimentValidationDataSchema,
 } from "./domain/toolSchemas.js";
+import { SERVER_NAME } from "./identity.js";
+import { executeServerCommand, processCommandIo } from "./terminal.js";
 
-const SERVER_NAME = "circuitarium-mcp";
 const CRUMB_BACKEND_ID = "crumb.file";
 const CRUMB_ADAPTER_VERSION = "crumb.file/0.2";
 const ADAPTER_TESTED_CRUMB_COMPATIBILITY = [
@@ -2644,6 +2645,11 @@ export function listRegisteredToolNames(): string[] {
   return [...envelopeTools.keys()];
 }
 
+export async function startStdioServer(): Promise<void> {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
+
 /**
  * McpServer normally validates tool arguments before invoking a registered
  * callback. Its validation failure is plain text, so it cannot carry this
@@ -2695,6 +2701,13 @@ function invokedAsMainModule(): boolean {
 // Importers (the CLI, tests) get the registered tools without a transport;
 // only direct execution serves stdio.
 if (invokedAsMainModule()) {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  const exitCode = await executeServerCommand(
+    process.argv.slice(2),
+    async () => {
+      await startStdioServer();
+      return listRegisteredToolNames().length;
+    },
+    processCommandIo(),
+  );
+  process.exitCode = exitCode;
 }

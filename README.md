@@ -3,12 +3,37 @@
 Run the published local MCP server with one command:
 
 ```text
-npx -y circuitarium-mcp@0.2.0
+npx -y circuitarium-mcp@0.2.1
 ```
 
-That is a stdio server command for an MCP host, not an interactive shell
-program: it stays open until the host disconnects. Copy a ready-to-use setup
-for [Codex, Claude Code, VS Code, LM Studio, or Jan](examples/client-configs/README.md),
+The first run can pause while npm downloads and extracts the package. Once the
+server starts in a real terminal, it explains why it remains open:
+
+```text
++--------------------------------------------------------------------+
+| o---[R]---|>|---o CIRCUITARIUM MCP v0.2.1                          |
+| 14 bounded electronics tools | CRUMBLE file analysis | no live     |
+| simulation                                                         |
++--------------------------------------------------------------------+
+| DIRECT RUN No MCP host is connected to this process.               |
+|                                                                    |
+| Press Ctrl+C, then configure your MCP host to launch this command. |
+|                                                                    |
+| Inspector and setup: circuitarium-mcp --help                       |
++--------------------------------------------------------------------+
+```
+
+Check an installation without starting the server:
+
+```text
+npx -y circuitarium-mcp@0.2.1 --help
+npx -y circuitarium-mcp@0.2.1 --version
+```
+
+Starting the command in a separate terminal does not connect it to a host. An
+MCP host must launch the command itself with piped stdio; in that mode the
+decorative panel is suppressed and stdout remains protocol-only. Copy a
+ready-to-use setup for [Codex, Claude Code, VS Code, LM Studio, or Jan](examples/client-configs/README.md),
 choose a narrow circuit workspace, then ask the model to call
 `electronics_capabilities`.
 
@@ -25,9 +50,9 @@ Project analysis is read-only; the sole file-writing tool emits only one of
 five fixed synthetic fixtures. The longer-term neutral layer is designed to
 support additional simulators without making CRUMB the universal data model.
 
-![Circuitarium MCP checks a synthetic LED fixture, builds its BOM, and exports its netlist](docs/assets/circuitarium-terminal-demo.gif)
+![Circuitarium MCP checks a synthetic LED fixture, builds its BOM, and exports its netlist](https://raw.githubusercontent.com/Craftiee/circuitarium-mcp/main/docs/assets/circuitarium-terminal-demo.gif)
 
-Claude Desktop users can download `circuitarium-mcp-0.2.0.mcpb` from the
+Claude Desktop users can download `circuitarium-mcp-0.2.1.mcpb` from the
 matching [GitHub Release](https://github.com/Craftiee/circuitarium-mcp/releases)
 and open it for a one-click local installation. The bundle prompts for the
 circuit workspace and contains the production Node.js dependencies. The
@@ -203,12 +228,15 @@ git clone https://github.com/Craftiee/circuitarium-mcp.git
 cd circuitarium-mcp
 npm ci
 npm run check
-node dist/src/server.js
+node dist/src/bin.js
 ```
 
 The packaged `circuitarium-mcp` command and the one-click `.mcpb` bundle are
 install-smoke-tested before publication. Directly running either stdio
-entrypoint waits for an MCP client by design.
+entrypoint waits for an MCP client by design. Run `npm run package:audit` to
+build the exact installable tarball in isolation and report its compressed
+size, unpacked size, file count, MCP initialization time, tool-list time, tool
+count, and piped-stderr cleanliness against release budgets.
 
 Useful CLI commands:
 

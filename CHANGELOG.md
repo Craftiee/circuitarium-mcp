@@ -6,8 +6,22 @@ remains experimental.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-28
+
+### Added
+
+- Added a protocol-safe public launcher with `--help`, `--version`, strict
+  argument handling, and a responsive plain-ASCII status panel for direct TTY
+  launches. MCP-host launches remain silent outside JSON-RPC because the panel
+  is emitted only to an attached terminal's stderr.
+- Added a named package/startup audit that reports compressed and unpacked
+  size, file count, installed MCP initialization and tool-list timings, tool
+  count, and piped-stderr cleanliness against explicit release budgets.
+
 ### Changed
 
+- Removed the repository demo GIF from the installable npm tarball while
+  retaining it in GitHub and loading it from there in the packaged README.
 - Prepared the release workflow for tokenless npm trusted publishing by
   pinning an OIDC-capable npm CLI, removing the bootstrap-token injection, and
   requiring SLSA v1 provenance metadata after publication.
