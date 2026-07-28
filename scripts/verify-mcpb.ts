@@ -38,18 +38,48 @@ interface BundleManifest {
 
 interface Envelope {
 	contractVersion?: string;
+	context?: {
+		projectDigest?: string;
+	};
 	data?: {
+		circuitName?: string;
+		project?: {
+			ref?: string;
+		};
+		runtime?: {
+			authenticity?: string;
+			version?: string;
+		};
+		runtimeSafety?: {
+			safe?: boolean;
+		};
+		totalWithSubcircuits?: {
+			recursiveCount?: number;
+			uniqueCount?: number;
+		};
 		valid?: boolean;
 	};
 	ok?: boolean;
 }
 
 const MCPB_PACKAGE = "@anthropic-ai/mcpb@2.1.2";
-const EXPECTED_TOOL_COUNT = 14;
+const EXPECTED_TOOL_COUNT = 20;
 const BUNDLE_ENTRY_ARGUMENT = "$" + "{__dirname}/server/dist/src/server.js";
 const WORKSPACE_CONFIG_REFERENCE = "$" + "{user_config.workspace}";
+const LOGISIM_JAR_CONFIG_REFERENCE = "$" + "{user_config.logisim_jar}";
+const JAVA_CONFIG_REFERENCE = "$" + "{user_config.java}";
+const LOGISIM_SMOKE_TIMEOUT_MS = 30_000;
+const SEMVER_PATTERN =
+	/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = resolve(tmpdir());
+const configuredLogisimJarSetting =
+	process.env.CIRCUITARIUM_LOGISIM_JAR?.trim();
+const configuredLogisimJar =
+	configuredLogisimJarSetting === undefined ||
+	configuredLogisimJarSetting.length === 0
+		? undefined
+		: resolve(repositoryRoot, configuredLogisimJarSetting);
 const keepBundle = process.env.CIRCUITARIUM_KEEP_MCPB === "1";
 const suppliedPackageTarball = process.env.CIRCUITARIUM_PACKAGE_TARBALL;
 
@@ -114,6 +144,34 @@ function assertSafeTemporaryPath(path: string, expectedPrefix: string): void {
 	const relativePath = relative(temporaryRoot, resolved);
 	assert.ok(relativePath.length > 0 && !relativePath.startsWith(`..${sep}`));
 	assert.ok(basename(resolved).startsWith(expectedPrefix));
+}
+
+function assertValidSemVer(version: string, label: string): void {
+	assert.match(version, SEMVER_PATTERN, `${label} must be valid SemVer`);
+}
+
+function assertSemVerValidationCases(): void {
+	for (const valid of [
+		"0.3.0",
+		"0.3.0-rc.1",
+		"1.2.3-alpha",
+		"1.2.3-alpha.1+build.5",
+	]) {
+		assertValidSemVer(valid, `SemVer validation fixture ${valid}`);
+	}
+	for (const invalid of [
+		"v1.2.3",
+		"1.2",
+		"01.2.3",
+		"1.2.3-01",
+		"1.2.3-",
+	]) {
+		assert.doesNotMatch(
+			invalid,
+			SEMVER_PATTERN,
+			`invalid SemVer validation fixture ${invalid} was accepted`,
+		);
+	}
 }
 
 function normalizedEnvironment(
@@ -199,11 +257,12 @@ async function withTimeout<T>(
 
 let verificationError: unknown;
 try {
+	assertSemVerValidationCases();
 	const packageManifest = JSON.parse(
 		await readFile(resolve(repositoryRoot, "package.json"), "utf8"),
 	) as PackageManifest;
 	assert.equal(packageManifest.name, "circuitarium-mcp");
-	assert.match(packageManifest.version ?? "", /^\d+\.\d+\.\d+$/u);
+	assertValidSemVer(packageManifest.version ?? "", "package version");
 
 	const sourceBundleManifestPath = resolve(
 		repositoryRoot,
@@ -216,6 +275,10 @@ try {
 	assert.equal(sourceBundleManifest.manifest_version, "0.3");
 	assert.equal(sourceBundleManifest.name, packageManifest.name);
 	assert.equal(sourceBundleManifest.version, packageManifest.version);
+	assertValidSemVer(
+		sourceBundleManifest.version ?? "",
+		"MCPB manifest version",
+	);
 	assert.equal(sourceBundleManifest.server?.type, "node");
 	assert.equal(
 		sourceBundleManifest.server?.entry_point,
@@ -228,6 +291,14 @@ try {
 	assert.equal(
 		sourceBundleManifest.server?.mcp_config?.env?.CIRCUITARIUM_MCP_ROOT,
 		WORKSPACE_CONFIG_REFERENCE,
+	);
+	assert.equal(
+		sourceBundleManifest.server?.mcp_config?.env?.CIRCUITARIUM_LOGISIM_JAR,
+		LOGISIM_JAR_CONFIG_REFERENCE,
+	);
+	assert.equal(
+		sourceBundleManifest.server?.mcp_config?.env?.CIRCUITARIUM_JAVA,
+		JAVA_CONFIG_REFERENCE,
 	);
 
 	packageTarball = await locateVerifiedPackageTarball();
@@ -298,6 +369,29 @@ try {
 		"server.js",
 	);
 	assert.equal((await stat(unpackedServer)).isFile(), true);
+	const unpackedLogisimProject = resolve(
+		unpackDirectory,
+		"server",
+		"examples",
+		"logisim",
+		"full-adder.circ",
+	);
+	const unpackedLogisimVector = resolve(
+		unpackDirectory,
+		"server",
+		"examples",
+		"logisim",
+		"full-adder.vec",
+	);
+	assert.equal((await stat(unpackedLogisimProject)).isFile(), true);
+	assert.equal((await stat(unpackedLogisimVector)).isFile(), true);
+	if (configuredLogisimJar !== undefined) {
+		assert.equal(
+			(await stat(configuredLogisimJar)).isFile(),
+			true,
+			"CIRCUITARIUM_LOGISIM_JAR must identify a readable file",
+		);
+	}
 	assert.equal(
 		(
 			await stat(
@@ -325,6 +419,14 @@ try {
 		resolve(repositoryRoot, "fixtures", "crumb", "breadboard-led.cru"),
 		resolve(workspaceDirectory, "synthetic-led.cru"),
 	);
+	await cp(
+		unpackedLogisimProject,
+		resolve(workspaceDirectory, "full-adder.circ"),
+	);
+	await cp(
+		unpackedLogisimVector,
+		resolve(workspaceDirectory, "full-adder.vec"),
+	);
 
 	const transport = new StdioClientTransport({
 		command: process.execPath,
@@ -332,6 +434,8 @@ try {
 		cwd: workspaceDirectory,
 		env: normalizedEnvironment({
 			CIRCUITARIUM_MCP_ROOT: workspaceDirectory,
+			CIRCUITARIUM_LOGISIM_JAR: configuredLogisimJar ?? "",
+			LOGISIM_JAR: "",
 		}),
 		stderr: "pipe",
 	});
@@ -366,6 +470,55 @@ try {
 		assert.equal(envelope.contractVersion, "electronics.mcp/0.2");
 		assert.equal(envelope.ok, true);
 		assert.equal(envelope.data?.valid, true);
+
+		const analyzeResult = await withTimeout(
+			client.callTool({
+				name: "logisim_analyze_design",
+				arguments: { path: "full-adder.circ" },
+			}),
+			10_000,
+			"MCPB logisim_analyze_design",
+		);
+		assert.equal(analyzeResult.isError ?? false, false);
+		const analyzeEnvelope = envelopeOf(analyzeResult);
+		assert.equal(analyzeEnvelope.contractVersion, "electronics.mcp/0.2");
+		assert.equal(analyzeEnvelope.ok, true);
+		assert.equal(analyzeEnvelope.data?.project?.ref, "full-adder.circ");
+		assert.equal(analyzeEnvelope.data?.runtimeSafety?.safe, true);
+
+		if (configuredLogisimJar !== undefined) {
+			const statisticsResult = await withTimeout(
+				client.callTool({
+					name: "logisim_component_stats",
+					arguments: {
+						path: "full-adder.circ",
+						circuit: "Main",
+						expectedProjectDigest:
+							analyzeEnvelope.context?.projectDigest,
+						timeoutMs: LOGISIM_SMOKE_TIMEOUT_MS,
+					},
+				}),
+				LOGISIM_SMOKE_TIMEOUT_MS + 10_000,
+				"MCPB logisim_component_stats",
+			);
+			assert.equal(statisticsResult.isError ?? false, false);
+			const statisticsEnvelope = envelopeOf(statisticsResult);
+			assert.equal(
+				statisticsEnvelope.contractVersion,
+				"electronics.mcp/0.2",
+			);
+			assert.equal(statisticsEnvelope.ok, true);
+			assert.equal(statisticsEnvelope.data?.circuitName, "Main");
+			assert.deepEqual(statisticsEnvelope.data?.totalWithSubcircuits, {
+				uniqueCount: 26,
+				recursiveCount: 26,
+			});
+			assert.equal(statisticsEnvelope.data?.runtime?.version, "4.1.0");
+			assert.equal(
+				statisticsEnvelope.data?.runtime?.authenticity,
+				"self-reported-unverified",
+			);
+		}
 	} finally {
 		await client.close();
 	}
@@ -379,8 +532,12 @@ try {
 		);
 	}
 	verified = true;
+	const logisimSummary =
+		configuredLogisimJar === undefined
+			? "packaged static Logisim smoke passed; optional JAR not configured"
+			: "packaged static and 4.1.0 self-reported JAR smoke passed";
 	process.stdout.write(
-		`Verified ${bundlePath}: manifest v0.3, ${EXPECTED_TOOL_COUNT} tools, synthetic ERC smoke test passed.\n`,
+		`Verified ${bundlePath}: manifest v0.3, ${EXPECTED_TOOL_COUNT} tools, synthetic ERC smoke test passed; ${logisimSummary}.\n`,
 	);
 } catch (error) {
 	verificationError = error;

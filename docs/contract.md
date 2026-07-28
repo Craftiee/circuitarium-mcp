@@ -10,6 +10,10 @@ semantics.
 This contract describes tool results. It does not imply a shared model session
 or a running circuit simulation.
 
+> Release scope: this document includes the six Logisim tools in the
+> Unreleased 0.3.0 source tree. The published 0.2.1 npm package and MCPB expose
+> only the prior 14-tool CRUMBLE surface.
+
 ## Vocabulary
 
 | Term | Meaning |
@@ -274,8 +278,8 @@ choosing a backend or workflow. Its output distinguishes:
 | Backend | Availability in this server | Current meaning |
 |---|---|---|
 | `crumb.file` | Callable | Local `.cru` discovery, inspect, validate, analyze, controlled comparison, netlist export, electrical rule checks, BOM, IC reference, and synthetic fixture generation |
+| `logisim.evolution` | Callable | Local `.circ` discovery/analysis, partial neutral IR, plus optional bounded statistics, truth tables, and vectors through a configured user-supplied JAR that self-reports 4.1.0 |
 | `wokwi.cloud` | External companion | Separate Wokwi MCP/cloud service; not callable here |
-| `logisim.evolution` | Planned | No registered adapter tools |
 | `digital.event` | Planned | Architecture only; no simulation engine |
 
 The callable CRUMBLE backend advertises a structured
@@ -284,10 +288,16 @@ engine metadata. It reports no live sessions, signal observation, input
 stimulation, or general conversion support. A future Godot profile requires
 separate evidence and must not reuse the Unity profile.
 
-`dataLeavesMachine: "depends"` means file parsing and filesystem access occur
+Both callable backends report `dataLeavesMachine: "depends"`: file parsing and
+filesystem access occur
 locally, but returned data may be sent elsewhere by the MCP client or its model
 host. `operations.build` is `false`; the separate fixture tool only creates five
 fixed synthetic compatibility fixtures and is not a general circuit builder.
+
+The Logisim backend reports `observeSignals` and `stimulateInputs` because its
+truth-table and test-vector tools execute explicit bounded inputs. It still
+reports `liveSessions: false`: each request is a one-shot subprocess, not a
+shared GUI or simulator session.
 
 ## Tool surface
 
@@ -582,6 +592,74 @@ separating public electronics knowledge from version-pinned CRUMB observation.
 `data.limitations` states what the rules cannot see (no series-path tracing,
 no polarity judgment, no simulation).
 
+### `logisim_list_projects`
+
+Enumerates workspace `.circ` projects with stable raw-byte SHA-256 digests.
+The walk is containment checked, skips symbolic links and ignored trees, and
+has fixed scan and aggregate digest budgets.
+
+### `logisim_analyze_design`
+
+Parses `.circ` XML into bounded project, library, circuit, component-type,
+Pin, Clock, wire, and unknown-construct summaries. The result also reports the
+`circuitarium.project-ir/0.1` completeness and conversion losses. This is
+static file evidence and launches no simulator.
+
+### `logisim_export_netlist`
+
+Returns paged `circuitarium.netlist-ir/0.1` nets for one selected circuit.
+Connectivity is deliberately `coordinate-endpoints`: exact wire endpoints and
+explicitly modeled Pin/Clock ports only. Nested node, wire, member, and loss
+collections carry bounds. `completeness` is always `partial`; callers must not
+reinterpret it as a Logisim behavioral netlist.
+
+### `logisim_component_stats`
+
+Probes the configured JAR for a self-reported Logisim-evolution version of
+exactly 4.1.0, then invokes its documented `--tty stats` mode. The result is
+**project-load evidence**: the configured process accepted and inventoried the
+selected circuit. It does not prove outputs or timing, and the self-report is
+not publisher or binary authentication.
+
+### `logisim_truth_table`
+
+Checks declared Pin direction and input width statically before invoking
+Logisim's CSV/binary table mode. The caller-selected input-bit bound defaults
+to 8 and cannot exceed 12. Returned rows are bounded separately from the
+number Logisim evaluated. This is **headless simulation evidence** for the
+selected circuit and exact project digest, not a live session.
+
+### `logisim_run_test_vector`
+
+Runs a workspace-contained `.vec` or `.txt` vector through the configured JAR
+that self-reports Logisim-evolution 4.1.0. `expectedVectorDigest` can guard
+vector identity in addition to `expectedProjectDigest`. A failed assertion
+returns `ok: true` and `data.valid: false` with bounded mismatches. The verdict
+comes from Logisim's validated final pass/fail summary because version 4.1.0
+may exit with process code zero even when vectors fail.
+
+Before any runtime call, a full-stream safety preflight defaults to denial for
+external file/JAR libraries, VHDL, unsafe or path-bearing runtime features,
+and unknown or malformed constructs. The exact project/vector byte snapshots
+already read and digest-checked are staged under private fixed-name temporary
+files and removed after the awaited operation succeeds or fails. The runtime
+tools use direct argument-array subprocesses, no shell, an allowlisted child
+environment, fixed stdout/stderr byte limits, caller-bounded timeouts, and
+forced termination. These controls reduce project-driven risk; they are not an
+operating-system sandbox or a security boundary against a malicious configured
+JAR.
+
+The test-vector path also copies the configured JAR into the private staging
+directory before its probe and execution, preventing Logisim's non-TTY startup
+from discovering a sibling `logisim-defaults` directory. Compatibility probes
+avoid preference initialization, but project execution may update Logisim's
+per-user Java preferences. The three JAR-backed tools therefore advertise
+`readOnlyHint: false` even though they never modify the input circuit.
+
+Runtime tools require Java 21 plus `CIRCUITARIUM_LOGISIM_JAR`; missing
+configuration is typed `BACKEND_UNAVAILABLE`. Full setup and licensing
+boundaries are in [logisim.md](logisim.md).
+
 ## Bounded output policy
 
 The default analysis path is:
@@ -598,6 +676,12 @@ a project reference, byte count, digest, validation state, and the smallest
 semantic page that answers the question. Firmware source alone has an explicit
 65,536-character inclusion limit; EEPROM bytes and full save/label content do
 not have inclusion options.
+
+Every public string in a Logisim result is limited to 4,096 characters. A
+longer value is replaced by a bounded preview plus its original character
+count, byte count, and SHA-256. The aggregate serialized Logisim result
+envelope is limited to 2 MiB; an envelope that remains larger returns
+`QUOTA_EXCEEDED`.
 
 This policy allows the same tools to work with frontier and smaller local models
 without silently truncating a large design.
@@ -628,8 +712,9 @@ Claude -> Circuitarium process B -> shared workspace
 ```
 
 `serverInstanceId` values will differ. There is no cross-process in-memory
-simulation session to resume. The current CRUMBLE backend has no live session at
-all.
+simulation session to resume. The current CRUMBLE backend has no live session
+at all. Each Logisim runtime request starts and ends one child process; it also
+has no resumable session.
 
 Pass `projectRef`, `projectDigest`, `backendId`, adapter version, compatibility
 profile, topology mode, findings, and intent between models. The receiving
@@ -643,6 +728,10 @@ See [the concrete handoff pattern](../examples/cross-model/handoff.md).
 - Consumers should key behavior on `contractVersion`, not server prose.
 - CRUMBLE component schemas and hidden topology are version-pinned separately
   from the MCP envelope.
+- Logisim parsing and runtime evidence are pinned to
+  `logisim-evolution/4.1.0`; later self-reported versions require a new evidence
+  pass. A runtime self-report does not authenticate a JAR. Only the CI E2E job
+  downloads the upstream official v4.1.0 asset and verifies its pinned SHA-256.
 - `compatibilityProfile` identifies which interpretation was applied; it is not
   an origin detector and must not be silently changed during a handoff.
 - Unknown components and schema mismatches are evidence gaps, not invitations

@@ -62,8 +62,10 @@ gitleaks git .
       proposals.
 - [x] Add repository topics without implying unsupported Godot or live-simulator
       compatibility.
-- [x] Require the `Package and coverage` job on `main` in addition to the
-      supported Node/OS test matrix.
+- [ ] Require both the `Package and coverage` and
+      `Official Logisim-evolution 4.1.0 JAR` status checks in `main` branch
+      protection, in addition to the supported Node/OS test matrix. Reconfirm
+      the exact check names after changing either workflow.
 
 ## Release identity
 
@@ -122,6 +124,12 @@ designed, documented, and tested.
       artifact, and published those exact bytes.
 - [ ] Confirm the tag workflow ran the same coverage thresholds required on
       `main`; a passing build alone is not a release test.
+- [ ] Confirm the tag commit reached `main` through the protected branch with
+      the required `Package and coverage` and
+      `Official Logisim-evolution 4.1.0 JAR` checks passing. The tag workflow
+      must independently download the official 4.1.0 all-JAR, verify SHA-256
+      `fe6386a3217a591bcc311a4eda49e1f43a389b499dd3d0f6f40f344fc85f2577`,
+      and pass `npm run logisim:e2e` before npm publication.
 - [ ] Test `npx -y circuitarium-mcp` from an empty temporary workspace and call
       `electronics_capabilities` from an MCP client.
 - [ ] Run the binary directly in a TTY and confirm its status panel appears on
@@ -132,8 +140,9 @@ designed, documented, and tested.
 The official MCP Registry stores discovery metadata, not the npm package.
 Therefore the tag workflow must preserve this order:
 
-1. Build, test, coverage-check, pack, install, audit, and MCP-handshake the
-   candidate.
+1. Build, test, coverage-check, verify the official Logisim-evolution 4.1.0
+   all-JAR checksum and end-to-end adapter behavior, then pack, install, audit,
+   and MCP-handshake the candidate.
 2. Publish those exact verified bytes to npm with provenance.
 3. Verify that the version is publicly resolvable from npm.
 4. Authenticate the official `mcp-publisher` with GitHub OIDC and publish the

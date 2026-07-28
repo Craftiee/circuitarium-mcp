@@ -29,6 +29,15 @@ same validation, bounds, and result envelopes:
   validate <file.cru>
   validate-experiment <experiment.json>
 
+Logisim-evolution commands use the same MCP envelopes. Runtime commands need
+Java 21 and CIRCUITARIUM_LOGISIM_JAR pointing at the official 4.1.0 all-JAR:
+  logisim-list [dir]
+  logisim-analyze <file.circ> [circuit]
+  logisim-netlist <file.circ> [circuit] [limit] [cursor]
+  logisim-stats <file.circ> [circuit]
+  logisim-table <file.circ> [circuit] [limit]
+  logisim-test <file.circ> <file.vec> [circuit]
+
 Fixture maintenance commands write directly and support --force overwrite,
 which the MCP surface never does:
   generate <fixture-kind> <output.cru> [name] [--force]
@@ -62,6 +71,16 @@ async function runTool(
 function requirePath(value: string | undefined, command: string): string {
   if (!value) {
     throw new Error(`${command} requires a .cru path`);
+  }
+  return value;
+}
+
+function requireLogisimPath(
+  value: string | undefined,
+  command: string,
+): string {
+  if (!value) {
+    throw new Error(`${command} requires a .circ path`);
   }
   return value;
 }
@@ -169,6 +188,76 @@ async function main(): Promise<void> {
       await runTool(
         "electronics_validate_experiment",
         { experiment },
+        { failWhenDataInvalid: true },
+      );
+      return;
+    }
+    case "logisim-list": {
+      await runTool("logisim_list_projects", {
+        ...(positional[0] === undefined ? {} : { dir: positional[0] }),
+      });
+      return;
+    }
+    case "logisim-analyze": {
+      await runTool("logisim_analyze_design", {
+        path: requireLogisimPath(positional[0], "logisim-analyze"),
+        ...(positional[1] === undefined
+          ? {}
+          : { circuit: positional[1] }),
+      });
+      return;
+    }
+    case "logisim-netlist": {
+      const limit = Number.parseInt(positional[2] ?? "50", 10);
+      const cursor = positional[3];
+      await runTool("logisim_export_netlist", {
+        path: requireLogisimPath(positional[0], "logisim-netlist"),
+        ...(positional[1] === undefined
+          ? {}
+          : { circuit: positional[1] }),
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      return;
+    }
+    case "logisim-stats": {
+      await runTool("logisim_component_stats", {
+        path: requireLogisimPath(positional[0], "logisim-stats"),
+        ...(positional[1] === undefined
+          ? {}
+          : { circuit: positional[1] }),
+      });
+      return;
+    }
+    case "logisim-table": {
+      const limit = Number.parseInt(positional[2] ?? "256", 10);
+      await runTool("logisim_truth_table", {
+        path: requireLogisimPath(positional[0], "logisim-table"),
+        ...(positional[1] === undefined
+          ? {}
+          : { circuit: positional[1] }),
+        limit,
+      });
+      return;
+    }
+    case "logisim-test": {
+      const projectPath = requireLogisimPath(
+        positional[0],
+        "logisim-test",
+      );
+      const vectorPath = positional[1];
+      if (!vectorPath) {
+        throw new Error("logisim-test requires a .vec or .txt path");
+      }
+      await runTool(
+        "logisim_run_test_vector",
+        {
+          path: projectPath,
+          vectorPath,
+          ...(positional[2] === undefined
+            ? {}
+            : { circuit: positional[2] }),
+        },
         { failWhenDataInvalid: true },
       );
       return;

@@ -6,7 +6,11 @@ CRUMBLE is its unofficial CRUMB-specific integration family, not the umbrella
 data model. Dates are deliberately omitted until each milestone has
 reproducible evidence.
 
-## Current: public alpha
+## Current source milestone: Unreleased 0.3.0
+
+This section describes the 20-tool source tree. The published 0.2.1 npm
+package and MCPB remain the prior 14-tool CRUMBLE release and do not contain
+the Logisim-evolution adapter.
 
 - Stable `electronics.mcp/0.2` result envelope and capability discovery.
 - Portable experiment validation.
@@ -18,9 +22,13 @@ reproducible evidence.
 - A small, synthetic, non-overwriting CRUMBLE fixture generator.
 - Cross-model artifact handoff using workspace-relative references and SHA-256
   digests.
+- Version-pinned Logisim-evolution 4.1.0 project discovery, strict `.circ`
+  structure, explicitly partial neutral IR/netlist export, official-JAR
+  project-load statistics, bounded truth tables, and test vectors.
 
-The current server does not provide live simulation, arbitrary circuit editing,
-or CRUMB 2.x/Godot compatibility.
+The current server does not provide a live simulator session, arbitrary circuit
+editing, or CRUMB 2.x/Godot compatibility. Logisim runtime calls are bounded
+one-shot subprocesses.
 
 ## Next: CRUMBLE adapter boundary and CRUMB format coverage
 
@@ -43,7 +51,10 @@ or CRUMB 2.x/Godot compatibility.
   stimuli, probes, and assertions independently of any simulator.
 - Report conversion losses rather than forcing unsupported concepts into a
   destination format.
-- Add a version-pinned Logisim-evolution adapter.
+- Expand the neutral IR only with evidence-backed port and hierarchy mappings;
+  preserve explicit conversion losses across Logisim and future adapters.
+- Add controlled `.circ` corpora for subcircuits, buses, sequential state, and
+  test-vector failure reporting without redistributing third-party designs.
 - Keep Wokwi, SPICE, HDL, and other tools behind capability-negotiated
   backends or companion servers.
 

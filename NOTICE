@@ -7,3 +7,9 @@ Circuitarium MCP and CRUMBLE are independent community work. They are not
 affiliated with, sponsored by, or endorsed by CRUMB or its developer or
 publisher. CRUMB and all other third-party product names are the property of
 their respective owners.
+
+The Logisim-evolution adapter is also independent community interoperability
+work. Logisim-evolution is not bundled with, linked into, sponsored by, or
+endorsing Circuitarium MCP. Users provide their own separately licensed
+Logisim-evolution installation. Logisim-evolution is distributed under
+GPL-3.0 by its own contributors; Circuitarium MCP remains Apache-2.0.

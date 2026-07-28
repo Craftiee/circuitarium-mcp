@@ -24,6 +24,17 @@ npm test
 compiles the project. `npm run check` runs the type check, build, tests, and
 deterministic-fixture verification together.
 
+Changes to the Logisim runtime boundary must also run the version-pinned
+official-JAR check with Java 21:
+
+```powershell
+$env:CIRCUITARIUM_LOGISIM_JAR = "C:\path\to\logisim-evolution-4.1.0-all.jar"
+npm run logisim:e2e
+```
+
+Do not commit or bundle the JAR. The E2E fixture must remain independently
+authored; do not copy an upstream or third-party `.circ` example.
+
 When changing fixture generation, regenerate the repository fixtures and then
 run the complete check:
 

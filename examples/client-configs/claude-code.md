@@ -22,6 +22,12 @@ Verify the registration with:
 claude mcp get circuitarium
 ```
 
-Inside Claude Code, open `/mcp` and confirm that the server exposes 14 tools.
+Inside Claude Code, open `/mcp` and confirm that the published 0.2.1 server
+exposes 14 tools.
 Use `--scope project` instead of `--scope local` only when you intentionally
 want Claude Code to write a shared `.mcp.json` entry for the team.
+
+The six Logisim tools are part of the Unreleased 0.3.0 source tree, not the
+`npx ...@0.2.1` commands above. To test them, follow the
+[source-checkout Logisim setup](../../docs/logisim.md); that setup adds
+`CIRCUITARIUM_LOGISIM_JAR` and, only if needed, `CIRCUITARIUM_JAVA`.

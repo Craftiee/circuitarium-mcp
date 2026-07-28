@@ -43,6 +43,12 @@ const EXPECTED_TOOL_NAMES = [
   "crumb_ic_reference",
   "crumb_export_netlist",
   "crumb_check_design",
+  "logisim_list_projects",
+  "logisim_analyze_design",
+  "logisim_export_netlist",
+  "logisim_component_stats",
+  "logisim_truth_table",
+  "logisim_run_test_vector",
 ];
 
 function envelopeOf(result: unknown): Envelope {
@@ -64,6 +70,16 @@ function assertCrumbCompatibilityContext(result: unknown): void {
   assert.equal(context.backendId, "crumb.file");
   assert.equal(context.adapterVersion, "crumb.file/0.2");
   assert.equal(context.compatibilityProfile, "crumb.unity/1.3.5");
+}
+
+function assertLogisimCompatibilityContext(result: unknown): void {
+  const context = envelopeOf(result).context;
+  assert.equal(context.backendId, "logisim.evolution");
+  assert.equal(context.adapterVersion, "logisim.evolution/0.1");
+  assert.equal(
+    context.compatibilityProfile,
+    "logisim-evolution/4.1.0",
+  );
 }
 
 let client: Client;
@@ -146,6 +162,20 @@ test("tools/list exposes every envelope tool with input and output schemas", asy
     assert.ok(schema.properties?.diagnostics, `${tool.name} has diagnostics`);
     assert.ok(schema.properties?.context, `${tool.name} has context`);
     assert.ok(schema.properties?.nextActions, `${tool.name} has nextActions`);
+  }
+  const runtimeToolNames = new Set([
+    "logisim_component_stats",
+    "logisim_truth_table",
+    "logisim_run_test_vector",
+  ]);
+  for (const tool of listed.tools) {
+    if (runtimeToolNames.has(tool.name)) {
+      assert.equal(
+        tool.annotations?.readOnlyHint,
+        false,
+        `${tool.name} discloses possible upstream preference writes`,
+      );
+    }
   }
 
   const experimentInputSchema = listed.tools.find(
@@ -253,10 +283,26 @@ test("electronics_capabilities orients a model without leaking paths", async () 
     limitations: string[];
     integrationFamily: Record<string, unknown>;
     compatibilityProfiles?: Array<Record<string, unknown>>;
+    runtime?: {
+      status:
+        | "available"
+        | "unconfigured"
+        | "unavailable"
+        | "version-mismatch";
+      requiredForTools: string[];
+      configuration: {
+        jarEnvironment: string;
+        javaEnvironment: string;
+        javaRequirement: string;
+      };
+      detected?: {
+        simulatorVersion: string;
+      };
+    };
   }>;
   assert.deepEqual(
     callableBackends.map((backend) => backend.backendId),
-    ["crumb.file"],
+    ["crumb.file", "logisim.evolution"],
   );
   assert.equal(callableBackends[0]?.dataLeavesMachine, "depends");
   assert.equal(callableBackends[0]?.operations.build, false);
@@ -297,6 +343,35 @@ test("electronics_capabilities orients a model without leaking paths", async () 
       },
     },
   ]);
+  assert.equal(callableBackends[1]?.dataLeavesMachine, "depends");
+  assert.equal(callableBackends[1]?.operations.build, false);
+  assert.equal(callableBackends[1]?.operations.liveSessions, false);
+  assert.match(
+    callableBackends[1]?.limitations.join(" ") ?? "",
+    /CIRCUITARIUM_LOGISIM_JAR/u,
+  );
+  assert.equal(
+    callableBackends[1]?.compatibilityProfiles?.[0]?.compatibilityProfile,
+    "logisim-evolution/4.1.0",
+  );
+  assert.ok(
+    [
+      "available",
+      "unconfigured",
+      "unavailable",
+      "version-mismatch",
+    ].includes(callableBackends[1]?.runtime?.status ?? ""),
+  );
+  assert.deepEqual(callableBackends[1]?.runtime?.requiredForTools, [
+    "logisim_component_stats",
+    "logisim_truth_table",
+    "logisim_run_test_vector",
+  ]);
+  assert.deepEqual(callableBackends[1]?.runtime?.configuration, {
+    jarEnvironment: "CIRCUITARIUM_LOGISIM_JAR",
+    javaEnvironment: "CIRCUITARIUM_JAVA",
+    javaRequirement: "Java 21 or newer",
+  });
 });
 
 test("experiment validation separates tool failure from invalid data", async () => {
@@ -1325,6 +1400,247 @@ test("workspace listing discovers projects with digests and containment", async 
   const notADirectoryEnvelope = envelopeOf(notADirectory);
   assert.equal(notADirectoryEnvelope.error?.code, "INVALID_ARGUMENT");
   assert.equal(notADirectoryEnvelope.error?.argumentPath, "dir");
+});
+
+test("Logisim static tools discover, analyze, and export explicit partial IR", async () => {
+  const listingResult = await client.callTool({
+    name: "logisim_list_projects",
+    arguments: { dir: "examples/logisim" },
+  });
+  assertLogisimCompatibilityContext(listingResult);
+  const listing = dataOf(listingResult);
+  assert.equal(listing.listingVersion, "logisim.workspace/0.1");
+  const entries = listing.entries as Array<{
+    ref: string;
+    digest: string;
+  }>;
+  const fullAdder = entries.find(
+    (entry) => entry.ref === "examples/logisim/full-adder.circ",
+  );
+  assert.ok(fullAdder);
+  assert.match(fullAdder.digest, /^sha256:[0-9a-f]{64}$/);
+
+  const analysisResult = await client.callTool({
+    name: "logisim_analyze_design",
+    arguments: {
+      path: fullAdder.ref,
+      expectedProjectDigest: fullAdder.digest,
+    },
+  });
+  assertLogisimCompatibilityContext(analysisResult);
+  const analysis = dataOf(analysisResult);
+  assert.equal(analysis.analysisVersion, "logisim.analysis/0.1");
+  assert.equal(
+    (analysis.counts as { components: number }).components,
+    26,
+  );
+  assert.equal(
+    (analysis.source as { mainCircuitName: string }).mainCircuitName,
+    "Main",
+  );
+  assert.equal(
+    (analysis.neutralIr as { completeness: string }).completeness,
+    "partial",
+  );
+  assert.deepEqual(analysis.runtimeSafety, {
+    assessmentVersion: "logisim.runtime-safety/0.1",
+    safe: true,
+    reasonOccurrenceCount: 0,
+    reasons: [],
+    reasonBounds: {
+      total: 0,
+      returned: 0,
+      limit: 10,
+      truncated: false,
+    },
+  });
+
+  const netlistResult = await client.callTool({
+    name: "logisim_export_netlist",
+    arguments: {
+      path: fullAdder.ref,
+      expectedProjectDigest: fullAdder.digest,
+      circuit: "Main",
+      limit: 5,
+    },
+  });
+  assertLogisimCompatibilityContext(netlistResult);
+  const netlist = dataOf(netlistResult);
+  assert.equal(
+    netlist.netlistVersion,
+    "circuitarium.netlist-ir/0.1",
+  );
+  assert.equal(netlist.completeness, "partial");
+  assert.equal(
+    (netlist.page as { returned: number }).returned,
+    5,
+  );
+  assert.ok((netlist.page as { nextCursor?: string }).nextCursor);
+
+  const staleResult = await client.callTool({
+    name: "logisim_analyze_design",
+    arguments: {
+      path: fullAdder.ref,
+      expectedProjectDigest: `sha256:${"0".repeat(64)}`,
+    },
+  });
+  assertLogisimCompatibilityContext(staleResult);
+  assert.equal(envelopeOf(staleResult).error?.code, "PROJECT_STATE_CONFLICT");
+
+  const staleVectorResult = await client.callTool({
+    name: "logisim_run_test_vector",
+    arguments: {
+      path: fullAdder.ref,
+      expectedProjectDigest: fullAdder.digest,
+      vectorPath: "examples/logisim/full-adder.vec",
+      expectedVectorDigest: `sha256:${"0".repeat(64)}`,
+    },
+  });
+  const staleVectorEnvelope = envelopeOf(staleVectorResult);
+  assert.equal(staleVectorResult.isError, true);
+  assert.equal(staleVectorEnvelope.error?.code, "PROJECT_STATE_CONFLICT");
+  assert.equal(
+    staleVectorEnvelope.error?.argumentPath,
+    "expectedVectorDigest",
+  );
+  assert.match(
+    String(staleVectorEnvelope.error?.message),
+    /test-vector bytes changed/u,
+  );
+  assert.equal(
+    staleVectorEnvelope.nextActions[0]?.tool,
+    "logisim_run_test_vector",
+  );
+  assert.equal(
+    "expectedVectorDigest" in
+      (staleVectorEnvelope.nextActions[0]?.arguments ?? {}),
+    false,
+  );
+});
+
+test("Logisim JAR tools deny unsafe projects before probing or spawning Java", async () => {
+  const unsafeRef = `${generatedRef}/logisim-unsafe-runtime.circ`;
+  const privateDescriptor = "jar#PRIVATE_RUNTIME_LIBRARY.jar#Example";
+  await writeFile(
+    join(generatedDirectory, "logisim-unsafe-runtime.circ"),
+    `<project source="4.1.0" version="1.0">
+      <lib desc="${privateDescriptor}" name="9"/>
+      <main name="Main"/>
+      <circuit name="Main"/>
+    </project>`,
+    "utf8",
+  );
+
+  const analysisResult = await client.callTool({
+    name: "logisim_analyze_design",
+    arguments: { path: unsafeRef },
+  });
+  const runtimeSafety = dataOf(analysisResult).runtimeSafety as {
+    safe: boolean;
+    reasons: Array<{ code: string; count: number }>;
+  };
+  assert.equal(runtimeSafety.safe, false);
+  assert.deepEqual(runtimeSafety.reasons, [
+    { code: "external-library-descriptor", count: 1 },
+  ]);
+
+  const runtimeResult = await client.callTool({
+    name: "logisim_component_stats",
+    arguments: { path: unsafeRef },
+  });
+  const runtimeEnvelope = envelopeOf(runtimeResult);
+  assert.equal(runtimeResult.isError, true);
+  assert.equal(runtimeEnvelope.error?.code, "UNSUPPORTED_OPERATION");
+  assert.match(String(runtimeEnvelope.error?.message), /static preflight/u);
+  assert.equal(JSON.stringify(runtimeResult).includes(privateDescriptor), false);
+});
+
+test("Logisim truth tables require a bounded declared Pin interface before Java", async () => {
+  const noPinsRef = `${generatedRef}/logisim-no-pins.circ`;
+  await writeFile(
+    join(generatedDirectory, "logisim-no-pins.circ"),
+    `<project source="4.1.0" version="1.0">
+      <lib desc="#Wiring" name="0"/>
+      <main name="Main"/>
+      <circuit name="Main"/>
+    </project>`,
+    "utf8",
+  );
+  const result = await client.callTool({
+    name: "logisim_truth_table",
+    arguments: { path: noPinsRef },
+  });
+  assert.equal(result.isError, true);
+  assert.equal(envelopeOf(result).error?.code, "UNSUPPORTED_OPERATION");
+  assert.match(
+    String(envelopeOf(result).error?.message),
+    /complete, uniquely labeled input\/output Pin interface/u,
+  );
+});
+
+test("Logisim responses preview oversized text and enforce an aggregate byte cap", async () => {
+  const oversizedLabelRef = `${generatedRef}/logisim-oversized-label.circ`;
+  const oversizedLabel = "L".repeat(5_000);
+  await writeFile(
+    join(generatedDirectory, "logisim-oversized-label.circ"),
+    `<project source="4.1.0" version="1.0">
+      <lib desc="#Wiring" name="0"/>
+      <main name="Main"/>
+      <circuit name="Main">
+        <comp lib="0" loc="(10,10)" name="Pin">
+          <a name="label" val="${oversizedLabel}"/>
+        </comp>
+      </circuit>
+    </project>`,
+    "utf8",
+  );
+  const previewResult = await client.callTool({
+    name: "logisim_analyze_design",
+    arguments: { path: oversizedLabelRef },
+  });
+  assert.equal(previewResult.isError, undefined);
+  const previewData = dataOf(previewResult);
+  const previewLabel = (
+    previewData.circuits as Array<{
+      pinSummary: { pins: Array<{ label: string | null }> };
+    }>
+  )[0]?.pinSummary.pins[0]?.label;
+  assert.ok(previewLabel);
+  assert.ok(previewLabel.length <= 4_096);
+  assert.match(previewLabel, /truncated; characters=5000/u);
+  assert.match(previewLabel, /sha256:[0-9a-f]{64}/u);
+  assert.ok(
+    envelopeOf(previewResult).diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "logisim-public-text-truncated",
+    ),
+  );
+
+  const responseCapRef = `${generatedRef}/logisim-response-cap.circ`;
+  const longLabel = "Q".repeat(5_000);
+  const circuits = Array.from({ length: 3 }, (_, circuitIndex) => {
+    const pins = Array.from(
+      { length: 260 },
+      (_, pinIndex) =>
+        `<comp lib="0" loc="(${pinIndex * 10},${circuitIndex * 10})" name="Pin">` +
+        `<a name="label" val="${longLabel}${circuitIndex}-${pinIndex}"/>` +
+        "</comp>",
+    ).join("");
+    return `<circuit name="C${circuitIndex}">${pins}</circuit>`;
+  }).join("");
+  await writeFile(
+    join(generatedDirectory, "logisim-response-cap.circ"),
+    `<project source="4.1.0" version="1.0"><lib desc="#Wiring" name="0"/>` +
+      `<main name="C0"/>${circuits}</project>`,
+    "utf8",
+  );
+  const cappedResult = await client.callTool({
+    name: "logisim_analyze_design",
+    arguments: { path: responseCapRef },
+  });
+  assert.equal(cappedResult.isError, true);
+  assert.equal(envelopeOf(cappedResult).error?.code, "QUOTA_EXCEEDED");
+  assert.ok(JSON.stringify(cappedResult).length < 20_000);
 });
 
 test("single-component fetch returns detail, connections, and typed NOT_FOUND", async () => {

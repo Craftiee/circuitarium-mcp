@@ -14,6 +14,9 @@ jobs:
     name: Verify and publish npm
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    outputs:
+      npm_tag: ${{ steps.release_identity.outputs.npm_tag }}
+      prerelease: ${{ steps.release_identity.outputs.prerelease }}
     environment:
       name: npm
       url: https://www.npmjs.com/package/circuitarium-mcp
@@ -35,6 +38,12 @@ jobs:
           package-manager-cache: false
           registry-url: https://registry.npmjs.org
 
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Pin npm CLI for trusted publishing
         run: |
           npm install --global npm@11.16.0
@@ -50,6 +59,7 @@ jobs:
         run: npm ci
 
       - name: Verify release identity
+        id: release_identity
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: npm run release:check
@@ -60,10 +70,33 @@ jobs:
           npm run check
           npm run test:coverage
 
+      - name: Download and verify official Logisim-evolution JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl \
+            --fail \
+            --location \
+            --proto '=https' \
+            --proto-redir '=https' \
+            --silent \
+            --show-error \
+            --tlsv1.2 \
+            --output "$RUNNER_TEMP/logisim-evolution-4.1.0-all.jar" \
+            "https://github.com/logisim-evolution/logisim-evolution/releases/download/v4.1.0/logisim-evolution-4.1.0-all.jar"
+          echo "fe6386a3217a591bcc311a4eda49e1f43a389b499dd3d0f6f40f344fc85f2577  $RUNNER_TEMP/logisim-evolution-4.1.0-all.jar" \
+            | sha256sum --check --strict
+
+      - name: Run official Logisim-evolution JAR end-to-end checks
+        env:
+          CIRCUITARIUM_LOGISIM_JAR: ${{ runner.temp }}/logisim-evolution-4.1.0-all.jar
+        run: npm run logisim:e2e
+
       - name: Build and smoke-test package
         id: package
         env:
           CIRCUITARIUM_KEEP_PACKAGE: "1"
+          CIRCUITARIUM_LOGISIM_JAR: ${{ runner.temp }}/logisim-evolution-4.1.0-all.jar
         run: npm run package:check
 
       - name: Build and verify MCPB bundle
@@ -71,6 +104,7 @@ jobs:
         env:
           CIRCUITARIUM_PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
           CIRCUITARIUM_KEEP_MCPB: "1"
+          CIRCUITARIUM_LOGISIM_JAR: ${{ runner.temp }}/logisim-evolution-4.1.0-all.jar
         run: npm run mcpb:check
 
       - name: Retain verified npm package
@@ -91,7 +125,7 @@ jobs:
 
       - name: Publish the exact verified package
         env:
-          NPM_DIST_TAG: ${{ contains(github.ref_name, '-') && 'next' || 'latest' }}
+          NPM_DIST_TAG: ${{ steps.release_identity.outputs.npm_tag }}
           PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
         shell: bash
         run: |
@@ -296,6 +330,7 @@ jobs:
       - name: Create release from verified artifacts
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_IS_PRERELEASE: ${{ needs.publish.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
@@ -336,7 +371,7 @@ jobs:
               --notes-file release-notes.md
               --title "Circuitarium MCP $GITHUB_REF_NAME"
             )
-            if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
               release_flags+=(--prerelease)
             fi
             gh release create \

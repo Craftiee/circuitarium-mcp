@@ -20,6 +20,9 @@ test("server command parser accepts only the documented exact modes", () => {
   for (const argument of ["version", "-v", "-V", "--version"]) {
     assert.deepEqual(parseServerCommand([argument]), { kind: "version" });
   }
+  for (const argument of ["doctor", "--doctor"]) {
+    assert.deepEqual(parseServerCommand([argument]), { kind: "doctor" });
+  }
   assert.deepEqual(parseServerCommand(["--help", "--version"]), {
     arguments: ["--help", "--version"],
     kind: "invalid",
@@ -48,7 +51,7 @@ test("terminal panel is plain ASCII, truthful, and bounded for narrow terminals"
   assert.match(panel, /14 bounded electronics tools/u);
   assert.match(panel, /No MCP host is connected/u);
   assert.match(panel, /configure your MCP host/u);
-  assert.match(panel, /no live simulation/u);
+  assert.match(panel, /no\s+\|\n\|\s+live GUI session/u);
   assert.equal(panel.includes(String.fromCharCode(27)), false);
   for (const line of panel.trimEnd().split("\n")) {
     assert.ok(line.length <= 60, `panel line exceeds 60 columns: ${line}`);
@@ -72,6 +75,8 @@ test("help and invalid-argument copy explain the stdio process", () => {
   assert.match(help, /starting it separately does not attach it to a host/u);
   assert.match(help, /npm downloads and extracts the package/u);
   assert.match(help, /CIRCUITARIUM_MCP_ROOT/u);
+  assert.match(help, /CIRCUITARIUM_LOGISIM_JAR/u);
+  assert.match(help, /doctor, --doctor/u);
   assert.match(help, /@modelcontextprotocol\/inspector/u);
   assert.match(help, /electronics_capabilities/u);
 
@@ -134,13 +139,42 @@ test("server command execution prints the panel to stderr only for a real TTY", 
   assert.match(stderr, /DIRECT RUN/u);
 });
 
+test("doctor runs without starting the stdio server", async () => {
+  let starts = 0;
+  let stdout = "";
+  const exitCode = await executeServerCommand(
+    ["doctor"],
+    async () => {
+      starts += 1;
+      return 20;
+    },
+    {
+      writeStderr: () => {},
+      writeStdout: (text) => {
+        stdout += text;
+      },
+    },
+    async () => ({
+      exitCode: 0,
+      text: "doctor ready\n",
+    }),
+  );
+  assert.equal(exitCode, 0);
+  assert.equal(starts, 0);
+  assert.equal(stdout, "doctor ready\n");
+});
+
 function runSourceEntrypoint(arguments_: string[]) {
+  const environment = { ...process.env };
+  delete environment.CIRCUITARIUM_LOGISIM_JAR;
+  delete environment.LOGISIM_JAR;
   return spawnSync(
     process.execPath,
     ["--import", "tsx", "src/bin.ts", ...arguments_],
     {
       cwd: process.cwd(),
       encoding: "utf8",
+      env: environment,
       timeout: 10_000,
     },
   );
@@ -160,6 +194,17 @@ test("public launcher version is one parse-friendly line", () => {
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0);
   assert.equal(result.stdout, `circuitarium-mcp ${SERVER_VERSION}\n`);
+  assert.equal(result.stderr, "");
+});
+
+test("public launcher doctor reports optional Logisim readiness", () => {
+  const result = runSourceEntrypoint(["doctor"]);
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /^circuitarium-mcp doctor/mu);
+  assert.match(result.stdout, /Registered tools: 20/u);
+  assert.match(result.stdout, /Logisim static adapter: ready/u);
+  assert.match(result.stdout, /optional, not configured/u);
   assert.equal(result.stderr, "");
 });
 

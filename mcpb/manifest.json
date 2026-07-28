@@ -3,9 +3,9 @@
   "manifest_version": "0.3",
   "name": "circuitarium-mcp",
   "display_name": "Circuitarium MCP",
-  "version": "0.2.1",
-  "description": "A model-neutral electronics workbench with an unofficial, version-pinned CRUMB .cru file integration.",
-  "long_description": "Inspect, validate, compare, inventory, export, and electrically review Unity-era CRUMB .cru files through 14 bounded MCP tools. Circuitarium is independent community interoperability work: it includes no CRUMB game code, assets, or circuit designs and does not claim live simulation or arbitrary editing.",
+  "version": "0.3.0",
+  "description": "A model-neutral electronics workbench for CRUMB artifacts and version-pinned Logisim-evolution projects.",
+  "long_description": "Use 20 bounded MCP tools to inspect and review Unity-era CRUMB .cru files, parse Logisim-evolution .circ projects, export explicit partial IR, and optionally run truth tables or test vectors through a separately installed official Logisim-evolution 4.1.0 JAR. Circuitarium bundles neither simulator and controls no live GUI session.",
   "author": {
     "name": "Craftiee",
     "url": "https://github.com/Craftiee"
@@ -26,7 +26,9 @@
         "${__dirname}/server/dist/src/server.js"
       ],
       "env": {
-        "CIRCUITARIUM_MCP_ROOT": "${user_config.workspace}"
+        "CIRCUITARIUM_MCP_ROOT": "${user_config.workspace}",
+        "CIRCUITARIUM_LOGISIM_JAR": "${user_config.logisim_jar}",
+        "CIRCUITARIUM_JAVA": "${user_config.java}"
       }
     }
   },
@@ -37,7 +39,8 @@
     "mcp",
     "crumb",
     "crumble",
-    "breadboard"
+    "breadboard",
+    "logisim"
   ],
   "license": "Apache-2.0",
   "compatibility": {
@@ -54,8 +57,20 @@
     "workspace": {
       "type": "directory",
       "title": "Circuit workspace",
-      "description": "Choose the smallest folder that contains the .cru files Circuitarium may inspect or generate.",
+      "description": "Choose the smallest folder containing the .cru, .circ, and vector files Circuitarium may access.",
       "required": true
+    },
+    "logisim_jar": {
+      "type": "file",
+      "title": "Logisim-evolution 4.1.0 all-JAR",
+      "description": "Optional official Logisim-evolution 4.1.0 all-JAR. Enables component statistics, truth tables, and test vectors.",
+      "required": false
+    },
+    "java": {
+      "type": "file",
+      "title": "Java 21 executable",
+      "description": "Optional Java 21 executable. Leave empty to use java from PATH.",
+      "required": false
     }
   }
 }

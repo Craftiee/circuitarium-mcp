@@ -75,16 +75,49 @@ interface ShrinkwrapManifest {
   version?: unknown;
 }
 
+interface Envelope {
+  context?: {
+    projectDigest?: string;
+  };
+  contractVersion?: string;
+  data?: {
+    circuitName?: string;
+    project?: {
+      ref?: string;
+    };
+    runtime?: {
+      authenticity?: string;
+      version?: string;
+    };
+    runtimeSafety?: {
+      safe?: boolean;
+    };
+    totalWithSubcircuits?: {
+      recursiveCount?: number;
+      uniqueCount?: number;
+    };
+  };
+  ok?: boolean;
+}
+
 const SDK_VERSION = "1.29.0";
 const UPSTREAM_HONO_RANGE = "^1.19.9";
 const AUDITED_HONO_VERSION = "2.0.11";
-const EXPECTED_TOOL_COUNT = 14;
+const EXPECTED_TOOL_COUNT = 20;
 const MAX_TARBALL_BYTES = 5 * 1024 * 1024;
 const MAX_UNPACKED_BYTES = 20 * 1024 * 1024;
 const MAX_PACKAGE_FILES = 4_000;
 const STARTUP_TIMEOUT_MS = 10_000;
+const LOGISIM_SMOKE_TIMEOUT_MS = 30_000;
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = resolve(tmpdir());
+const configuredLogisimJarSetting =
+  process.env.CIRCUITARIUM_LOGISIM_JAR?.trim();
+const configuredLogisimJar =
+  configuredLogisimJarSetting === undefined ||
+  configuredLogisimJarSetting.length === 0
+    ? undefined
+    : resolve(repositoryRoot, configuredLogisimJarSetting);
 const sourceSdkManifestPath = resolve(
   repositoryRoot,
   "node_modules",
@@ -407,6 +440,23 @@ function installedBinCommand(consumerRoot: string): {
   return { args: [], command: shimPath, shimPath };
 }
 
+function normalizedEnvironment(
+  additions: Record<string, string>,
+): Record<string, string> {
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+  return { ...environment, ...additions };
+}
+
+function envelopeOf(result: unknown): Envelope {
+  const record = result as { structuredContent?: unknown };
+  assert.ok(record.structuredContent);
+  return record.structuredContent as Envelope;
+}
+
 function runInstalledPackageBin(arguments_: string[], cwd: string) {
   const npmEntrypoint = process.env.npm_execpath;
   if (!npmEntrypoint) {
@@ -427,6 +477,8 @@ function runInstalledPackageBin(arguments_: string[], cwd: string) {
       encoding: "utf8",
       env: {
         ...process.env,
+        CIRCUITARIUM_LOGISIM_JAR: "",
+        LOGISIM_JAR: "",
         npm_config_audit: "false",
         npm_config_fund: "false",
         npm_config_loglevel: "error",
@@ -495,6 +547,8 @@ try {
     "SUPPORT.md",
     "docs/client-setup.md",
     "examples/model-host/minimal-system-prompt.txt",
+    "examples/logisim/full-adder.circ",
+    "examples/logisim/full-adder.vec",
     "dist/src/bin.js",
     "dist/src/server.js",
   ]) {
@@ -605,6 +659,27 @@ try {
   assert.equal((await stat(installedServer)).isFile(), true);
   const installedEntrypoint = resolve(installedRoot, "dist", "src", "bin.js");
   assert.equal((await stat(installedEntrypoint)).isFile(), true);
+  const installedLogisimProject = resolve(
+    installedRoot,
+    "examples",
+    "logisim",
+    "full-adder.circ",
+  );
+  const installedLogisimVector = resolve(
+    installedRoot,
+    "examples",
+    "logisim",
+    "full-adder.vec",
+  );
+  assert.equal((await stat(installedLogisimProject)).isFile(), true);
+  assert.equal((await stat(installedLogisimVector)).isFile(), true);
+  if (configuredLogisimJar !== undefined) {
+    assert.equal(
+      (await stat(configuredLogisimJar)).isFile(),
+      true,
+      "CIRCUITARIUM_LOGISIM_JAR must identify a readable file",
+    );
+  }
   const bin = installedBinCommand(consumerDirectory);
   assert.equal((await stat(bin.shimPath)).isFile(), true);
   const helpResult = runInstalledPackageBin(["--help"], consumerDirectory);
@@ -622,6 +697,14 @@ try {
     `circuitarium-mcp ${result.version}\n`,
   );
   assert.equal(versionResult.stderr, "");
+  const doctorResult = runInstalledPackageBin(["doctor"], consumerDirectory);
+  assert.equal(doctorResult.status, 0);
+  assert.match(
+    doctorResult.stdout,
+    new RegExp(`Registered tools: ${EXPECTED_TOOL_COUNT}`, "u"),
+  );
+  assert.match(doctorResult.stdout, /optional, not configured/u);
+  assert.equal(doctorResult.stderr, "");
   const invalidResult = runInstalledPackageBin(
     ["--unknown"],
     consumerDirectory,
@@ -634,6 +717,11 @@ try {
     command: bin.command,
     args: bin.args,
     cwd: consumerDirectory,
+    env: normalizedEnvironment({
+      CIRCUITARIUM_MCP_ROOT: installedRoot,
+      CIRCUITARIUM_LOGISIM_JAR: configuredLogisimJar ?? "",
+      LOGISIM_JAR: "",
+    }),
     stderr: "pipe",
   });
   let serverStderr = "";
@@ -647,6 +735,7 @@ try {
   let initializeMilliseconds = 0;
   let toolsListMilliseconds = 0;
   let toolCount = 0;
+  let logisimRuntimeVerified = false;
   try {
     const initializeStartedAt = performance.now();
     await withTimeout(
@@ -673,6 +762,56 @@ try {
       "installed server exposes an unexpected tool count",
     );
     assert.equal(client.getServerVersion()?.version, result.version);
+
+    const analyzeResult = await withTimeout(
+      client.callTool({
+        name: "logisim_analyze_design",
+        arguments: { path: "examples/logisim/full-adder.circ" },
+      }),
+      STARTUP_TIMEOUT_MS,
+      "packaged MCP logisim_analyze_design",
+    );
+    assert.equal(analyzeResult.isError ?? false, false);
+    const analyzeEnvelope = envelopeOf(analyzeResult);
+    assert.equal(analyzeEnvelope.contractVersion, "electronics.mcp/0.2");
+    assert.equal(analyzeEnvelope.ok, true);
+    assert.equal(
+      analyzeEnvelope.data?.project?.ref,
+      "examples/logisim/full-adder.circ",
+    );
+    assert.equal(analyzeEnvelope.data?.runtimeSafety?.safe, true);
+
+    if (configuredLogisimJar !== undefined) {
+      const statisticsResult = await withTimeout(
+        client.callTool({
+          name: "logisim_component_stats",
+          arguments: {
+            path: "examples/logisim/full-adder.circ",
+            circuit: "Main",
+            expectedProjectDigest:
+              analyzeEnvelope.context?.projectDigest,
+            timeoutMs: LOGISIM_SMOKE_TIMEOUT_MS,
+          },
+        }),
+        LOGISIM_SMOKE_TIMEOUT_MS + STARTUP_TIMEOUT_MS,
+        "packaged MCP logisim_component_stats",
+      );
+      assert.equal(statisticsResult.isError ?? false, false);
+      const statisticsEnvelope = envelopeOf(statisticsResult);
+      assert.equal(statisticsEnvelope.contractVersion, "electronics.mcp/0.2");
+      assert.equal(statisticsEnvelope.ok, true);
+      assert.equal(statisticsEnvelope.data?.circuitName, "Main");
+      assert.deepEqual(statisticsEnvelope.data?.totalWithSubcircuits, {
+        uniqueCount: 26,
+        recursiveCount: 26,
+      });
+      assert.equal(statisticsEnvelope.data?.runtime?.version, "4.1.0");
+      assert.equal(
+        statisticsEnvelope.data?.runtime?.authenticity,
+        "self-reported-unverified",
+      );
+      logisimRuntimeVerified = true;
+    }
   } finally {
     await client.close();
   }
@@ -709,6 +848,11 @@ try {
       `  MCP initialize ${formatMilliseconds(initializeMilliseconds)} / ${STARTUP_TIMEOUT_MS} ms timeout`,
       `  MCP tools/list ${formatMilliseconds(toolsListMilliseconds)} / ${STARTUP_TIMEOUT_MS} ms timeout`,
       `  Tools:         ${toolCount} / ${EXPECTED_TOOL_COUNT}`,
+      `  Logisim:       ${
+        logisimRuntimeVerified
+          ? "packaged static + 4.1.0 self-reported JAR smoke passed"
+          : "packaged static smoke passed; optional JAR not configured"
+      }`,
       "  Piped stderr:  clean",
       ...(keepTarball
         ? [`  Retained at:   ${packageTarball}`]

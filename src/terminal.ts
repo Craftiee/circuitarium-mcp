@@ -10,6 +10,7 @@ const PANEL_DEFAULT_COLUMNS = 78;
 const PANEL_BOX_MIN_COLUMNS = 48;
 
 export type ServerCommandAction =
+  | { kind: "doctor" }
   | { kind: "help" }
   | { kind: "serve" }
   | { kind: "version" }
@@ -25,6 +26,11 @@ export interface ServerCommandIo extends TerminalState {
   stderrColumns?: number;
   writeStderr: (text: string) => void;
   writeStdout: (text: string) => void;
+}
+
+export interface DoctorCommandResult {
+  exitCode: number;
+  text: string;
 }
 
 export function parseServerCommand(
@@ -44,6 +50,9 @@ export function parseServerCommand(
       case "-V":
       case "--version":
         return { kind: "version" };
+      case "doctor":
+      case "--doctor":
+        return { kind: "doctor" };
     }
   }
   return { arguments: [...arguments_], kind: "invalid" };
@@ -101,7 +110,7 @@ export function renderTerminalPanel(
   if (availableColumns < PANEL_BOX_MIN_COLUMNS) {
     const compactLines = [
       `${SERVER_DISPLAY_NAME} v${SERVER_VERSION}`,
-      `${toolCount} electronics tools; CRUMBLE file analysis; no live simulation.`,
+      `${toolCount} electronics tools; CRUMBLE + Logisim; no live GUI session.`,
       "DIRECT TERMINAL RUN: no MCP host is connected.",
       "Press Ctrl+C, then configure your MCP host to launch this command.",
       `Help: ${SERVER_NAME} --help`,
@@ -128,7 +137,7 @@ export function renderTerminalPanel(
     `o---[R]---|>|---o  ${SERVER_DISPLAY_NAME.toUpperCase()} v${SERVER_VERSION}`,
   );
   addWrapped(
-    `${toolCount} bounded electronics tools | CRUMBLE file analysis | no live simulation`,
+    `${toolCount} bounded electronics tools | CRUMBLE + Logisim | no live GUI session`,
   );
   rows.push(border);
   addWrapped("DIRECT RUN  No MCP host is connected to this process.");
@@ -155,11 +164,19 @@ A first npx run may pause while npm downloads and extracts the package.
 Options:
   -h, --help           Show this help
   -v, -V, --version    Print the installed version
+  doctor, --doctor     Check package and optional Logisim runtime readiness
 
 Environment:
   CIRCUITARIUM_MCP_ROOT
-      Smallest directory containing the .cru files the server may access.
+      Smallest directory containing the .cru/.circ/.vec files the server may access.
       Defaults to the current working directory.
+
+  CIRCUITARIUM_LOGISIM_JAR
+      Optional absolute path to the official Logisim-evolution 4.1.0 all-JAR.
+      Enables component stats, truth tables, and test-vector execution.
+
+  CIRCUITARIUM_JAVA
+      Optional Java 21 executable. Defaults to "java".
 
 Try it with MCP Inspector:
   npx -y @modelcontextprotocol/inspector npx -y ${SERVER_NAME}@${SERVER_VERSION}
@@ -191,6 +208,10 @@ export async function executeServerCommand(
   arguments_: readonly string[],
   startServer: () => Promise<number>,
   io: ServerCommandIo,
+  runDoctor: () => Promise<DoctorCommandResult> = async () => ({
+    exitCode: 0,
+    text: "Doctor checks are unavailable from this entrypoint.\n",
+  }),
 ): Promise<number> {
   const action = parseServerCommand(arguments_);
   switch (action.kind) {
@@ -200,6 +221,11 @@ export async function executeServerCommand(
     case "version":
       io.writeStdout(`${SERVER_NAME} ${SERVER_VERSION}\n`);
       return 0;
+    case "doctor": {
+      const report = await runDoctor();
+      io.writeStdout(report.text);
+      return report.exitCode;
+    }
     case "invalid":
       io.writeStderr(renderInvalidArguments(action.arguments));
       return 2;
