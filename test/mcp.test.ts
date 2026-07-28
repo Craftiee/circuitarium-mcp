@@ -36,6 +36,7 @@ interface Envelope {
 const EXPECTED_TOOL_NAMES = [
   "electronics_capabilities",
   "electronics_validate_experiment",
+  "electronics_plan_verification",
   "crumb_component_catalog",
   "crumb_analyze_design",
   "crumb_compare_designs",
@@ -47,6 +48,7 @@ const EXPECTED_TOOL_NAMES = [
   "crumb_bom",
   "crumb_ic_reference",
   "crumb_export_netlist",
+  "crumb_trace_net",
   "crumb_check_design",
   "logisim_list_projects",
   "logisim_analyze_design",
@@ -81,10 +83,7 @@ function assertLogisimCompatibilityContext(result: unknown): void {
   const context = envelopeOf(result).context;
   assert.equal(context.backendId, "logisim.evolution");
   assert.equal(context.adapterVersion, "logisim.evolution/0.1");
-  assert.equal(
-    context.compatibilityProfile,
-    "logisim-evolution/4.1.0",
-  );
+  assert.equal(context.compatibilityProfile, "logisim-evolution/4.1.0");
 }
 
 let client: Client;
@@ -189,7 +188,10 @@ test("tools/list exposes every envelope tool with input and output schemas", asy
     const schema = tool.outputSchema as {
       properties?: Record<string, unknown>;
     };
-    assert.ok(schema.properties?.contractVersion, `${tool.name} has contractVersion`);
+    assert.ok(
+      schema.properties?.contractVersion,
+      `${tool.name} has contractVersion`,
+    );
     assert.ok(schema.properties?.ok, `${tool.name} has ok`);
     assert.ok(schema.properties?.diagnostics, `${tool.name} has diagnostics`);
     assert.ok(schema.properties?.context, `${tool.name} has context`);
@@ -249,14 +251,8 @@ test("tools/list exposes every envelope tool with input and output schemas", asy
     "baselinePath",
     "candidatePath",
   ]);
-  assert.equal(
-    compareInputSchema.properties?.baselinePath?.maxLength,
-    4096,
-  );
-  assert.equal(
-    compareInputSchema.properties?.candidatePath?.maxLength,
-    4096,
-  );
+  assert.equal(compareInputSchema.properties?.baselinePath?.maxLength, 4096);
+  assert.equal(compareInputSchema.properties?.candidatePath?.maxLength, 4096);
   assert.equal(
     compareInputSchema.properties?.expectedBaselineDigest?.maxLength,
     71,
@@ -530,7 +526,10 @@ test("electronics_capabilities orients a model without leaking paths", async () 
   };
   assert.equal(serverCapability.name, "circuitarium-mcp");
   assert.equal(serverCapability.contractVersion, "electronics.mcp/0.2");
-  assert.equal(JSON.stringify(capabilitiesResult).includes(process.cwd()), false);
+  assert.equal(
+    JSON.stringify(capabilitiesResult).includes(process.cwd()),
+    false,
+  );
   assert.ok(JSON.stringify(capabilitiesResult).length < 50_000);
   const workflows = capabilities.workflows as Array<{
     steps: Array<{ tool: string }>;
@@ -557,11 +556,7 @@ test("electronics_capabilities orients a model without leaking paths", async () 
     integrationFamily: Record<string, unknown>;
     compatibilityProfiles?: Array<Record<string, unknown>>;
     runtime?: {
-      status:
-        | "available"
-        | "unconfigured"
-        | "unavailable"
-        | "version-mismatch";
+      status: "available" | "unconfigured" | "unavailable" | "version-mismatch";
       requiredForTools: string[];
       configuration: {
         jarEnvironment: string;
@@ -580,10 +575,7 @@ test("electronics_capabilities orients a model without leaking paths", async () 
   assert.equal(callableBackends[0]?.dataLeavesMachine, "depends");
   assert.equal(callableBackends[0]?.operations.build, false);
   assert.equal(callableBackends[0]?.operations.liveSessions, false);
-  assert.match(
-    callableBackends[0]?.limitations.join(" ") ?? "",
-    /model host/i,
-  );
+  assert.match(callableBackends[0]?.limitations.join(" ") ?? "", /model host/i);
   assert.deepEqual(callableBackends[0]?.integrationFamily, {
     id: "crumble",
     label: "CRUMBLE",
@@ -629,12 +621,9 @@ test("electronics_capabilities orients a model without leaking paths", async () 
     "logisim-evolution/4.1.0",
   );
   assert.ok(
-    [
-      "available",
-      "unconfigured",
-      "unavailable",
-      "version-mismatch",
-    ].includes(callableBackends[1]?.runtime?.status ?? ""),
+    ["available", "unconfigured", "unavailable", "version-mismatch"].includes(
+      callableBackends[1]?.runtime?.status ?? "",
+    ),
   );
   assert.deepEqual(callableBackends[1]?.runtime?.requiredForTools, [
     "logisim_component_stats",
@@ -658,7 +647,8 @@ test("experiment validation separates tool failure from invalid data", async () 
   assert.equal(missingExperimentEnvelope.error?.code, "INVALID_ARGUMENT");
   assert.equal(missingExperimentEnvelope.error?.argumentPath, "experiment");
   assert.ok(
-    (missingExperimentEnvelope.error?.recovery as unknown[] | undefined)?.length,
+    (missingExperimentEnvelope.error?.recovery as unknown[] | undefined)
+      ?.length,
   );
   assert.equal(
     "compatibilityProfile" in missingExperimentEnvelope.context,
@@ -683,6 +673,77 @@ test("experiment validation separates tool failure from invalid data", async () 
   assert.equal(malformedExperimentEnvelope.ok, true);
   assert.equal(malformedExperimentEnvelope.data?.valid, false);
   assert.ok(malformedExperimentEnvelope.diagnostics.length > 0);
+});
+
+test("verification planning is deterministic, bounded, and non-certifying", async () => {
+  const arguments_ = {
+    target: {
+      backendId: "logisim.evolution",
+      projectRef: "examples/logisim/full-adder.circ",
+      circuit: "Main",
+      runtimeStatus: "unknown",
+    },
+    claims: [
+      {
+        id: "full-adder-behavior",
+        claimClass: "combinational-behavior",
+        objective: "verify",
+        scope: "selected-circuit",
+        statement:
+          "All output rows match the separately authored specification.",
+      },
+    ],
+    declaredInterface: {
+      designIntent: "combinational",
+      signals: [
+        { id: "A", direction: "input", width: 1, role: "data" },
+        { id: "B", direction: "input", width: 1, role: "data" },
+        { id: "Cin", direction: "input", width: 1, role: "carry" },
+        { id: "Sum", direction: "output", width: 1, role: "data" },
+        { id: "Cout", direction: "output", width: 1, role: "carry" },
+      ],
+    },
+  };
+  const first = await client.callTool({
+    name: "electronics_plan_verification",
+    arguments: arguments_,
+  });
+  const second = await client.callTool({
+    name: "electronics_plan_verification",
+    arguments: arguments_,
+  });
+  const firstEnvelope = envelopeOf(first);
+  const firstData = dataOf(first);
+  const secondData = dataOf(second);
+  assert.equal(first.isError ?? false, false);
+  assert.equal(firstData.planVersion, "electronics.verification-plan/0.1");
+  assert.equal(firstData.requestDigest, secondData.requestDigest);
+  assert.equal(firstData.planDigest, secondData.planDigest);
+  assert.deepEqual(firstData.evidenceBoundary, {
+    plannerReadsWorkspace: false,
+    plannerExecutesTools: false,
+    plannerLaunchesSimulator: false,
+    callerEvidenceAuthenticated: false,
+    truthTableIsExpectedOracle: false,
+    reportedCoverageIsCertification: false,
+    physicalApprovalProvided: false,
+  });
+  const plannedTools = (firstData.steps as Array<{ tool?: string }>).flatMap(
+    (step) => (step.tool === undefined ? [] : [step.tool]),
+  );
+  assert.ok(plannedTools.includes("electronics_capabilities"));
+  assert.equal(plannedTools.includes("logisim_truth_table"), false);
+  assert.ok(
+    (firstData.gaps as Array<{ code: string }>).some(
+      (gap) => gap.code === "runtime-status-unresolved",
+    ),
+  );
+  assert.ok(
+    firstEnvelope.nextActions.every((action) =>
+      EXPECTED_TOOL_NAMES.includes(action.tool),
+    ),
+  );
+  assert.equal("valid" in firstData, false);
 });
 
 test("malformed arguments return typed INVALID_ARGUMENT envelopes", async () => {
@@ -733,6 +794,11 @@ test("malformed arguments return typed INVALID_ARGUMENT envelopes", async () => 
       argumentPath: "path",
     },
     {
+      name: "crumb_trace_net",
+      arguments: {},
+      argumentPath: "path",
+    },
+    {
       name: "crumb_check_design",
       arguments: {},
       argumentPath: "path",
@@ -757,7 +823,11 @@ test("malformed arguments return typed INVALID_ARGUMENT envelopes", async () => 
     assertCrumbCompatibilityContext(invalidResult);
     assert.equal(invalidResult.isError, true, invalidCall.name);
     assert.equal(invalidEnvelope.ok, false, invalidCall.name);
-    assert.equal(invalidEnvelope.error?.code, "INVALID_ARGUMENT", invalidCall.name);
+    assert.equal(
+      invalidEnvelope.error?.code,
+      "INVALID_ARGUMENT",
+      invalidCall.name,
+    );
     assert.equal(
       invalidEnvelope.error?.argumentPath,
       invalidCall.argumentPath,
@@ -954,10 +1024,7 @@ test("comparison reports bounded semantic changes with schema-safe pagination", 
   };
   assert.equal(comparisonSummary.comparisonVersion, "crumb.compare/0.1");
   assert.equal(comparisonSummary.view, "summary");
-  assert.equal(
-    comparisonSummary.compatibilityProfile,
-    "crumb.unity/1.3.5",
-  );
+  assert.equal(comparisonSummary.compatibilityProfile, "crumb.unity/1.3.5");
   assert.equal(comparisonBaseline.ref, comparisonBaselineRef);
   assert.equal(comparisonCandidate.ref, comparisonCandidateRef);
   assert.match(comparisonBaseline.digest, /^sha256:[0-9a-f]{64}$/);
@@ -1185,14 +1252,8 @@ test("comparison reports bounded semantic changes with schema-safe pagination", 
     changedComparisonCursorResult,
   );
   assert.equal(changedComparisonCursorResult.isError, true);
-  assert.equal(
-    changedComparisonCursorEnvelope.error?.code,
-    "INVALID_ARGUMENT",
-  );
-  assert.equal(
-    changedComparisonCursorEnvelope.error?.argumentPath,
-    "cursor",
-  );
+  assert.equal(changedComparisonCursorEnvelope.error?.code, "INVALID_ARGUMENT");
+  assert.equal(changedComparisonCursorEnvelope.error?.argumentPath, "cursor");
 });
 
 test("comparison guards identities and maps failures to the correct side", async () => {
@@ -1216,8 +1277,8 @@ test("comparison guards identities and maps failures to the correct side", async
     comparisonBaselineRef,
   );
   assert.ok(
-    (staleComparisonEnvelope.error?.recovery as string[]).some(
-      (entry) => entry.includes("without expectedBaselineDigest"),
+    (staleComparisonEnvelope.error?.recovery as string[]).some((entry) =>
+      entry.includes("without expectedBaselineDigest"),
     ),
   );
 
@@ -1234,14 +1295,8 @@ test("comparison guards identities and maps failures to the correct side", async
     invalidComparisonCursorResult,
   );
   assert.equal(invalidComparisonCursorResult.isError, true);
-  assert.equal(
-    invalidComparisonCursorEnvelope.error?.code,
-    "INVALID_ARGUMENT",
-  );
-  assert.equal(
-    invalidComparisonCursorEnvelope.error?.argumentPath,
-    "cursor",
-  );
+  assert.equal(invalidComparisonCursorEnvelope.error?.code, "INVALID_ARGUMENT");
+  assert.equal(invalidComparisonCursorEnvelope.error?.argumentPath, "cursor");
 
   const wrongComparisonProfileResult = await client.callTool({
     name: "crumb_compare_designs",
@@ -1255,10 +1310,7 @@ test("comparison guards identities and maps failures to the correct side", async
     wrongComparisonProfileResult,
   );
   assert.equal(wrongComparisonProfileResult.isError, true);
-  assert.equal(
-    wrongComparisonProfileEnvelope.error?.code,
-    "INVALID_ARGUMENT",
-  );
+  assert.equal(wrongComparisonProfileEnvelope.error?.code, "INVALID_ARGUMENT");
   assert.equal(
     wrongComparisonProfileEnvelope.error?.argumentPath,
     "compatibilityProfile",
@@ -1274,10 +1326,7 @@ test("comparison guards identities and maps failures to the correct side", async
   const outsideComparisonEnvelope = envelopeOf(outsideComparisonResult);
   assert.equal(outsideComparisonResult.isError, true);
   assert.equal(outsideComparisonEnvelope.error?.code, "PATH_DENIED");
-  assert.equal(
-    outsideComparisonEnvelope.error?.argumentPath,
-    "candidatePath",
-  );
+  assert.equal(outsideComparisonEnvelope.error?.argumentPath, "candidatePath");
   assert.equal(
     JSON.stringify(outsideComparisonResult).includes(outsideDirectory),
     false,
@@ -1290,18 +1339,10 @@ test("comparison guards identities and maps failures to the correct side", async
       candidatePath: comparisonCandidateRef,
     },
   });
-  const unsupportedBaselineEnvelope = envelopeOf(
-    unsupportedBaselineResult,
-  );
+  const unsupportedBaselineEnvelope = envelopeOf(unsupportedBaselineResult);
   assert.equal(unsupportedBaselineResult.isError, true);
-  assert.equal(
-    unsupportedBaselineEnvelope.error?.code,
-    "UNSUPPORTED_FORMAT",
-  );
-  assert.equal(
-    unsupportedBaselineEnvelope.error?.argumentPath,
-    "baselinePath",
-  );
+  assert.equal(unsupportedBaselineEnvelope.error?.code, "UNSUPPORTED_FORMAT");
+  assert.equal(unsupportedBaselineEnvelope.error?.argumentPath, "baselinePath");
 
   const missingCandidateResult = await client.callTool({
     name: "crumb_compare_designs",
@@ -1313,10 +1354,7 @@ test("comparison guards identities and maps failures to the correct side", async
   const missingCandidateEnvelope = envelopeOf(missingCandidateResult);
   assert.equal(missingCandidateResult.isError, true);
   assert.equal(missingCandidateEnvelope.error?.code, "NOT_FOUND");
-  assert.equal(
-    missingCandidateEnvelope.error?.argumentPath,
-    "candidatePath",
-  );
+  assert.equal(missingCandidateEnvelope.error?.argumentPath, "candidatePath");
 
   const budgetBaselineRef = `${generatedRef}/budget-baseline.cru`;
   const budgetCandidateRef = `${generatedRef}/budget-candidate.cru`;
@@ -1340,10 +1378,7 @@ test("comparison guards identities and maps failures to the correct side", async
   const overBudgetEnvelope = envelopeOf(overBudgetResult);
   assert.equal(overBudgetResult.isError, true);
   assert.equal(overBudgetEnvelope.error?.code, "QUOTA_EXCEEDED");
-  assert.equal(
-    overBudgetEnvelope.error?.argumentPath,
-    "candidatePath",
-  );
+  assert.equal(overBudgetEnvelope.error?.argumentPath, "candidatePath");
   assert.match(
     String(overBudgetEnvelope.error?.message),
     /combined comparison limit/,
@@ -1453,7 +1488,10 @@ test("pagination cursors and digest guards protect continued reads", async () =>
   assert.equal(staleDigestEnvelope.ok, false);
   assert.equal(staleDigestEnvelope.error?.code, "PROJECT_STATE_CONFLICT");
   assert.equal(staleDigestEnvelope.context.projectDigest, summaryDigest);
-  assert.equal(staleDigestEnvelope.nextActions[0]?.tool, "crumb_analyze_design");
+  assert.equal(
+    staleDigestEnvelope.nextActions[0]?.tool,
+    "crumb_analyze_design",
+  );
   assert.equal(
     "expectedProjectDigest" in
       (staleDigestEnvelope.nextActions[0]?.arguments ?? {}),
@@ -1505,6 +1543,10 @@ test("digests identify raw bytes and stale guards run before parsing", async () 
     },
     { name: "crumb_bom", arguments: {} },
     { name: "crumb_export_netlist", arguments: {} },
+    {
+      name: "crumb_trace_net",
+      arguments: { componentId: "missing", terminalIndex: 0 },
+    },
     { name: "crumb_check_design", arguments: {} },
   ];
   for (const guarded of guardedCalls) {
@@ -1655,9 +1697,7 @@ test("workspace listing discovers projects with digests and containment", async 
   assert.ok(
     entries.every((entry) => /^sha256:[0-9a-f]{64}$/.test(entry.digest ?? "")),
   );
-  assert.ok(
-    entries.every((entry) => !Number.isNaN(Date.parse(entry.mtime))),
-  );
+  assert.ok(entries.every((entry) => !Number.isNaN(Date.parse(entry.mtime))));
   const nextAction = envelopeOf(listingResult).nextActions[0];
   assert.equal(nextAction?.tool, "crumb_analyze_design");
 
@@ -1704,10 +1744,7 @@ test("Logisim static tools discover, analyze, and export explicit partial IR", a
   assertLogisimCompatibilityContext(analysisResult);
   const analysis = dataOf(analysisResult);
   assert.equal(analysis.analysisVersion, "logisim.analysis/0.1");
-  assert.equal(
-    (analysis.counts as { components: number }).components,
-    26,
-  );
+  assert.equal((analysis.counts as { components: number }).components, 26);
   assert.equal(
     (analysis.source as { mainCircuitName: string }).mainCircuitName,
     "Main",
@@ -1740,15 +1777,9 @@ test("Logisim static tools discover, analyze, and export explicit partial IR", a
   });
   assertLogisimCompatibilityContext(netlistResult);
   const netlist = dataOf(netlistResult);
-  assert.equal(
-    netlist.netlistVersion,
-    "circuitarium.netlist-ir/0.1",
-  );
+  assert.equal(netlist.netlistVersion, "circuitarium.netlist-ir/0.1");
   assert.equal(netlist.completeness, "partial");
-  assert.equal(
-    (netlist.page as { returned: number }).returned,
-    5,
-  );
+  assert.equal((netlist.page as { returned: number }).returned, 5);
   assert.ok((netlist.page as { nextCursor?: string }).nextCursor);
 
   const staleResult = await client.callTool({
@@ -1773,10 +1804,7 @@ test("Logisim static tools discover, analyze, and export explicit partial IR", a
   const staleVectorEnvelope = envelopeOf(staleVectorResult);
   assert.equal(staleVectorResult.isError, true);
   assert.equal(staleVectorEnvelope.error?.code, "PROJECT_STATE_CONFLICT");
-  assert.equal(
-    staleVectorEnvelope.error?.argumentPath,
-    "expectedVectorDigest",
-  );
+  assert.equal(staleVectorEnvelope.error?.argumentPath, "expectedVectorDigest");
   assert.match(
     String(staleVectorEnvelope.error?.message),
     /test-vector bytes changed/u,
@@ -1826,7 +1854,10 @@ test("Logisim JAR tools deny unsafe projects before probing or spawning Java", a
   assert.equal(runtimeResult.isError, true);
   assert.equal(runtimeEnvelope.error?.code, "UNSUPPORTED_OPERATION");
   assert.match(String(runtimeEnvelope.error?.message), /static preflight/u);
-  assert.equal(JSON.stringify(runtimeResult).includes(privateDescriptor), false);
+  assert.equal(
+    JSON.stringify(runtimeResult).includes(privateDescriptor),
+    false,
+  );
 });
 
 test("Logisim truth tables require a bounded declared Pin interface before Java", async () => {
@@ -1848,8 +1879,47 @@ test("Logisim truth tables require a bounded declared Pin interface before Java"
   assert.equal(envelopeOf(result).error?.code, "UNSUPPORTED_OPERATION");
   assert.match(
     String(envelopeOf(result).error?.message),
-    /complete, uniquely labeled input\/output Pin interface/u,
+    /at least one uniquely labeled output Pin/u,
   );
+});
+
+test("a zero-input output circuit passes MCP truth-table preflight", async () => {
+  const constantRef = `${generatedRef}/logisim-constant-output.circ`;
+  await writeFile(
+    join(generatedDirectory, "logisim-constant-output.circ"),
+    `<project source="4.1.0" version="1.0">
+      <lib desc="#Wiring" name="0"/>
+      <main name="Main"/>
+      <circuit name="Main">
+        <comp lib="0" loc="(100,100)" name="Pin">
+          <a name="facing" val="west"/>
+          <a name="output" val="true"/>
+          <a name="label" val="Y"/>
+        </comp>
+      </circuit>
+    </project>`,
+    "utf8",
+  );
+  const result = await client.callTool({
+    name: "logisim_truth_table",
+    arguments: { path: constantRef, circuit: "Main" },
+  });
+  const envelope = envelopeOf(result);
+  if (result.isError) {
+    assert.equal(envelope.error?.code, "BACKEND_UNAVAILABLE");
+  } else {
+    const data = dataOf(result);
+    assert.deepEqual(data.inputs, {
+      pinCount: 0,
+      bitTotal: 0,
+      bitLimit: 12,
+    });
+    assert.deepEqual(data.columns, ["Y"]);
+    assert.equal(
+      (data.rowBounds as { total: number }).total,
+      1,
+    );
+  }
 });
 
 test("Logisim truth tables refuse output labels that normalize to reserved halt", async () => {
@@ -1920,8 +1990,7 @@ test("Logisim responses preview oversized text and enforce an aggregate byte cap
   assert.match(previewLabel, /sha256:[0-9a-f]{64}/u);
   assert.ok(
     envelopeOf(previewResult).diagnostics.some(
-      (diagnostic) =>
-        diagnostic.code === "logisim-public-text-truncated",
+      (diagnostic) => diagnostic.code === "logisim-public-text-truncated",
     ),
   );
 
@@ -2060,8 +2129,7 @@ test("single-component fetch focuses membership past connection display bounds",
   );
   assert.ok(
     envelope.diagnostics.some(
-      (diagnostic) =>
-        diagnostic.code === "connection-membership-truncated",
+      (diagnostic) => diagnostic.code === "connection-membership-truncated",
     ),
   );
 });
@@ -2103,7 +2171,11 @@ test("netlist export pages nets and reports floating terminals", async () => {
   };
   assert.equal(stats.netCount, 2);
   assert.equal(stats.floatingTerminalCount, 2);
-  const page = netlist.page as { returned: number; total: number; nextCursor?: string };
+  const page = netlist.page as {
+    returned: number;
+    total: number;
+    nextCursor?: string;
+  };
   assert.equal(page.returned, 1);
   assert.equal(page.total, 2);
   assert.ok(page.nextCursor);
@@ -2157,6 +2229,132 @@ test("netlist export pages nets and reports floating terminals", async () => {
   }
 });
 
+test("CRUMB net tracing pages a selector-bound static witness", async () => {
+  const path = "fixtures/crumb/breadboard-led.cru";
+  const analysisResult = await client.callTool({
+    name: "crumb_analyze_design",
+    arguments: { path, view: "components", limit: 50 },
+  });
+  const analysis = dataOf(analysisResult);
+  const led = (
+    analysis.components as Array<{
+      id: string;
+      kind: string;
+      terminals: Array<{ index: number; name: string }>;
+    }>
+  ).find((component) => component.kind === "led-5mm");
+  assert.ok(led);
+
+  const firstResult = await client.callTool({
+    name: "crumb_trace_net",
+    arguments: {
+      path,
+      expectedProjectDigest: envelopeOf(analysisResult).context.projectDigest,
+      componentId: led.id,
+      terminalIndex: led.terminals[0]!.index,
+      expectedTerminalName: led.terminals[0]!.name,
+      limit: 1,
+    },
+  });
+  assertCrumbCompatibilityContext(firstResult);
+  const first = dataOf(firstResult);
+  assert.equal(first.traceVersion, "crumb.net-trace/0.1");
+  assert.equal(first.traversalVersion, "crumb.connectivity-witness-bfs/0.1");
+  assert.equal(
+    (first.provenance as { simulationPerformed: boolean }).simulationPerformed,
+    false,
+  );
+  assert.equal(
+    (first.provenance as { allPathsEnumerated: boolean }).allPathsEnumerated,
+    false,
+  );
+  assert.equal(
+    (first.resolvedNet as { idScope: string }).idScope,
+    "project-digest-and-options",
+  );
+  const firstPage = first.page as {
+    returned: number;
+    total: number;
+    nextCursor?: string;
+  };
+  assert.equal(firstPage.returned, 1);
+  assert.ok(firstPage.total > 1);
+  assert.ok(firstPage.nextCursor);
+
+  const secondResult = await client.callTool({
+    name: "crumb_trace_net",
+    arguments: {
+      path,
+      expectedProjectDigest: envelopeOf(firstResult).context.projectDigest,
+      componentId: led.id.toUpperCase(),
+      terminalIndex: led.terminals[0]!.index,
+      topologyMode: "known-board-v1.3.5",
+      applySwitchStates: false,
+      cursor: firstPage.nextCursor,
+      limit: 2,
+    },
+  });
+  const second = dataOf(secondResult);
+  const firstOrdinal = (first.visits as Array<{ ordinal: number }>)[0]!.ordinal;
+  assert.equal(firstOrdinal, 0);
+  assert.equal(
+    (second.visits as Array<{ ordinal: number }>)[0]!.ordinal,
+    1,
+    "cursor permits a different page limit without overlapping visits",
+  );
+
+  for (const changedSelector of [
+    { terminalIndex: led.terminals[1]!.index },
+    { topologyMode: "direct-only" },
+    { applySwitchStates: true },
+  ]) {
+    const changed = await client.callTool({
+      name: "crumb_trace_net",
+      arguments: {
+        path,
+        componentId: led.id,
+        terminalIndex: led.terminals[0]!.index,
+        cursor: firstPage.nextCursor,
+        ...changedSelector,
+      },
+    });
+    assert.equal(
+      envelopeOf(changed).error?.code,
+      "INVALID_ARGUMENT",
+      "trace cursor binds the terminal root and connectivity options",
+    );
+  }
+
+  const wrongName = await client.callTool({
+    name: "crumb_trace_net",
+    arguments: {
+      path,
+      componentId: led.id,
+      terminalIndex: led.terminals[0]!.index,
+      expectedTerminalName: "wrong-name",
+    },
+  });
+  assert.equal(envelopeOf(wrongName).error?.code, "INVALID_ARGUMENT");
+  assert.equal(
+    envelopeOf(wrongName).error?.argumentPath,
+    "expectedTerminalName",
+  );
+
+  const missingTerminal = await client.callTool({
+    name: "crumb_trace_net",
+    arguments: {
+      path,
+      componentId: led.id,
+      terminalIndex: 999,
+    },
+  });
+  assert.equal(envelopeOf(missingTerminal).error?.code, "NOT_FOUND");
+  assert.equal(
+    envelopeOf(missingTerminal).error?.argumentPath,
+    "terminalIndex",
+  );
+});
+
 test("electrical rule check returns findings as data with evidence tags", async () => {
   const checkResult = await client.callTool({
     name: "crumb_check_design",
@@ -2175,12 +2373,16 @@ test("electrical rule check returns findings as data with evidence tags", async 
     basis: string;
   }>;
   assert.ok(findings.length >= 2);
-  assert.ok(findings.every((finding) => finding.ruleId === "floating-terminal"));
+  assert.ok(
+    findings.every((finding) => finding.ruleId === "floating-terminal"),
+  );
   assert.ok(
     findings.every((finding) =>
-      ["public-electronics-knowledge", "version-pinned-crumb-observation", "both"].includes(
-        finding.basis,
-      ),
+      [
+        "public-electronics-knowledge",
+        "version-pinned-crumb-observation",
+        "both",
+      ].includes(finding.basis),
     ),
   );
   assert.ok((check.limitations as string[]).length > 0);

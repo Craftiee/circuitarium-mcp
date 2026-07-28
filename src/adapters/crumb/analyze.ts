@@ -173,6 +173,10 @@ const fullConnectionMembershipByGroup = new WeakMap<
   CrumbConnectionGroup,
   CrumbFullConnectionGroupMembership
 >();
+const fullTerminalsByComponent = new WeakMap<
+  CrumbAnalyzedComponent,
+  readonly CrumbAnalyzedTerminal[]
+>();
 
 /**
  * Returns the complete internal membership used for electrical analysis.
@@ -189,6 +193,17 @@ export function fullConnectionGroupMembership(
       explicitWireIds: group.explicitWireIds,
     }
   );
+}
+
+/**
+ * Returns every decoded terminal in stable payload order. Public component
+ * detail is display-bounded, so connectivity tools must use this accessor
+ * when terminal index is part of artifact identity.
+ */
+export function fullAnalyzedComponentTerminals(
+  component: CrumbAnalyzedComponent,
+): readonly CrumbAnalyzedTerminal[] {
+  return fullTerminalsByComponent.get(component) ?? component.terminals;
 }
 
 export interface CrumbDesignAnalysis {
@@ -712,6 +727,7 @@ function analyzeComponent(
           },
         }),
   };
+  fullTerminalsByComponent.set(result, allTerminals);
 
   return {
     component: result,

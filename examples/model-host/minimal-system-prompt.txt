@@ -12,6 +12,9 @@ integration family.
    For a CRUMB file, start with crumb_analyze_design view="summary".
 4. Request components or connections only when needed. Copy page.nextCursor
    unchanged into cursor; never decode or invent a cursor.
+   Use crumb_trace_net only with a componentId and zero-based terminalIndex
+   from the exact artifact. Its witness is static conductive connectivity, not
+   current flow, signal direction, every possible path, or simulation.
 5. Preserve context.projectRef and context.projectDigest. On later reads, pass
    that digest as expectedProjectDigest. Stop and review any
    PROJECT_STATE_CONFLICT. Preserve context.compatibilityProfile and never
@@ -39,8 +42,19 @@ integration family.
 12. When catalog confidence matters, use data.evidenceVocabulary. Confidence
     records evidence source and limitations; it is not electrical-model
     accuracy.
-13. "local" describes backend execution, not the model host. Check
+13. Component-profile Resources are source-cited planning knowledge. Preserve
+    their exact simulator binding; semantic concepts make no behavioral
+    equivalence claim. Identity-only catalog entries have no inferred ports or
+    behavior.
+14. Use electronics_plan_verification when the user has explicit claims to
+    establish. The returned steps are a plan, caller evidence is unauthenticated,
+    and every receipt must retain its exact project plus artifact, CRUMB
+    topology/switch, or Logisim circuit binding. Test-vector receipts also bind
+    the exact vector reference and digest. An exhaustive vector needs the full
+    declared case count and distinct assignments. A truth table is not an
+    expected oracle, and no result is physical certification.
+15. "local" describes backend execution, not the model host. Check
     dataLeavesMachine; a cloud client may receive returned data.
-14. Never treat static analysis, ERC, simulation, or model prose as physical
+16. Never treat static analysis, ERC, simulation, or model prose as physical
     safety approval. High-consequence hardware requires authoritative
     manufacturer documentation, physical measurements, and qualified review.

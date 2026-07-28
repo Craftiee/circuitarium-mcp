@@ -301,7 +301,7 @@ shared GUI or simulator session.
 
 ## Knowledge resources and workflow prompts
 
-The Unreleased 0.3.0 server also publishes seven deterministic JSON Resources:
+The Unreleased 0.3.0 server also publishes nine deterministic JSON Resources:
 
 - `circuitarium://capabilities`
 - `circuitarium://profiles/crumb.unity/1.3.5`
@@ -310,6 +310,8 @@ The Unreleased 0.3.0 server also publishes seven deterministic JSON Resources:
 - `circuitarium://examples/synthetic`
 - `circuitarium://knowledge/electrical-review/0.1`
 - `circuitarium://knowledge/digital-logic-testing/0.1`
+- `circuitarium://schemas/component-profile/0.1`
+- `circuitarium://catalogs/logisim-evolution/4.1.0/standard-library`
 
 These are static reference context, not `electronics.mcp/0.2` tool envelopes.
 They do not read the configured workspace or report whether a JAR is currently
@@ -317,7 +319,16 @@ available. Call `electronics_capabilities` for live runtime availability and
 call an artifact tool for evidence about a specific design. The catalog
 contains only independently authored interoperability summaries; it does not
 contain CRUMB assets, executable component behavior, or datasheet
-certification.
+certification. The neutral component-profile Resource publishes a structural
+Draft 2020-12 JSON Schema, explicit uniqueness and width-reference semantic
+constraints, and 11 curated planning profiles. Its optional semantic concepts
+always declare `equivalenceClaim: "none"`: a Logisim component is never
+silently treated as executable behavior for another simulator. The Logisim
+standard-library Resource records all 14 built-in
+libraries and 169 exact project component identities from official source at
+commit `632d66dca880ac089e2c6c2c383ea20d9c707ee2`. Identity-only entries expose
+no inferred ports or behavior, and catalog presence never authorizes runtime
+execution.
 
 The synthetic-example Resource catalogs independently authored assets; it does
 not materialize files in the configured workspace. A source checkout, npm
@@ -336,11 +347,10 @@ Four Prompts package common user-invoked workflows:
 | `handoff-circuit-project` | Cross-model artifact handoff with immutable identity |
 
 The canonical backend IDs are `crumb.file` and `logisim.evolution`; they appear
-in tool `context.backendId` and in cross-model handoffs. Only
-`review-circuit-design` uses the shorter Prompt selector `backend: "crumb"` or
-`backend: "logisim"`. Those selectors are not backend IDs. The handoff Prompt
-accepts a canonical backend ID and derives its supported compatibility profile,
-so a mismatched backend/profile pair cannot be requested.
+in tool `context.backendId`, Prompt arguments, and cross-model handoffs.
+Shorter aliases such as `crumb` or `logisim` are not accepted. The handoff
+Prompt derives the supported compatibility profile from the canonical backend
+ID, so a mismatched backend/profile pair cannot be requested.
 
 Prompt arguments map to Tool inputs as follows:
 
@@ -397,6 +407,65 @@ unfamiliar model.
 Validates a portable electronics experiment without choosing a simulator.
 Malformed input becomes typed validation diagnostics when the tool can evaluate
 it; it is not evidence that any circuit ran.
+
+### `electronics_plan_verification`
+
+Accepts one strict target, up to 32 explicit claims, an optional declared
+interface, and up to 64 caller-reported evidence receipts. It returns a
+deterministic `electronics.verification-plan/0.1` with per-claim status,
+coverage matrix, ordered MCP/external steps, bounded test suggestions, gaps,
+and canonical request/plan digests.
+
+The planner is pure: it reads no workspace, calls no Tool, launches no
+simulator, and authenticates no receipt. A receipt must bind to a single exact
+project digest and one explicit evidence locus. Artifact receipts carry the
+backend and compatibility profile. CRUMB netlist/ERC receipts additionally
+  carry the exact `topologyMode` and `applySwitchStates`; Logisim netlist,
+  project-load, truth-table, vector, and expected-specification receipts carry
+  the exact circuit name. Test-vector evidence must also bind to its exact
+  workspace-relative `vectorRef` and vector digest. Evidence from another
+  circuit, vector identity, or topology configuration is rejected rather than
+  silently reused. When the target omits a vector digest, all receipts must
+  agree on one digest and that identity is carried into a guarded rerun.
+
+Canonical ordering uses UTF-16 code-unit order rather than host locale, so the
+same valid request produces the same request digest, plan digest, and step
+order on every supported host. When Logisim `runtimeStatus` is `unknown`, the
+plan emits `electronics_capabilities` as an independent discovery step and no
+JAR subprocess step. Inspect that result, set the exact runtime status, and
+replan; dependency completion alone never implies that runtime is available.
+
+Claim scopes are class-specific and invalid pairs are rejected:
+
+- artifact structure, static electrical rules, and conversion readiness use
+  `artifact`;
+- topology connectivity uses `artifact` or `selected-circuit`;
+- simulator load uses `selected-circuit`;
+- combinational and sequential behavior use `selected-circuit` or
+  `listed-cases`; and
+- physical hardware alone uses `physical-system`.
+
+A failed required or supporting receipt makes the affected claim
+`reported-failed`. Caller-reported `runtimeSafe: false` likewise fails
+Logisim runtime/behavior claims closed and prevents a JAR step; this reports a
+blocked verification path, not authenticated proof that the circuit's intended
+behavior is false.
+
+An `exhaustive` receipt is adequate only when a declared combinational
+interface resolves all directions, includes an output, stays within the
+12-input-bit bound, and reports exactly `2 ** inputBits` planned and executed
+cases with no truncation. A zero-input constant circuit therefore has one
+exhaustive case and may schedule one Logisim truth-table row. Exhaustive
+test-vector receipts must additionally
+report that many distinct input assignments, so duplicated rows cannot mimic
+coverage. Listed-sequence receipts require positive, equal planned and
+executed counts.
+
+Generated truth-table rows characterize a design and are never their own
+independent expected-output oracle. Verification uses separately authored
+vector expectations; finite vectors cover only their listed cases/sequences.
+Physical measurements and qualified review remain reported evidence and never
+become Circuitarium safety approval or certification.
 
 ### `crumb_component_catalog`
 
@@ -664,6 +733,32 @@ paired with `switchMergeBounds`; rule evaluation retains the complete internal
 provenance. Results are paged with opaque cursors bound to the project digest,
 view, topology mode, and saved-switch options. Nets are static file inference
 under the selected topology mode, not simulation output.
+
+### `crumb_trace_net`
+
+Selects one terminal using case-insensitive `componentId` plus its zero-based
+`terminalIndex`. An optional exact `expectedTerminalName` guards a cross-model
+handoff, but the name is not the canonical selector. This avoids ambiguity
+from duplicate terminal labels and reaches terminals beyond the normal
+64-terminal component display bound.
+
+The result is a paged deterministic breadth-first witness over structured
+terminal, physical-attachment, and version-pinned board-node records. Each
+tree edge identifies one basis: decoded terminal attachment, board topology,
+jumper wire, or an optional persisted slide/DIP-switch closure. Saved switch
+closures are conditional installed-build evidence; tactile-switch pressed
+state is not stored and is never invented. `net-N` is explicitly scoped to
+the exact project digest, topology mode, and switch options. Switch-closure
+counts are limited to the selected reachable net; unrelated saved switches do
+not change its witness receipt.
+
+The graph uses attachment and board hubs rather than pairwise same-hole
+cliques, is built iteratively, and fails with `QUOTA_EXCEEDED` above 50,000
+nodes or 100,000 edges. A cursor binds the digest, terminal root, topology
+mode, switch option, and traversal version while permitting the page limit to
+change. The witness spans one inferred conductive equivalence class; it does
+not enumerate every path, traverse component bodies, or establish current,
+voltage, signal direction, timing, live state, or simulation behavior.
 
 ### `crumb_check_design`
 

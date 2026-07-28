@@ -6,6 +6,7 @@ import {
 } from "../../domain/bounds.js";
 import type { Diagnostic } from "../../domain/experiment.js";
 import {
+  fullAnalyzedComponentTerminals,
   fullConnectionGroupMembership,
   type CrumbAnalyzedComponent,
   type CrumbDesignAnalysis,
@@ -50,6 +51,12 @@ export interface CrumbNetlist {
    * analysis by sorting past a display bound.
    */
   terminalNetIndex: Map<string, string>;
+  /**
+   * Complete internal lookup from `componentId.toLowerCase():terminalIndex`
+   * to net id. Unlike the legacy name lookup, this includes jumper endpoints
+   * and cannot collide when a component repeats a terminal label.
+   */
+  terminalIndexNetIndex: Map<string, string>;
   provenance: {
     topologyConfidence: "partial" | "version-pinned";
     switchSemanticsApplied: boolean;
@@ -198,8 +205,13 @@ export function buildNetlist(
 
   // componentId:terminalName -> owning analysis group id
   const groupByTerminal = new Map<string, string>();
+  const groupByAttachment = new Map<string, string>();
   for (const group of groups) {
-    for (const member of fullConnectionGroupMembership(group).componentTerminals) {
+    const fullMembership = fullConnectionGroupMembership(group);
+    for (const attachment of fullMembership.physicalAttachments) {
+      groupByAttachment.set(attachment.attachmentKey, group.id);
+    }
+    for (const member of fullMembership.componentTerminals) {
       groupByTerminal.set(
         `${member.componentId.toLowerCase()}:${member.terminal}`,
         group.id,
@@ -267,6 +279,8 @@ export function buildNetlist(
   const floatingTerminals: CrumbNetMember[] = [];
   const wireIdsSeen = new Set<string>();
   const terminalNetIndex = new Map<string, string>();
+  const terminalIndexNetIndex = new Map<string, string>();
+  const netIdByGroup = new Map<string, string>();
   for (const [index, groupIds] of netGroupSets.entries()) {
     const memberByKey = new Map<string, CrumbNetMember>();
     const wireIds = new Set<string>();
@@ -298,6 +312,9 @@ export function buildNetlist(
       ),
     );
     const netId = `net-${index + 1}`;
+    for (const groupId of groupIds) {
+      netIdByGroup.set(groupId, netId);
+    }
     for (const key of memberByKey.keys()) {
       terminalNetIndex.set(key, netId);
     }
@@ -336,6 +353,19 @@ export function buildNetlist(
       mergedBySwitches: boundedSwitchMerges.items,
       switchMergeBounds: boundedSwitchMerges.bounds,
     });
+  }
+  for (const component of analysis.components) {
+    for (const terminal of fullAnalyzedComponentTerminals(component)) {
+      const groupId = groupByAttachment.get(terminal.attachment.attachmentKey);
+      const netId =
+        groupId === undefined ? undefined : netIdByGroup.get(groupId);
+      if (netId !== undefined) {
+        terminalIndexNetIndex.set(
+          `${component.id.toLowerCase()}:${terminal.index}`,
+          netId,
+        );
+      }
+    }
   }
 
   // Name supply nets from recognized DC power-supply terminal semantics.
@@ -442,6 +472,7 @@ export function buildNetlist(
     topologyMode: analysis.connectivity.topologyMode,
     scope: analysis.connectivity.scope,
     terminalNetIndex,
+    terminalIndexNetIndex,
     provenance: {
       topologyConfidence: analysis.connectivity.confidence,
       switchSemanticsApplied: applySwitchStates,

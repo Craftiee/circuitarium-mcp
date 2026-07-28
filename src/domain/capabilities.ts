@@ -59,11 +59,7 @@ export interface BackendDescriptor {
   };
   limitations: string[];
   runtime?: {
-    status:
-      | "available"
-      | "unconfigured"
-      | "unavailable"
-      | "version-mismatch";
+    status: "available" | "unconfigured" | "unavailable" | "version-mismatch";
     requiredForTools: string[];
     configuration: {
       jarEnvironment: string;
@@ -128,6 +124,7 @@ export const ADAPTER_CAPABILITIES: AdapterCapability[] = [
       "list workspace .cru projects with digests",
       "fetch one component in full bounded detail",
       "export jumper-collapsed electrical nets with supply naming",
+      "trace one terminal's full inferred net with paged structured provenance",
       "run static electrical rule checks over inferred nets",
       "group components into a bill of materials",
       "look up version-pinned IC packages and pinouts",
@@ -208,13 +205,16 @@ export const CALLABLE_BACKENDS: CallableBackendDescriptor[] = [
       expansion:
         "Circuit Representation & Universal Model Bridge for Laboratory Electronics",
       targetProduct: "CRUMB",
-      scope: "CRUMB-specific rulesets, evidence profiles, fixtures, and file integrations.",
+      scope:
+        "CRUMB-specific rulesets, evidence profiles, fixtures, and file integrations.",
       status: "experimental",
     },
     compatibilityProfiles: [
       {
         ...CRUMB_COMPATIBILITY_PROFILE_DESCRIPTOR,
-        distribution: { ...CRUMB_COMPATIBILITY_PROFILE_DESCRIPTOR.distribution },
+        distribution: {
+          ...CRUMB_COMPATIBILITY_PROFILE_DESCRIPTOR.distribution,
+        },
         engine: { ...CRUMB_COMPATIBILITY_PROFILE_DESCRIPTOR.engine },
         evidence: { ...CRUMB_COMPATIBILITY_PROFILE_DESCRIPTOR.evidence },
       },
@@ -325,7 +325,9 @@ export const ROADMAP_BACKENDS: BackendDescriptor[] = [
       observeSignals: false,
       stimulateInputs: false,
     },
-    limitations: ["Architecture is specified but the engine is not implemented."],
+    limitations: [
+      "Architecture is specified but the engine is not implemented.",
+    ],
   },
 ];
 
@@ -380,7 +382,8 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
       },
       {
         tool: "crumb_compare_designs",
-        reason: "Inspect GUID-matched component changes when the summary differs.",
+        reason:
+          "Inspect GUID-matched component changes when the summary differs.",
         exampleArguments: {
           baselinePath: "designs/before-controlled-edit.cru",
           candidatePath: "designs/after-controlled-edit.cru",
@@ -440,6 +443,16 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
         exampleArguments: { path: "fixtures/crumb/breadboard-led.cru" },
       },
       {
+        tool: "crumb_trace_net",
+        reason:
+          "Follow one selected terminal through attachment, board, jumper, and optional saved-switch evidence without claiming simulation.",
+        exampleArguments: {
+          path: "fixtures/crumb/breadboard-led.cru",
+          componentId: "component-guid-from-analysis",
+          terminalIndex: 0,
+        },
+      },
+      {
         tool: "crumb_check_design",
         reason: "Run static electrical rule checks and report findings.",
         exampleArguments: { path: "fixtures/crumb/breadboard-led.cru" },
@@ -459,8 +472,7 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
   },
   {
     id: "understand-logisim-design",
-    goal:
-      "Recognize a Logisim-evolution project without confusing static XML evidence with simulation.",
+    goal: "Recognize a Logisim-evolution project without confusing static XML evidence with simulation.",
     steps: [
       {
         tool: "logisim_list_projects",
@@ -488,8 +500,7 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
   },
   {
     id: "simulate-logisim-design",
-    goal:
-      "Obtain bounded behavioral evidence from a configured user-supplied JAR that self-reports Logisim-evolution 4.1.0.",
+    goal: "Obtain bounded behavioral evidence from a configured user-supplied JAR that self-reports Logisim-evolution 4.1.0.",
     steps: [
       {
         tool: "logisim_component_stats",
@@ -511,11 +522,38 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
       },
       {
         tool: "logisim_run_test_vector",
-        reason: "Execute explicit regression vectors and return structured failures.",
+        reason:
+          "Execute explicit regression vectors and return structured failures.",
         exampleArguments: {
           path: "examples/logisim/full-adder.circ",
           circuit: "Main",
           vectorPath: "examples/logisim/full-adder.vec",
+        },
+      },
+    ],
+  },
+  {
+    id: "plan-verification-evidence",
+    goal: "Turn explicit circuit claims into a bounded verification plan without treating reported evidence as certification.",
+    steps: [
+      {
+        tool: "electronics_plan_verification",
+        reason:
+          "Choose static, runtime, simulation, and external evidence steps appropriate to each claim and backend.",
+        exampleArguments: {
+          target: {
+            backendId: "logisim.evolution",
+            projectRef: "examples/logisim/full-adder.circ",
+            circuit: "Main",
+          },
+          claims: [
+            {
+              id: "full-adder-behavior",
+              claimClass: "combinational-behavior",
+              objective: "verify",
+              scope: "selected-circuit",
+            },
+          ],
         },
       },
     ],
@@ -526,7 +564,8 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
     steps: [
       {
         tool: "electronics_validate_experiment",
-        reason: "Get schema and semantic diagnostics without choosing a simulator.",
+        reason:
+          "Get schema and semantic diagnostics without choosing a simulator.",
         exampleArguments: {
           experiment: {
             schemaVersion: "0.1",
@@ -548,23 +587,28 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
 export const VOCABULARY = [
   {
     term: "model host",
-    meaning: "ChatGPT, Claude, or a local agent that calls this MCP; never a simulator backend.",
+    meaning:
+      "ChatGPT, Claude, or a local agent that calls this MCP; never a simulator backend.",
   },
   {
     term: "backend",
-    meaning: "A circuit file adapter or simulator such as CRUMB, Wokwi, or Logisim.",
+    meaning:
+      "A circuit file adapter or simulator such as CRUMB, Wokwi, or Logisim.",
   },
   {
     term: "project digest",
-    meaning: "An immutable SHA-256 identity used for cross-model handoff and race protection.",
+    meaning:
+      "An immutable SHA-256 identity used for cross-model handoff and race protection.",
   },
   {
     term: "attachment",
-    meaning: "A component terminal seated at one CRUMB parent-component/tie-point address.",
+    meaning:
+      "A component terminal seated at one CRUMB parent-component/tie-point address.",
   },
   {
     term: "connection group",
-    meaning: "A version-pinned inferred electrical net; its provenance and limits are always returned.",
+    meaning:
+      "A version-pinned inferred electrical net; its provenance and limits are always returned.",
   },
   {
     term: "net",
@@ -580,5 +624,20 @@ export const VOCABULARY = [
     term: "non-interactive simulation evidence",
     meaning:
       "Bounded truth-table or test-vector output produced without a user-controlled GUI session for one exact project digest; Logisim 4.1.0 test-vector mode still needs X11 or Xvfb on Linux.",
+  },
+  {
+    term: "component profile",
+    meaning:
+      "A source-cited neutral planning description bound to one simulator component identity; it never implies cross-simulator behavioral equivalence.",
+  },
+  {
+    term: "verification plan",
+    meaning:
+      "A deterministic sequence of evidence requests for explicit claims; receipts bind to exact artifact/topology/circuit loci but remain caller-reported, unauthenticated, and non-certifying.",
+  },
+  {
+    term: "connectivity witness",
+    meaning:
+      "A deterministic spanning tree through one inferred conductive net with structured provenance; it is not current flow, signal direction, or enumeration of every path.",
   },
 ] as const;

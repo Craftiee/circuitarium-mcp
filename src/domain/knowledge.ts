@@ -1,8 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import {
-  ErrorCode,
-  McpError,
-} from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import { listCrumbComponentDefinitions } from "../adapters/crumb/catalog.js";
@@ -19,6 +16,10 @@ import {
   VOCABULARY,
   WORKFLOWS,
 } from "./capabilities.js";
+import {
+  componentProfileSchemaResource,
+  logisimStandardLibraryCatalogResource,
+} from "./componentProfiles.js";
 import { CONTRACT_VERSION } from "./contract.js";
 
 export const KNOWLEDGE_RESOURCE_URIS = [
@@ -29,6 +30,8 @@ export const KNOWLEDGE_RESOURCE_URIS = [
   "circuitarium://examples/synthetic",
   "circuitarium://knowledge/electrical-review/0.1",
   "circuitarium://knowledge/digital-logic-testing/0.1",
+  "circuitarium://schemas/component-profile/0.1",
+  "circuitarium://catalogs/logisim-evolution/4.1.0/standard-library",
 ] as const;
 
 export const KNOWLEDGE_PROMPT_NAMES = [
@@ -330,6 +333,22 @@ function knowledgeResources(): KnowledgeResource[] {
           "Static project structure, configured-JAR project load, truth-table output, and vector output are distinct evidence classes. No one-shot subprocess is a live GUI session.",
       },
     },
+    {
+      name: "neutral-component-profile-schema",
+      uri: KNOWLEDGE_RESOURCE_URIS[7],
+      title: "Source-cited neutral component profiles",
+      description:
+        "Strict JSON Schema plus curated, source-cited component profiles for planning across simulator adapters.",
+      payload: componentProfileSchemaResource(),
+    },
+    {
+      name: "logisim-evolution-standard-library-catalog",
+      uri: KNOWLEDGE_RESOURCE_URIS[8],
+      title: "Logisim-evolution 4.1.0 standard-library catalog",
+      description:
+        "Commit-pinned inventory of all 14 built-in libraries and 169 project component identities, with runtime-policy and semantic-coverage boundaries.",
+      payload: logisimStandardLibraryCatalogResource(),
+    },
   ];
   return resources;
 }
@@ -469,8 +488,7 @@ function registerPrompts(server: McpServer): void {
       candidateDigest,
       topologyMode,
     }) => {
-      const selectedTopologyMode =
-        topologyMode ?? "known-board-v1.3.5";
+      const selectedTopologyMode = topologyMode ?? "known-board-v1.3.5";
       return {
         description: "Compare two controlled CRUMB saves",
         messages: [
@@ -525,13 +543,7 @@ function registerPrompts(server: McpServer): void {
         ),
       },
     },
-    async ({
-      projectRef,
-      projectDigest,
-      circuit,
-      vectorRef,
-      vectorDigest,
-    }) => {
+    async ({ projectRef, projectDigest, circuit, vectorRef, vectorDigest }) => {
       if (vectorDigest !== undefined && vectorRef === undefined) {
         throw new McpError(
           ErrorCode.InvalidParams,
@@ -589,12 +601,7 @@ function registerPrompts(server: McpServer): void {
         ),
       },
     },
-    async ({
-      backend,
-      projectRef,
-      projectDigest,
-      circuit,
-    }) => {
+    async ({ backend, projectRef, projectDigest, circuit }) => {
       const compatibilityProfile =
         backend === "crumb.file"
           ? "crumb.unity/1.3.5"

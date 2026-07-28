@@ -1,0 +1,64 @@
+{
+  "target": {
+    "backendId": "logisim.evolution",
+    "compatibilityProfile": "logisim-evolution/4.1.0",
+    "projectRef": "examples/logisim/full-adder.circ",
+    "projectDigest": "sha256:120998f05029f717cb81572233258f41707c460522659fb9f2a85e294d4fd08b",
+    "circuit": "Main",
+    "vectorRef": "examples/logisim/full-adder.vec",
+    "vectorDigest": "sha256:cc00e77f53c430ce80940d7404ac62271f18d7f324fd42c6fd4f162b828e5054",
+    "runtimeStatus": "unknown"
+  },
+  "claims": [
+    {
+      "id": "artifact-loads",
+      "claimClass": "simulator-load",
+      "objective": "verify",
+      "scope": "selected-circuit",
+      "statement": "The configured Logisim-evolution 4.1.0 runtime can load Main."
+    },
+    {
+      "id": "full-adder-cases",
+      "claimClass": "combinational-behavior",
+      "objective": "verify",
+      "scope": "listed-cases",
+      "statement": "The separately authored vector's eight full-adder cases pass."
+    }
+  ],
+  "declaredInterface": {
+    "designIntent": "combinational",
+    "signals": [
+      {
+        "id": "A",
+        "direction": "input",
+        "width": 1,
+        "role": "data"
+      },
+      {
+        "id": "B",
+        "direction": "input",
+        "width": 1,
+        "role": "data"
+      },
+      {
+        "id": "Cin",
+        "direction": "input",
+        "width": 1,
+        "role": "carry"
+      },
+      {
+        "id": "Sum",
+        "direction": "output",
+        "width": 1,
+        "role": "data"
+      },
+      {
+        "id": "Cout",
+        "direction": "output",
+        "width": 1,
+        "role": "carry"
+      }
+    ]
+  },
+  "evidence": []
+}

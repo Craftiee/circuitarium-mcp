@@ -168,6 +168,7 @@ export const CapabilitiesDataSchema = z.object({
     concerns: z.array(z.string()),
     fidelityLevels: z.array(z.string()),
     validationTool: z.literal("electronics_validate_experiment"),
+    planningTool: z.literal("electronics_plan_verification"),
   }),
   callableBackends: z.array(CallableBackendDescriptorSchema),
   roadmapBackends: z.array(BackendDescriptorSchema),
@@ -276,10 +277,7 @@ export const CrumbIcVariantSchema = z.object({
     resolved: z.number().int().nonnegative(),
     total: z.number().int().positive(),
   }),
-  confidence: z.enum([
-    "installed-build-extracted",
-    "installed-build-partial",
-  ]),
+  confidence: z.enum(["installed-build-extracted", "installed-build-partial"]),
   sourceNote: z.string(),
 });
 
@@ -392,9 +390,7 @@ export const CrumbAnalyzedComponentSchema = z.object({
   readSupport: z.enum(["full", "partial"]),
   writeSupport: z.enum(["verified-fixture", "none"]),
   payloadMatchesCatalog: z.boolean(),
-  rawDataTypes: z
-    .array(z.string())
-    .max(MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED),
+  rawDataTypes: z.array(z.string()).max(MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED),
   rawDataTypeBounds: BoundedCollectionInfoSchema,
   parameters: z.record(z.string(), CrumbAnalyzedParameterSchema),
   terminals: z
@@ -463,9 +459,7 @@ export const CrumbAnalyzedComponentSchema = z.object({
       z.object({
         index: z.number().int().nonnegative(),
         type: z.string(),
-        keys: z
-          .array(z.string())
-          .max(MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED),
+        keys: z.array(z.string()).max(MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED),
         keyBounds: BoundedCollectionInfoSchema,
       }),
     )
@@ -610,35 +604,24 @@ export const CrumbAnalysisDataSchema = z.object({
       ),
       kindCounts: z.literal(MAX_KIND_COUNTS_RETURNED),
       diagnostics: z.literal(MAX_RESULT_DIAGNOSTICS_RETURNED),
-      diagnosticCodeCharacters: z.literal(
-        MAX_DIAGNOSTIC_CODE_CHARACTERS,
-      ),
-      diagnosticPathCharacters: z.literal(
-        MAX_DIAGNOSTIC_PATH_CHARACTERS,
-      ),
-      diagnosticMessageCharacters: z.literal(
-        MAX_DIAGNOSTIC_MESSAGE_CHARACTERS,
-      ),
+      diagnosticCodeCharacters: z.literal(MAX_DIAGNOSTIC_CODE_CHARACTERS),
+      diagnosticPathCharacters: z.literal(MAX_DIAGNOSTIC_PATH_CHARACTERS),
+      diagnosticMessageCharacters: z.literal(MAX_DIAGNOSTIC_MESSAGE_CHARACTERS),
       cruXsiTypeCharacters: z.literal(MAX_CRU_XSI_TYPE_CHARACTERS),
       cruNumericLexicalCharacters: z.literal(
         MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
       ),
-      cruGuidTokenCharacters: z.literal(
-        MAX_CRU_GUID_TOKEN_CHARACTERS,
-      ),
+      cruGuidTokenCharacters: z.literal(MAX_CRU_GUID_TOKEN_CHARACTERS),
       cruXmlNameCharacters: z.literal(MAX_CRU_XML_NAME_CHARACTERS),
       cruXmlElements: z.literal(MAX_CRU_XML_ELEMENTS),
       cruXmlDepth: z.literal(MAX_CRU_XML_DEPTH),
       cruComponents: z.literal(MAX_CRU_COMPONENTS),
-      cruDataValuesPerComponent: z.literal(
-        MAX_CRU_DATA_VALUES_PER_COMPONENT,
-      ),
+      cruDataValuesPerComponent: z.literal(MAX_CRU_DATA_VALUES_PER_COMPONENT),
     }),
   }),
 });
 
-const StrictBoundedCollectionInfoSchema =
-  BoundedCollectionInfoSchema.strict();
+const StrictBoundedCollectionInfoSchema = BoundedCollectionInfoSchema.strict();
 const StrictBoundedTextInfoSchema = BoundedTextInfoSchema.strict();
 const StrictVector3Schema = Vector3Schema.strict();
 const StrictQuaternionSchema = QuaternionSchema.strict();
@@ -735,9 +718,7 @@ const CrumbComparisonComponentSchema = CrumbAnalyzedComponentSchema.extend({
         .object({
           index: z.number().int().nonnegative(),
           type: z.string(),
-          keys: z
-            .array(z.string())
-            .max(MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED),
+          keys: z.array(z.string()).max(MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED),
           keyBounds: StrictBoundedCollectionInfoSchema,
         })
         .strict(),
@@ -816,7 +797,12 @@ export const CrumbComparisonDataSchema = z
         modeledContentEquivalent: z.boolean(),
         modeledRepresentationEquivalent: z.boolean(),
         coverage: z.enum(["complete", "partial"]),
-        assessment: z.enum(["exact", "modeled-only", "changed", "inconclusive"]),
+        assessment: z.enum([
+          "exact",
+          "modeled-only",
+          "changed",
+          "inconclusive",
+        ]),
       })
       .strict(),
     profileAssessment: z
@@ -1035,6 +1021,189 @@ export const CrumbNetlistDataSchema = z.object({
     .max(MAX_DIAGNOSTIC_SAMPLES_RETURNED),
   floatingTerminalBounds: BoundedCollectionInfoSchema,
 });
+
+const CrumbTraceTerminalNodeSchema = z
+  .object({
+    id: z.string(),
+    kind: z.literal("terminal"),
+    componentId: z.string(),
+    componentKind: z.string(),
+    recognitionStatus: z.enum(["recognized", "schema-mismatch", "unknown"]),
+    terminalIndex: z.number().int().nonnegative(),
+    terminalName: z.string(),
+    attachment: z
+      .object({
+        parentComponentId: z.string(),
+        tiePointId: z.number().int(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const CrumbTraceNodeSchema = z.discriminatedUnion("kind", [
+  CrumbTraceTerminalNodeSchema,
+  z
+    .object({
+      id: z.string(),
+      kind: z.literal("physical-attachment"),
+      parentComponentId: z.string(),
+      tiePointId: z.number().int(),
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string(),
+      kind: z.literal("board-node"),
+      parentComponentId: z.string(),
+      boardKind: z.enum(["breadboard-node", "power-rail-node"]),
+      nodeIndex: z.number().int().nonnegative(),
+    })
+    .strict(),
+]);
+
+const CrumbTraceEdgeBaseSchema = z.object({
+  edgeId: z.string(),
+  fromNodeId: z.string(),
+  toNodeId: z.string(),
+});
+
+const CrumbTraceEdgeSchema = z.discriminatedUnion("kind", [
+  CrumbTraceEdgeBaseSchema.extend({
+    kind: z.literal("terminal-attachment"),
+    basis: z.literal("format-decoded"),
+    conditional: z.literal(false),
+    source: z
+      .object({
+        componentId: z.string(),
+        terminalIndex: z.number().int().nonnegative(),
+        parentComponentId: z.string(),
+        tiePointId: z.number().int(),
+      })
+      .strict(),
+  }).strict(),
+  CrumbTraceEdgeBaseSchema.extend({
+    kind: z.literal("board-topology"),
+    basis: z.enum(["version-pinned", "version-pinned-reduced"]),
+    conditional: z.literal(false),
+    source: z
+      .object({
+        parentComponentId: z.string(),
+        boardKind: z.enum(["breadboard-node", "power-rail-node"]),
+        nodeIndex: z.number().int().nonnegative(),
+        tiePointId: z.number().int(),
+      })
+      .strict(),
+  }).strict(),
+  CrumbTraceEdgeBaseSchema.extend({
+    kind: z.literal("jumper-wire"),
+    basis: z.enum(["version-pinned", "version-pinned-reduced"]),
+    conditional: z.literal(false),
+    source: z
+      .object({
+        componentId: z.string(),
+        endpointTerminalIndices: z.tuple([
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+        ]),
+      })
+      .strict(),
+  }).strict(),
+  CrumbTraceEdgeBaseSchema.extend({
+    kind: z.literal("saved-switch-state"),
+    basis: z.literal("version-pinned"),
+    conditional: z.literal(true),
+    source: z
+      .object({
+        componentId: z.string(),
+        componentKind: z.string(),
+        savedField: z.enum(["positionCode", "positions"]),
+        savedIndex: z.number().int().nonnegative().optional(),
+        savedValue: z.union([z.number().int(), z.boolean()]),
+        endpointTerminalIndices: z.tuple([
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+        ]),
+      })
+      .strict(),
+  }).strict(),
+]);
+
+export const CrumbNetTraceDataSchema = z
+  .object({
+    traceVersion: z.literal("crumb.net-trace/0.1"),
+    traversalVersion: z.literal("crumb.connectivity-witness-bfs/0.1"),
+    project: CrumbArtifactSchema.extend({ ref: z.string() }),
+    root: CrumbTraceTerminalNodeSchema,
+    topologyMode: z.enum(["direct-only", "known-board-v1.3.5"]),
+    scope: z.enum([
+      "physical-attachments-and-explicit-wires",
+      "crumb-1.3.5-board-topology-and-explicit-wires",
+    ]),
+    applySwitchStates: z.boolean(),
+    resolvedNet: z
+      .object({
+        id: z.string(),
+        idScope: z.literal("project-digest-and-options"),
+        name: z.string().optional(),
+        nameSource: z.literal("dc-power-supply-terminal").optional(),
+        membershipDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/u),
+        counts: z
+          .object({
+            nodes: z.number().int().nonnegative(),
+            edges: z.number().int().nonnegative(),
+            terminals: z.number().int().nonnegative(),
+            physicalAttachments: z.number().int().nonnegative(),
+            boardNodes: z.number().int().nonnegative(),
+            explicitWires: z.number().int().nonnegative(),
+            savedSwitchClosures: z.number().int().nonnegative(),
+          })
+          .strict(),
+      })
+      .strict(),
+    witness: z
+      .object({
+        algorithm: z.literal("crumb.connectivity-witness-bfs/0.1"),
+        rootNodeId: z.string(),
+        reachableNodeCount: z.number().int().nonnegative(),
+        reachableEdgeCount: z.number().int().nonnegative(),
+        witnessEdgeCount: z.number().int().nonnegative(),
+        omittedNonTreeEdgeCount: z.number().int().nonnegative(),
+        closedSwitchPathCount: z.number().int().nonnegative(),
+        netChangingSwitchEdgeCount: z.number().int().nonnegative(),
+        redundantClosedSwitchPathCount: z.number().int().nonnegative(),
+      })
+      .strict(),
+    provenance: z
+      .object({
+        evidenceClass: z.literal("static-inferred-conductive-connectivity"),
+        topologyConfidence: z.enum(["partial", "version-pinned"]),
+        savedSwitchSemantics: z.enum([
+          "not-applied",
+          "installed-build-conditional",
+        ]),
+        simulationPerformed: z.literal(false),
+        liveStateObserved: z.literal(false),
+        allPathsEnumerated: z.literal(false),
+        componentBodiesTraversed: z.literal(false),
+        limitation: z.string(),
+      })
+      .strict(),
+    page: PageSchema.strict(),
+    visits: z
+      .array(
+        z
+          .object({
+            ordinal: z.number().int().nonnegative(),
+            depth: z.number().int().nonnegative(),
+            node: CrumbTraceNodeSchema,
+            parentNodeId: z.string().optional(),
+            via: CrumbTraceEdgeSchema.optional(),
+          })
+          .strict(),
+      )
+      .max(200),
+  })
+  .strict();
 
 export const CrumbErcDataSchema = z.object({
   ercVersion: z.literal("crumb.erc/0.1"),

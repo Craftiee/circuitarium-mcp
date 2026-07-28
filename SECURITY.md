@@ -57,6 +57,21 @@ directories must not be concurrently replaced by an untrusted local process.
 This is a local same-account trust boundary, not a defense against a hostile
 user who can mutate the workspace while the server runs.
 
+`crumb_trace_net` builds a static connectivity graph from the decoded artifact
+and fails closed before exceeding 50,000 nodes or 100,000 edges. Those work
+caps limit graph expansion; a trace is not simulation evidence and does not
+establish current flow, timing, or live switch state.
+
+Treat Logisim `.circ` projects and `.vec` test vectors as untrusted input too.
+The optional JAR-backed tools launch the separately configured Java and
+Logisim-evolution JAR as child processes under the same operating-system
+account. Circuitarium adds argument, file, output, and timeout bounds, but it
+does not provide an OS sandbox, isolate Logisim preferences, or restrict the
+child process beyond the account's permissions. Configure only a trusted
+official 4.1.0 all-JAR, use a dedicated workspace and account/profile where
+appropriate, and do not treat the runtime's unauthenticated
+`self-reported-unverified` version as cryptographic proof of JAR provenance.
+
 Treat all circuit files, labels, and embedded source as untrusted input:
 
 - point `CIRCUITARIUM_MCP_ROOT` at a dedicated directory containing no secrets;

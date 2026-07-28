@@ -86,6 +86,35 @@ the official setup link above.
 | `logisim_truth_table` | Bounded combinational rows evaluated by Logisim | Yes |
 | `logisim_run_test_vector` | Explicit vectors executed by Logisim with structured mismatches | Yes |
 
+Two static Resources improve model orientation without changing this six-tool
+adapter boundary:
+
+- `circuitarium://schemas/component-profile/0.1` contains a neutral structural
+  profile schema, explicit semantic cross-reference constraints, and 11
+  curated, source-cited Logisim planning profiles.
+- `circuitarium://catalogs/logisim-evolution/4.1.0/standard-library` inventories
+  all 14 built-in libraries and 169 exact component identities from the
+  official v4.1.0 source commit
+  `632d66dca880ac089e2c6c2c383ea20d9c707ee2`.
+
+The catalog distinguishes semantic profiles from identity-only recognition.
+It does not add port geometry to the neutral IR, execute component behavior,
+or override the runtime preflight. HDL-IP, TCL, SoC, and Input/Output-Extra
+remain runtime-forbidden; `I/O` remains conditional because Telnet is denied.
+TTL names are simulator identities, not manufacturer-verified voltage, timing,
+current, power, or package models.
+
+The neutral `electronics_plan_verification` Tool can select an evidence path
+for explicit Logisim claims. Its returned steps are a plan, not executed work:
+caller-reported receipts are unauthenticated, truth tables are not expected
+oracles, and finite vectors cover only their listed cases or sequences.
+Circuit-specific receipts must name the exact target circuit. An exhaustive
+claim must match the declared `2 ** inputBits` space; vector evidence must also
+report distinct input assignments, not merely the same row count, and bind to
+the exact vector reference and digest. Zero-input constant circuits have one
+exhaustive assignment. Failed supporting receipts and `runtimeSafe: false`
+facts fail affected runtime verification paths closed.
+
 Every project operation supports `expectedProjectDigest`. The digest is
 checked against the exact raw bytes before XML parsing. Runtime operations then
 copy those already-read bytes into a newly created private temporary directory
