@@ -27,8 +27,23 @@ CRUMB-specific integration family. The branding does not change the stable
 For the published `0.2.x` package, launch the stdio server with:
 
 ```powershell
-npx -y circuitarium-mcp@0.2.0
+npx -y circuitarium-mcp@0.2.1
 ```
+
+On a first run, npm may spend some time downloading and extracting the package
+before Circuitarium starts. These commands verify the installed launcher
+without opening a long-lived server:
+
+```powershell
+npx -y circuitarium-mcp@0.2.1 --help
+npx -y circuitarium-mcp@0.2.1 --version
+```
+
+Running the server directly in a real terminal displays a plain-ASCII status
+panel on stderr. That separate process is not connected and cannot be adopted
+later by a host; press Ctrl+C and configure the host to launch the command.
+When an MCP host launches it, stdin/stdout are pipes: the panel is
+automatically suppressed and stdout stays reserved for MCP JSON-RPC.
 
 Set `CIRCUITARIUM_MCP_ROOT` in the host configuration to the narrowest
 directory containing the circuit files that host may access. Copyable
@@ -45,7 +60,7 @@ npm run build
 Its production entrypoint is:
 
 ```text
-<repository-path>/dist/src/server.js
+<repository-path>/dist/src/bin.js
 ```
 
 MCP clients generally require an absolute path. Replace the examples below
@@ -59,7 +74,7 @@ immutable released version in client configuration:
 
 ```text
 Command: npx
-Arguments: -y circuitarium-mcp@0.2.0
+Arguments: -y circuitarium-mcp@0.2.1
 ```
 
 Use a source checkout when contributing or testing an unreleased change. Keep
@@ -112,7 +127,7 @@ For the released local stdio server, use:
 
 ```text
 Command: npx
-Arguments: -y circuitarium-mcp@0.2.0
+Arguments: -y circuitarium-mcp@0.2.1
 Environment: CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace
 ```
 
@@ -121,7 +136,7 @@ Equivalent project-scoped Codex configuration:
 ```toml
 [mcp_servers.circuitarium]
 command = "npx"
-args = ["-y", "circuitarium-mcp@0.2.0"]
+args = ["-y", "circuitarium-mcp@0.2.1"]
 env = { CIRCUITARIUM_MCP_ROOT = "C:\\absolute\\path\\to\\circuit-workspace" }
 startup_timeout_sec = 20
 tool_timeout_sec = 60
@@ -132,7 +147,7 @@ On macOS or Linux, the corresponding paths look like:
 ```toml
 [mcp_servers.circuitarium]
 command = "npx"
-args = ["-y", "circuitarium-mcp@0.2.0"]
+args = ["-y", "circuitarium-mcp@0.2.1"]
 env = { CIRCUITARIUM_MCP_ROOT = "/absolute/path/to/circuit-workspace" }
 startup_timeout_sec = 20
 tool_timeout_sec = 60
@@ -146,7 +161,7 @@ server needs no OpenAI key.
 Claude Code can register the released local stdio server:
 
 ```powershell
-claude mcp add --transport stdio --env CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace --scope local circuitarium -- npx -y circuitarium-mcp@0.2.0
+claude mcp add --transport stdio --env CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace --scope local circuitarium -- npx -y circuitarium-mcp@0.2.1
 ```
 
 On macOS or Linux:
@@ -155,14 +170,14 @@ On macOS or Linux:
 claude mcp add --transport stdio \
   --env CIRCUITARIUM_MCP_ROOT=/absolute/path/to/circuit-workspace \
   --scope local \
-  circuitarium -- npx -y circuitarium-mcp@0.2.0
+  circuitarium -- npx -y circuitarium-mcp@0.2.1
 ```
 
 Official reference:
 <https://docs.anthropic.com/en/docs/claude-code/mcp>
 
 Claude Desktop users can download
-`circuitarium-mcp-0.2.0.mcpb` from the matching
+`circuitarium-mcp-0.2.1.mcpb` from the matching
 [GitHub Release](https://github.com/Craftiee/circuitarium-mcp/releases) and
 open it. The protected release workflow builds that bundle from the same
 verified npm tarball, validates its manifest, and smoke-tests its 14-tool stdio

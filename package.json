@@ -1,12 +1,12 @@
 {
   "name": "circuitarium-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "mcpName": "io.github.Craftiee/circuitarium",
   "type": "module",
   "description": "Circuitarium MCP is a model-neutral server for circuit artifacts with CRUMBLE, an unofficial, version-pinned CRUMB .cru integration.",
   "license": "Apache-2.0",
   "bin": {
-    "circuitarium-mcp": "dist/src/server.js"
+    "circuitarium-mcp": "dist/src/bin.js"
   },
   "exports": {},
   "bundleDependencies": [
@@ -26,7 +26,7 @@
     "CONTRIBUTING.md",
     "CODE_OF_CONDUCT.md",
     "ROADMAP.md",
-    "docs",
+    "docs/**/*.md",
     "examples"
   ],
   "repository": {
@@ -67,6 +67,7 @@
     "fixtures:verify": "tsx scripts/verify-fixtures.ts",
     "lint": "biome lint --diagnostic-level=error --max-diagnostics=50 src scripts test",
     "mcpb:check": "tsx scripts/verify-mcpb.ts",
+    "package:audit": "npm run package:check",
     "package:check": "tsx scripts/verify-package.ts",
     "prepack": "node scripts/guard-direct-package.mjs",
     "prepublishOnly": "npm run check && npm run package:check",

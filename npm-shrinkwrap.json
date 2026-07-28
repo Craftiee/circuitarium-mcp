@@ -1,12 +1,12 @@
 {
   "name": "circuitarium-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "circuitarium-mcp",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "bundleDependencies": [
         "@modelcontextprotocol/sdk"
       ],
@@ -18,7 +18,7 @@
         "zod": "4.4.3"
       },
       "bin": {
-        "circuitarium-mcp": "dist/src/server.js"
+        "circuitarium-mcp": "dist/src/bin.js"
       },
       "devDependencies": {
         "@biomejs/biome": "2.5.5",

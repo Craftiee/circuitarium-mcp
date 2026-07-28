@@ -65,20 +65,20 @@ gitleaks git .
 - [x] Require the `Package and coverage` job on `main` in addition to the
       supported Node/OS test matrix.
 
-## `v0.2.0` release identity
+## Release identity
 
-- [x] Treat `v0.2.0` as the first real release; no earlier `v0.2.0` tag or
-      package was published. Publish it under the npm `latest` tag.
+- [x] `v0.2.0` was the first real release and established the npm `latest`
+      package.
 - [ ] Keep `package.json`, `SERVER_VERSION`, `server.json`, MCPB metadata,
-      `CHANGELOG.md`, and the `v0.2.0` tag identical.
+      `CHANGELOG.md`, and the target version tag identical.
 - [ ] Verify private vulnerability reporting remains enabled or publish another
       stable private route.
 - [ ] Confirm the compatibility matrix and roadmap are current.
 - [ ] Record the exact test environment and checked-in fixture digests.
-- [ ] Confirm `CHANGELOG.md` has one dated `0.2.0` section and no release work
-      left under `Unreleased`.
-- [ ] Publish the `0.2.0` section as the GitHub Release notes only after npm and
-      MCP Registry publication succeed.
+- [ ] Confirm `CHANGELOG.md` has one dated section for the target version and
+      no release work left under `Unreleased`.
+- [ ] Publish the matching changelog section as the GitHub Release notes only
+      after npm and MCP Registry publication succeed.
 
 ## npm publication gate
 
@@ -96,6 +96,14 @@ designed, documented, and tested.
       `npm run test:coverage`, `npm run package:check`,
       `npm run mcpb:check`, `npm run registry:check`, and
       `npm audit --omit=dev`.
+- [ ] Inspect the `npm run package:audit` report. The release tarball must stay
+      at or below 5 MiB compressed, 20 MiB unpacked, and 4,000 files.
+      Installed-package MCP initialization and `tools/list` each retain a
+      10-second safety timeout; their measured times are reported for trend
+      review rather than used as a flaky performance gate.
+- [ ] Confirm the installed binary accepts `--help` and `--version`, rejects
+      unknown arguments, exposes the expected tool count, and writes no stderr
+      when an MCP client launches it with pipes.
 - [ ] Inspect the package allowlist. It must include the compiled server,
       license/notices, linked public documentation and examples, and
       `npm-shrinkwrap.json`; it must exclude repository source, tests, fixtures,
@@ -116,6 +124,8 @@ designed, documented, and tested.
       `main`; a passing build alone is not a release test.
 - [ ] Test `npx -y circuitarium-mcp` from an empty temporary workspace and call
       `electronics_capabilities` from an MCP client.
+- [ ] Run the binary directly in a TTY and confirm its status panel appears on
+      stderr without writing decorative text to MCP stdout.
 
 ## MCP Registry and GitHub Release gate
 
@@ -146,7 +156,7 @@ bytes, stop and follow npm's version rules when choosing a recovery version.
       executing an unpinned latest binary.
 - [ ] Confirm GitHub OIDC publishes only metadata after the npm package is
       publicly installable; do not store a separate Registry credential.
-- [ ] Validate and smoke-test `circuitarium-mcp-0.2.0.mcpb` with
+- [ ] Validate and smoke-test `circuitarium-mcp-<version>.mcpb` with
       `npm run mcpb:check`, then attach the exact verified bundle retained by
       the tag workflow.
 - [ ] Confirm the GitHub Release links to npm and the Registry record and uses

@@ -2,7 +2,7 @@
 # Replace the placeholder with the narrowest directory containing your circuits.
 [mcp_servers.circuitarium]
 command = "npx"
-args = ["-y", "circuitarium-mcp@0.2.0"]
+args = ["-y", "circuitarium-mcp@0.2.1"]
 env = { CIRCUITARIUM_MCP_ROOT = "/absolute/path/to/circuit-workspace" }
 startup_timeout_sec = 20
 tool_timeout_sec = 60
