@@ -35,6 +35,12 @@ jobs:
           package-manager-cache: false
           registry-url: https://registry.npmjs.org
 
+      - name: Pin npm CLI for trusted publishing
+        run: |
+          npm install --global npm@11.16.0
+          node --version
+          npm --version
+
       - name: Verify tag belongs to main
         run: |
           git fetch origin main --no-tags
@@ -85,7 +91,6 @@ jobs:
 
       - name: Publish the exact verified package
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_DIST_TAG: ${{ contains(github.ref_name, '-') && 'next' || 'latest' }}
           PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
         shell: bash
@@ -115,7 +120,7 @@ jobs:
               --tag "$NPM_DIST_TAG"
           fi
 
-      - name: Verify npm publication is visible and byte-identical
+      - name: Verify npm publication and provenance
         env:
           PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
         shell: bash
@@ -150,6 +155,25 @@ jobs:
           done
 
           test "$published_integrity" = "$expected_integrity"
+
+          attestation_verified=""
+          for attempt in {1..18}; do
+            if attestations_json="$(
+              npm view "$package_spec" dist.attestations --json 2>/dev/null
+            )" &&
+              node --input-type=commonjs \
+                -e 'const { readFileSync } = require("node:fs"); const value = JSON.parse(readFileSync(0, "utf8")); if (typeof value?.url !== "string" || !value.url.startsWith("https://registry.npmjs.org/-/npm/v1/attestations/") || value?.provenance?.predicateType !== "https://slsa.dev/provenance/v1") process.exit(2);' \
+                <<<"$attestations_json"
+            then
+              attestation_verified="1"
+              echo "Verified SLSA v1 provenance for $package_spec."
+              break
+            fi
+            echo "Waiting for npm provenance (attempt $attempt/18)..."
+            sleep 10
+          done
+
+          test "$attestation_verified" = "1"
 
   registry:
     name: Publish MCP Registry metadata

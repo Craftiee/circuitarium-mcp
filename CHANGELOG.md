@@ -6,9 +6,13 @@ remains experimental.
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
 
-## [0.2.0] - 2026-07-26
+- Prepared the release workflow for tokenless npm trusted publishing by
+  pinning an OIDC-capable npm CLI, removing the bootstrap-token injection, and
+  requiring SLSA v1 provenance metadata after publication.
+
+## [0.2.0] - 2026-07-28
 
 ### Added
 
