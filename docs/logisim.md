@@ -124,7 +124,11 @@ Truth-table generation is refused when Pin direction/width metadata is
 incomplete or declared input width exceeds the caller's bound. The public
 maximum is 12 input bits; the default is 8. Returned rows, component
 statistics, nets, losses, failures, and nested memberships all have explicit
-bounds.
+bounds. It is also refused when an output Pin label normalizes to the reserved
+label `halt` under Logisim-evolution 4.1.0's TTY label rules (for example,
+`halt!`), because that label selects run-until-halt behavior instead of
+ordinary combinational table output. Use an explicit test vector, or rename
+the output only when it is not intentionally a halt signal.
 
 Every public string in a Logisim result is limited to 4,096 characters.
 Oversized values become bounded previews carrying the original character and
@@ -200,6 +204,13 @@ will not execute them.
 [`full-adder.vec`](../examples/logisim/full-adder.vec) are independently
 authored project fixtures. The vector covers all eight combinations of `A`,
 `B`, and `Cin`.
+
+These repository/package assets are not automatically installed into the
+circuit workspace. Before calling an MCP Tool against them, copy both files
+inside the directory selected by `CIRCUITARIUM_MCP_ROOT`, then use their paths
+relative to that directory (for example, `full-adder.circ` and
+`full-adder.vec`). Do not broaden the workspace root to an npm cache or MCPB
+installation directory merely to reach a packaged example.
 
 For repository verification:
 

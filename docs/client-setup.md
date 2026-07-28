@@ -3,9 +3,10 @@
 ## The important separation
 
 This MCP server does not contain or call an AI model. It exposes electronics
-tools. The diagram below describes the Unreleased 0.3.0 source tree; the
-published 0.2.1 package has only the `crumb.file` backend and 14 tools. The host
-application supplies the model:
+tools plus optional read-only Resources and user-invoked Prompts. The diagram
+below describes the Unreleased 0.3.0 source tree; the published 0.2.1 package
+has only the `crumb.file` backend and 14 tools. The host application supplies
+the model:
 
 ```text
 model access (subscription, API, or local runtime)
@@ -74,8 +75,9 @@ literally.
 A tagged source checkout and its same-version package launch the same stdio
 server. During Unreleased development, they intentionally differ: the command
 below installs published 0.2.1 with 14 CRUMBLE tools, while this source tree
-identifies as 0.3.0 and registers 20 tools. Prefer the immutable release when
-you do not need to test the Unreleased Logisim work:
+identifies as 0.3.0 and registers 20 tools, seven Resources, and four Prompts.
+Prefer the immutable release when you do not need to test the Unreleased
+Logisim and knowledge-surface work:
 
 ```text
 Command: npx
@@ -117,6 +119,9 @@ in the other steps:
 
 1. Call `electronics_capabilities`.
 2. Treat only backends with `availability: "callable"` as usable.
+   The current canonical IDs are `crumb.file` and `logisim.evolution`;
+   `backend: "crumb"` and `backend: "logisim"` are selectors used only by the
+   `review-circuit-design` Prompt.
 3. When no `.cru` path is known, call `crumb_list_projects` and pick an entry;
    its returned digest becomes `expectedProjectDigest` for the next read.
 4. For an existing CRUMB file, call `crumb_analyze_design` with

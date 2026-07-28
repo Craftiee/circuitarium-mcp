@@ -22,7 +22,7 @@ ChatGPT / Codex / Claude / local agent host
                    local MCP stdio
                          |
           Circuitarium MCP contract v0.2
-              | capabilities | validation |
+       | tools | resources | prompts | validation |
                          |
           +--------------+------------------+
           |                                 |
@@ -49,6 +49,13 @@ the `electronics_*` namespace, CRUMB-specific tools retain `crumb_*`, and the
 result contract remains `electronics.mcp/0.2`. Stable descriptive identifiers
 keep existing clients and model handoffs compatible as new Circuitarium
 integrations are added.
+
+Static knowledge is also separated by MCP primitive. Resources hold bounded
+catalogs, compatibility profiles, and review/testing guides that a host can
+attach on demand. Prompts hold explicit user-invoked workflows. Tools remain
+the only surface that reads artifacts or launches a configured runtime. This
+prevents reference prose from being repeated in every result and preserves
+tool-only compatibility for hosts that do not expose Resources or Prompts.
 
 The target system can add backends without changing which model is in charge:
 

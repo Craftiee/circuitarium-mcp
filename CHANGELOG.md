@@ -8,6 +8,12 @@ remains experimental.
 
 ### Added
 
+- Added seven deterministic, read-only MCP Resources for capability
+  orientation, version-pinned profiles, the CRUMBLE catalog, synthetic
+  examples, low-voltage review, and digital-logic test planning.
+- Added four bounded MCP Prompts for circuit review, controlled CRUMB
+  comparison, Logisim verification, and digest-guarded cross-model handoff,
+  with installed-package and MCPB protocol smoke tests.
 - Added the experimental `logisim.evolution` backend pinned to
   Logisim-evolution 4.1.0, bringing the registered surface to 20 tools.
 - Added `logisim_list_projects`, `logisim_analyze_design`, and
@@ -25,6 +31,16 @@ remains experimental.
 - Added optional MCPB selectors for the Logisim JAR and Java executable, a
   Logisim adapter/security guide, CLI parity commands, parser/runtime unit
   tests, and public setup documentation.
+
+### Fixed
+
+- Refuse `logisim_truth_table` when an output Pin label normalizes to the
+  reserved label `halt` under Logisim-evolution 4.1.0's TTY label rules (for
+  example, `halt!`), because that label selects run-until-halt behavior rather
+  than ordinary combinational-table semantics.
+- Report `convert: false` for the Logisim backend until a general guarded
+  conversion operation exists; partial neutral-IR export remains available
+  and explicitly loss-marked.
 
 ### Security
 

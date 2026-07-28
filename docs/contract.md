@@ -299,6 +299,91 @@ truth-table and test-vector tools execute explicit bounded inputs. It still
 reports `liveSessions: false`: each request is a one-shot subprocess, not a
 shared GUI or simulator session.
 
+## Knowledge resources and workflow prompts
+
+The Unreleased 0.3.0 server also publishes seven deterministic JSON Resources:
+
+- `circuitarium://capabilities`
+- `circuitarium://profiles/crumb.unity/1.3.5`
+- `circuitarium://profiles/logisim-evolution/4.1.0`
+- `circuitarium://catalogs/crumb.unity/1.3.5/components`
+- `circuitarium://examples/synthetic`
+- `circuitarium://knowledge/electrical-review/0.1`
+- `circuitarium://knowledge/digital-logic-testing/0.1`
+
+These are static reference context, not `electronics.mcp/0.2` tool envelopes.
+They do not read the configured workspace or report whether a JAR is currently
+available. Call `electronics_capabilities` for live runtime availability and
+call an artifact tool for evidence about a specific design. The catalog
+contains only independently authored interoperability summaries; it does not
+contain CRUMB assets, executable component behavior, or datasheet
+certification.
+
+The synthetic-example Resource catalogs independently authored assets; it does
+not materialize files in the configured workspace. A source checkout, npm
+package, or MCPB may contain `examples/logisim/full-adder.circ` and
+`full-adder.vec`, but a Tool may read them only after they are copied inside
+`CIRCUITARIUM_MCP_ROOT`. Paths under repository-only `fixtures/crumb/` are
+illustrative unless that source checkout is itself the selected workspace.
+
+Four Prompts package common user-invoked workflows:
+
+| Prompt | Purpose |
+|---|---|
+| `review-circuit-design` | Evidence-graded CRUMB or Logisim review |
+| `compare-crumb-designs` | Digest-guarded controlled-save comparison |
+| `verify-logisim-design` | Evidence-graded Logisim characterization and vector verification |
+| `handoff-circuit-project` | Cross-model artifact handoff with immutable identity |
+
+The canonical backend IDs are `crumb.file` and `logisim.evolution`; they appear
+in tool `context.backendId` and in cross-model handoffs. Only
+`review-circuit-design` uses the shorter Prompt selector `backend: "crumb"` or
+`backend: "logisim"`. Those selectors are not backend IDs. The handoff Prompt
+accepts a canonical backend ID and derives its supported compatibility profile,
+so a mismatched backend/profile pair cannot be requested.
+
+Prompt arguments map to Tool inputs as follows:
+
+| Prompt | Prompt argument | Tool argument |
+|---|---|---|
+| `review-circuit-design` | `projectRef` | `path` |
+| `review-circuit-design` | `projectDigest` | `expectedProjectDigest` |
+| `review-circuit-design` | `circuit` | `circuit` (Logisim only) |
+| `compare-crumb-designs` | `baselineRef` / `candidateRef` | `baselinePath` / `candidatePath` |
+| `compare-crumb-designs` | `baselineDigest` / `candidateDigest` | `expectedBaselineDigest` / `expectedCandidateDigest` |
+| `compare-crumb-designs` | `topologyMode` | `topologyMode` |
+| `verify-logisim-design` | `projectRef` / `projectDigest` | `path` / `expectedProjectDigest` |
+| `verify-logisim-design` | `circuit` | `circuit` |
+| `verify-logisim-design` | `vectorRef` / `vectorDigest` | `vectorPath` / `expectedVectorDigest` |
+| `handoff-circuit-project` | `projectRef` / `projectDigest` | `path` / `expectedProjectDigest` on the receiving model's first read |
+| `handoff-circuit-project` | `circuit` | `circuit` |
+
+`vectorDigest` is valid only when `vectorRef` is also supplied. Prompt
+arguments do not accept raw XML or shell commands. Artifact names are labeled
+untrusted data inside each Prompt. A Prompt does not call a Tool, sample a
+model, create a shared session, or expand backend permissions; the user and
+host remain in control.
+
+Models must keep these result paths distinct:
+
+- Every Tool first reports envelope-level `ok`; `ok: false` is a failed call.
+- Artifact identity is in `context.projectRef` and
+  `context.projectDigest`; the selected adapter evidence is in
+  `context.backendId` and `context.compatibilityProfile`.
+- Logisim static preflight is `data.runtimeSafety.safe` with reason codes in
+  `data.runtimeSafety.reasons`. Neutral conversion scope is
+  `data.neutralIr.completeness`, `data.neutralIr.losses`, and
+  `data.neutralIr.lossBounds`.
+- Logisim truth tables do not return `data.valid`. Inspect
+  `data.rowBounds.truncated` before describing returned coverage; a table
+  without an external expected result characterizes behavior rather than
+  proving design correctness.
+- Logisim test-vector assertions use `data.valid`, `data.failures`, and
+  `data.failureBounds`.
+- CRUMB comparison uses `data.equivalence.coverage` and
+  `data.equivalence.assessment`; CRUMB ERC uses `data.valid`,
+  `data.findings`, and `data.findingBounds`.
+
 ## Tool surface
 
 ### `electronics_capabilities`
@@ -625,8 +710,11 @@ not publisher or binary authentication.
 
 Checks declared Pin direction and input width statically before invoking
 Logisim's CSV/binary table mode. The caller-selected input-bit bound defaults
-to 8 and cannot exceed 12. Returned rows are bounded separately from the
-number Logisim evaluated. This is **non-interactive simulation evidence** for the
+to 8 and cannot exceed 12. A selected circuit with an output Pin label that
+normalizes to the reserved label `halt` under Logisim-evolution 4.1.0's TTY
+label rules (for example, `halt!`) is rejected because that label selects
+run-until-halt behavior. Returned rows are bounded separately from the number
+Logisim evaluated. This is **non-interactive simulation evidence** for the
 selected circuit and exact project digest, not a live session.
 
 ### `logisim_run_test_vector`

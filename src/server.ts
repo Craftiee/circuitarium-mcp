@@ -73,6 +73,7 @@ import {
   LogisimFormatError,
   MAX_LOGISIM_CIRC_BYTES,
   assessLogisimRuntimeSafety,
+  normalizeLogisim410TtyPinLabel,
   summarizeLogisimCircuitIo,
   type LogisimProject,
 } from "./adapters/logisim/model.js";
@@ -137,6 +138,11 @@ import {
 } from "./domain/contract.js";
 import { envelopeSchema } from "./domain/contract.js";
 import { validateExperiment, type Diagnostic } from "./domain/experiment.js";
+import {
+  KNOWLEDGE_PROMPT_NAMES,
+  KNOWLEDGE_RESOURCE_URIS,
+  registerKnowledgeSurfaces,
+} from "./domain/knowledge.js";
 import {
   CapabilitiesDataSchema,
   CrumbAnalysisDataSchema,
@@ -451,9 +457,10 @@ const server = new McpServer(
   },
   {
     instructions:
-      "Call electronics_capabilities first when the workflow is unclear. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation or simulation ran and found a failing design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. Static parsing and netlists are not simulation evidence. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability; it does not control a live simulation. The Logisim-evolution adapter distinguishes static .circ evidence, JAR project-load evidence, and bounded truth-table/test-vector simulation evidence. Logisim runtime tools require a separately installed official 4.1.0 all-JAR and Java 21; test-vector execution also requires X11 or Xvfb on Linux. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
+      "Call electronics_capabilities first when the workflow is unclear. Read circuitarium://capabilities or a narrower Circuitarium resource for static reference knowledge, and use the registered prompts only when the user explicitly chooses a reusable workflow. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation or simulation ran and found a failing design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. Static parsing and netlists are not simulation evidence. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability; it does not control a live simulation. The Logisim-evolution adapter distinguishes static .circ evidence, JAR project-load evidence, and bounded truth-table/test-vector simulation evidence. Logisim runtime tools require a separately installed official 4.1.0 all-JAR and Java 21; test-vector execution also requires X11 or Xvfb on Linux. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
   },
 );
+registerKnowledgeSurfaces(server);
 
 function sha256(value: string | Buffer): string {
   const hash = createHash("sha256");
@@ -1481,6 +1488,12 @@ const electronicsCapabilitiesTool = server.registerTool(
         roadmapBackends: ROADMAP_BACKENDS,
         workflows: WORKFLOWS,
         vocabulary: [...VOCABULARY],
+        knowledgeSurfaces: {
+          resources: [...KNOWLEDGE_RESOURCE_URIS],
+          prompts: [...KNOWLEDGE_PROMPT_NAMES],
+          resourcesAreStatic: true,
+          liveAvailabilityTool: "electronics_capabilities",
+        },
         toolConventions: {
           validationFailureIsToolError: false,
           paginationCursorIsOpaque: true,
@@ -3777,6 +3790,25 @@ const logisimTruthTableTool = server.registerTool(
           recovery: [
             "Give every input/output Pin a unique nonblank label and recognized direction/width.",
             "Use an explicit test vector after confirming its pin contract.",
+          ],
+        });
+      }
+      if (
+        io.pins.some(
+          (pin) =>
+            pin.direction === "output" &&
+            normalizeLogisim410TtyPinLabel(pin.label) === "halt",
+        )
+      ) {
+        throw new ContractFailure({
+          code: "UNSUPPORTED_OPERATION",
+          category: "project",
+          message:
+            'Truth-table generation is refused because Logisim-evolution 4.1.0 treats an output Pin whose label normalizes to reserved "halt" as a TTY run-until-halt control instead of a combinational table output.',
+          retryable: false,
+          recovery: [
+            'Rename the output Pin so Logisim does not normalize it to reserved label "halt".',
+            "Use logisim_run_test_vector for bounded explicit assertions.",
           ],
         });
       }

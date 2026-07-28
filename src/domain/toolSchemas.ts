@@ -178,6 +178,12 @@ export const CapabilitiesDataSchema = z.object({
       meaning: z.string(),
     }),
   ),
+  knowledgeSurfaces: z.object({
+    resources: z.array(z.string()),
+    prompts: z.array(z.string()),
+    resourcesAreStatic: z.literal(true),
+    liveAvailabilityTool: z.literal("electronics_capabilities"),
+  }),
   toolConventions: z.object({
     validationFailureIsToolError: z.literal(false),
     paginationCursorIsOpaque: z.literal(true),

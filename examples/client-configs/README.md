@@ -28,7 +28,8 @@ dependencies. It exposes the same 14-tool CRUMBLE surface as npm version
 After connecting, ask the host to call `electronics_capabilities`, then
 `crumb_list_projects`. A healthy published 0.2.1 connection reports 14 tools.
 
-The Unreleased 0.3.0 source tree reports 20 tools and adds Logisim `.circ` and
+The Unreleased 0.3.0 source tree reports 20 tools, seven read-only knowledge
+Resources, and four workflow Prompts, and adds Logisim `.circ` and
 `.vec`/`.txt` access under the same workspace boundary. Its MCPB source
 manifest also adds optional Logisim JAR and Java selectors, but no 0.3.0
 package or bundle is published yet. Use the

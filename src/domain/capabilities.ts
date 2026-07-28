@@ -232,7 +232,7 @@ export const CALLABLE_BACKENDS: CallableBackendDescriptor[] = [
       inspect: true,
       validate: true,
       build: false,
-      convert: true,
+      convert: false,
       liveSessions: false,
       observeSignals: true,
       stimulateInputs: true,

@@ -26,6 +26,10 @@ import { fileURLToPath } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import {
+  KNOWLEDGE_PROMPT_NAMES,
+  KNOWLEDGE_RESOURCE_URIS,
+} from "../src/domain/knowledge.js";
 
 interface PackFile {
   path: string;
@@ -735,6 +739,8 @@ try {
   let initializeMilliseconds = 0;
   let toolsListMilliseconds = 0;
   let toolCount = 0;
+  let resourceCount = 0;
+  let promptCount = 0;
   let logisimRuntimeVerified = false;
   try {
     const initializeStartedAt = performance.now();
@@ -760,6 +766,51 @@ try {
       toolCount,
       EXPECTED_TOOL_COUNT,
       "installed server exposes an unexpected tool count",
+    );
+    const resources = await withTimeout(
+      client.listResources(),
+      STARTUP_TIMEOUT_MS,
+      "MCP resources/list",
+    );
+    resourceCount = resources.resources.length;
+    assert.deepEqual(
+      resources.resources.map((resource) => resource.uri),
+      [...KNOWLEDGE_RESOURCE_URIS],
+      "installed server exposes an unexpected knowledge resource surface",
+    );
+    const prompts = await withTimeout(
+      client.listPrompts(),
+      STARTUP_TIMEOUT_MS,
+      "MCP prompts/list",
+    );
+    promptCount = prompts.prompts.length;
+    assert.deepEqual(
+      prompts.prompts.map((prompt) => prompt.name),
+      [...KNOWLEDGE_PROMPT_NAMES],
+      "installed server exposes an unexpected prompt surface",
+    );
+    const knowledge = await withTimeout(
+      client.readResource({ uri: "circuitarium://capabilities" }),
+      STARTUP_TIMEOUT_MS,
+      "MCP resources/read",
+    );
+    assert.equal(knowledge.contents.length, 1);
+    assert.equal(knowledge.contents[0]?.mimeType, "application/json");
+    const reviewPrompt = await withTimeout(
+      client.getPrompt({
+        name: "review-circuit-design",
+        arguments: {
+          backend: "logisim.evolution",
+          projectRef: "examples/logisim/full-adder.circ",
+          circuit: "Main",
+        },
+      }),
+      STARTUP_TIMEOUT_MS,
+      "MCP prompts/get",
+    );
+    assert.match(
+      reviewPrompt.description ?? "",
+      /Circuitarium circuit artifact/u,
     );
     assert.equal(client.getServerVersion()?.version, result.version);
 
@@ -848,6 +899,8 @@ try {
       `  MCP initialize ${formatMilliseconds(initializeMilliseconds)} / ${STARTUP_TIMEOUT_MS} ms timeout`,
       `  MCP tools/list ${formatMilliseconds(toolsListMilliseconds)} / ${STARTUP_TIMEOUT_MS} ms timeout`,
       `  Tools:         ${toolCount} / ${EXPECTED_TOOL_COUNT}`,
+      `  Resources:     ${resourceCount} / ${KNOWLEDGE_RESOURCE_URIS.length}`,
+      `  Prompts:       ${promptCount} / ${KNOWLEDGE_PROMPT_NAMES.length}`,
       `  Logisim:       ${
         logisimRuntimeVerified
           ? "packaged static + 4.1.0 self-reported JAR smoke passed"
