@@ -89,8 +89,9 @@ and tests are not a compatibility promise. Do not publish `main`, root
 `exports`, or type declarations until an importable API is intentionally
 designed, documented, and tested.
 
-- [ ] Recheck that the unscoped `circuitarium-mcp` name is available. An `E404`
-      was observed on 2026-07-26, but registry names can be claimed at any time.
+- [ ] Confirm the target `circuitarium-mcp@<version>` is unpublished before
+      tagging. If it already exists, never overwrite or move the tag; follow
+      npm's version rules and the byte-identity recovery rule below.
 - [ ] Run `npm ci`, `npm run lint`, `npm run check`,
       `npm run test:coverage`, `npm run package:check`,
       `npm run mcpb:check`, `npm run registry:check`, and
@@ -151,32 +152,33 @@ bytes, stop and follow npm's version rules when choosing a recovery version.
 - [ ] Confirm the GitHub Release links to npm and the Registry record and uses
       release notes from `CHANGELOG.md`.
 
-### First-publication bootstrap
+### Trusted publishing
 
-The package must exist on npm before npm allows a trusted publisher to be
-attached to it. The protected `npm` GitHub environment requires maintainer
-approval. For `v0.2.0` only:
+`v0.2.0` was the one-time bootstrap publication. npm requires the package to
+exist before a trusted publisher can be attached, so that release used a
+short-lived granular token in the protected `npm` GitHub environment. On
+2026-07-28, npm trusted publishing was configured for GitHub user `Craftiee`,
+repository `circuitarium-mcp`, workflow `publish.yml`, environment `npm`, and
+the `npm publish` action only.
 
-1. Create a short-lived granular npm token with read/write package permission
-   and bypass 2FA enabled. npm cannot grant a package-specific token for an
-   uncreated package, so the first-publication token may have to select **All
-   Packages**; give it the shortest practical expiry and no organization
-   permissions. Enter it only through the GitHub environment-secret UI as
-   `NPM_TOKEN`; never paste it into an issue, chat, log, file, or command
-   history.
-2. Push the reviewed version tag and approve the environment deployment. The
-   workflow publishes the verified tarball to npm with provenance, then
-   publishes Registry metadata, then creates the GitHub Release.
-3. Configure npm trusted publishing for GitHub user `Craftiee`, repository
-   `circuitarium-mcp`, workflow `publish.yml`, environment `npm`, and
-   `npm publish` permission. Follow the
-   [npm trusted-publishing guide](https://docs.npmjs.com/trusted-publishers/).
-4. In a reviewed follow-up, remove the workflow's bootstrap-token dependency,
-   delete `NPM_TOKEN` from the GitHub environment, and revoke the token at npm.
-   Confirm the token is revoked; deleting only the GitHub secret is not enough.
-5. For the next release, verify the protected workflow publishes through
-   tokenless npm OIDC and still records provenance before treating trusted
-   publishing as complete.
+The release workflow uses GitHub-hosted Node 24, grants `id-token: write`, pins
+npm 11.16.0, and does not inject `NODE_AUTH_TOKEN` into the publish step. npm
+trusted publishing requires Node 22.14.0 or later and npm 11.5.1 or later.
+Follow the
+[npm trusted-publishing guide](https://docs.npmjs.com/trusted-publishers/).
+
+- [ ] For the next legitimate unpublished version, verify that the protected
+      workflow enters the `npm publish` branch and succeeds through tokenless
+      OIDC.
+- [ ] Verify the public package's exact tarball integrity and require
+      `dist.attestations.provenance.predicateType` to equal
+      `https://slsa.dev/provenance/v1`.
+- [ ] After that live OIDC proof, delete `NPM_TOKEN` from the GitHub `npm`
+      environment and revoke the granular token at npm. Confirm both removals;
+      deleting only the GitHub secret is not enough.
+- [ ] Then set package publishing access to **Require two-factor
+      authentication and disallow tokens**. Trusted OIDC publishing continues
+      to work under that setting.
 
 Never publish from an unreviewed branch, repack after the installation smoke
 test, or reuse a long-lived automation token. Direct `npm pack` and
