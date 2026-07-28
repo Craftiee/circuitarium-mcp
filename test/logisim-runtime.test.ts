@@ -282,6 +282,12 @@ test("truth tables parse strict CSV/binary output and truncate returned rows", (
     () => parseLogisimTruthTable("A,B\n0\n"),
     LogisimOutputParseError,
   );
+
+  const constant = parseLogisimTruthTable("Y\n1\n");
+  assert.deepEqual(constant.columns, ["Y"]);
+  assert.deepEqual(constant.rows, [{ values: ["1"] }]);
+  assert.equal(constant.rowCount, 1);
+  assert.equal(constant.rowsTruncated, false);
 });
 
 test("truth-table runtime always requests table,csv,binary", async () => {

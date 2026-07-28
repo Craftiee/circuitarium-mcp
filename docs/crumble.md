@@ -25,6 +25,9 @@ The callable `crumb.file` backend can:
 - export jumper-collapsed electrical nets with unambiguous supply-derived
   `VCC`/`GND` names, explicitly unnamed mixed-role supply nets, and optional
   saved-switch-state merges (`crumb_export_netlist`);
+- trace one component terminal by zero-based terminal index through a complete,
+  paged conductive witness with structured attachment, board, jumper, and
+  conditional saved-switch provenance (`crumb_trace_net`);
 - run static electrical rule checks with evidence-tagged findings
   (`crumb_check_design`);
 - group components into a bill of materials by decoded part identity
@@ -37,6 +40,14 @@ The callable `crumb.file` backend can:
 
 It cannot control a running CRUMB process, simulate circuit behavior, edit an
 arbitrary design, or convert a general Circuitarium project to CRUMB.
+
+`crumb_trace_net` is deliberately a connectivity witness rather than a
+current-flow or signal-path tool. Its `net-N` label is valid only for the exact
+project digest and selected topology/switch options. The result does not cross
+resistors, LEDs, IC bodies, or other functional components, and it reports
+that no simulation or live switch state was observed. Persisted slide- and
+DIP-switch closures are applied only when explicitly requested and remain
+conditional installed-build evidence.
 
 `crumb_compare_designs` is an observation tool. It does not open, control,
 save, or modify CRUMB. The user performs those controls in the Unity

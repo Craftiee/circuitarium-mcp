@@ -45,11 +45,13 @@ choose a narrow circuit workspace, then ask the model to call
 
 Give Claude, ChatGPT/Codex, or a local MCP-capable model a bounded, typed
 electronics workbench instead of asking it to guess at opaque circuit files.
-The **Unreleased 0.3.0 source tree** provides 20 bounded tools, seven read-only
+The **Unreleased 0.3.0 source tree** provides 22 bounded tools, nine read-only
 knowledge resources, and four reusable workflow prompts: Unity-era CRUMB
 `.cru` analysis plus version-pinned Logisim-evolution `.circ` analysis, partial
-neutral IR, optional configured-JAR truth tables and test vectors, and
-on-demand guidance for electrical review and digital-logic testing. Until
+neutral IR, source-cited component knowledge, evidence-aware verification
+planning, deterministic CRUMB net tracing, optional configured-JAR truth
+tables and test vectors, and on-demand guidance for electrical review and
+digital-logic testing. Until
 0.3.0 is actually published, use a source checkout to test that expanded MCP
 surface; `npx ...@0.2.1` continues to install the prior 14-tool release.
 Project analysis never modifies an input circuit; the sole Circuitarium
@@ -140,12 +142,25 @@ for the evidence categories used by the project.
 
 ## What works now
 
-- Expose seven deterministic, read-only MCP Resources for capability
+- Expose nine deterministic, read-only MCP Resources for capability
   orientation, both compatibility profiles, the bounded CRUMBLE catalog,
-  synthetic examples, low-voltage electrical review, and digital-logic test
-  planning.
+  synthetic examples, low-voltage electrical review, digital-logic test
+  planning, a strict neutral component-profile schema, and a commit-pinned
+  Logisim-evolution 4.1.0 catalog containing all 14 built-in libraries and 169
+  project component identities. Eleven carefully cited components have
+  semantic planning profiles; the remaining 158 are explicitly identity-only.
 - Expose four user-invoked MCP Prompts for circuit review, controlled CRUMB
   comparison, Logisim verification, and digest-guarded cross-model handoff.
+- Build deterministic verification plans from explicit claims, declared
+  interfaces, and bounded caller-reported evidence. The planner reads no
+  workspace, launches no simulator, treats generated truth tables as
+  characterization rather than an independent expected-output oracle, requires
+  exact artifact/topology/circuit receipt bindings and exact vector
+  reference/digest identities, verifies claimed exhaustive case counts against
+  the declared interface, and never turns a reported receipt into
+  certification. Invalid claim/scope pairs are rejected, while failed
+  supporting receipts and unsafe-runtime facts fail affected runtime claims
+  closed.
 - Inspect and structurally validate CRUMB `.cru` files.
 - Analyze 18 known CRUMB tool-ID schemas: boards, jumpers, passives, ICs, LEDs,
   power supplies, tactile/slide/DIP switches, potentiometers, labels,
@@ -172,6 +187,11 @@ for the evidence categories used by the project.
   unambiguous DC-supply rails, leave mixed positive/ground supply roles
   explicitly unnamed, apply optional saved-switch-state merges with bounded
   provenance, and page large designs.
+- Trace any indexed CRUMB terminal through one complete inferred conductive
+  net as a paged deterministic witness. Structured edges distinguish decoded
+  attachments, version-pinned board topology, jumper wires, and optional
+  persisted switch closures. The trace does not claim current flow, signal
+  direction, component-body traversal, or simulation.
 - Run static electrical rule checks over the inferred nets: supply shorts,
   LEDs directly across the rails, bypassed two-terminal parts, resistors above
   their power rating, floating IC power pins, and floating terminals — each
@@ -276,7 +296,7 @@ top of this README in one of the
 `CIRCUITARIUM_MCP_ROOT` to the smallest directory that should contain the
 circuits available to the model.
 
-To develop or verify the Unreleased 0.3.0 server and its 20-tool Logisim
+To develop or verify the Unreleased 0.3.0 server and its 22-tool Logisim
 surface from source:
 
 ```powershell
@@ -303,12 +323,14 @@ npm run cli -- inspect fixtures/crumb/breadboard.cru
 npm run cli -- analyze fixtures/crumb/breadboard-resistor.cru components 50
 npm run cli -- compare baseline.cru candidate.cru components 50
 npm run cli -- netlist fixtures/crumb/breadboard-led.cru
+npm run cli -- trace-net fixtures/crumb/breadboard-led.cru 3d43171c-bf55-44f9-9e95-dfa7cdd8ed38 0
 npm run cli -- check fixtures/crumb/breadboard-led.cru
 npm run cli -- bom fixtures/crumb/breadboard-led.cru
 npm run cli -- ic 74HC138
 npm run cli -- validate fixtures/crumb/breadboard-and-rail.cru
 npm run cli -- generate breadboard my-design.cru
 npm run cli -- validate-experiment examples/experiments/four-bit-counter.json
+npm run cli -- plan-verification examples/verification/full-adder-plan.json
 npm run cli -- logisim-list examples/logisim
 npm run cli -- logisim-analyze examples/logisim/full-adder.circ
 npm run cli -- logisim-netlist examples/logisim/full-adder.circ Main
@@ -340,14 +362,16 @@ For a concise model-host footing, use the
 
 ## MCP tools
 
-The table below describes the 20 tools in the Unreleased 0.3.0 source tree.
-The published 0.2.1 package contains the first 14 entries only and ends with
-`crumb_generate_fixture`.
+The table below describes the 22 tools in the Unreleased 0.3.0 source tree.
+The published 0.2.1 package contains the 14 CRUMBLE tools shown here, excluding
+the new `electronics_plan_verification`, `crumb_trace_net`, and all six
+`logisim_*` tools.
 
 | Tool | Purpose | Side effect |
 |---|---|---|
 | `electronics_capabilities` | Discover callable backends, limitations, vocabulary, and workflows | None |
 | `electronics_validate_experiment` | Validate portable circuit schema and semantics | None |
+| `electronics_plan_verification` | Turn explicit design claims and caller-reported evidence into a deterministic, bounded plan without reading files, running tools, or certifying hardware | None |
 | `crumb_component_catalog` | List 18 recognized CRUMB 1.3.5 schemas, 21 tool-5 DIP variants, pin-name coverage, and machine-readable evidence meanings | None |
 | `crumb_ic_reference` | Answer IC pinout questions ("74HC138") from the version-pinned prefab registry | None |
 | `crumb_list_projects` | Discover workspace `.cru` files with sizes, timestamps, and digests | Reads listed files |
@@ -355,6 +379,7 @@ The published 0.2.1 package contains the first 14 entries only and ends with
 | `crumb_compare_designs` | Compare two `.cru` files under `crumb.unity/1.3.5` with digest-guarded, bounded root and component changes | Reads two files |
 | `crumb_get_component` | Fetch one component with parameters, terminals, connection groups, and windowed firmware source | Reads one file |
 | `crumb_export_netlist` | Promote connection groups to electrical nets with jumper collapse, unambiguous supply naming, and optional switch-state merges | Reads one file |
+| `crumb_trace_net` | Page one terminal-indexed conductive witness with structured attachment, board, jumper, and conditional saved-switch provenance | Reads one file |
 | `crumb_check_design` | Run static electrical rule checks (supply shorts, LED series resistance, floating pins, power ratings) | Reads one file |
 | `crumb_bom` | Group components into a bill of materials by part identity | Reads one file |
 | `crumb_inspect_design` | Return a format-level `.cru` inventory | Reads one file |
@@ -370,6 +395,9 @@ The published 0.2.1 package contains the first 14 entries only and ends with
 All tools have input and output schemas. Successful tool execution and valid
 domain data are separate states: a validator can return `ok: true` with
 `data.valid: false`. See [the v0.2 tool contract](docs/contract.md).
+Verification-plan digests use locale-independent code-unit ordering. If a
+Logisim target's runtime status is unknown, run the planned capability
+discovery, record the exact status, and replan before requesting a JAR step.
 
 ## MCP knowledge resources and prompts
 
@@ -387,11 +415,22 @@ runtime evidence; use a Resource when the host only needs stable context.
 | `circuitarium://examples/synthetic` | Redistributable CRUMB fixture kinds and Logisim full-adder example |
 | `circuitarium://knowledge/electrical-review/0.1` | Low-voltage design-review checklist and safety boundary |
 | `circuitarium://knowledge/digital-logic-testing/0.1` | Combinational/sequential test-planning guidance |
+| `circuitarium://schemas/component-profile/0.1` | Neutral component-profile structural JSON Schema, explicit semantic cross-reference constraints, and 11 source-cited Logisim planning profiles |
+| `circuitarium://catalogs/logisim-evolution/4.1.0/standard-library` | Commit-pinned 14-library/169-identity Logisim standard catalog with semantic-coverage and runtime-policy boundaries |
+
+The component-profile schema is neutral; each profile remains bound to its
+exact simulator identity and declares that it makes no cross-simulator
+equivalence claim. Its JSON Schema covers structure, while the Resource lists
+the uniqueness and width-reference constraints consumers must enforce in
+addition. The Logisim catalog contains independently authored factual
+identifiers, classifications, citations, and summaries—not upstream Java,
+manual prose, icons, or a behavioral model. Logisim-evolution's cited source
+and documentation remain under GPL-3.0-only.
 
 The canonical backend IDs carried in tool envelopes and cross-model handoffs
 are `crumb.file` and `logisim.evolution`. The `review-circuit-design` Prompt
-uses the shorter selector `backend: "crumb"` or `backend: "logisim"` only as a
-Prompt argument; do not persist those aliases as `context.backendId`.
+accepts those same canonical IDs as its `backend` argument; shorter aliases
+such as `crumb` or `logisim` are not part of the Prompt or Tool contracts.
 
 Prompt arguments identify artifacts, but the receiving model must map them to
 the exact Tool input names:
@@ -416,7 +455,7 @@ The four prompts are `review-circuit-design`, `compare-crumb-designs`,
 `verify-logisim-design`, and `handoff-circuit-project`. Prompts package an
 explicit workflow for the user to invoke; they do not sample a model, execute
 tools, or grant write access by themselves. Core artifact workflows remain
-available through `electronics_capabilities` and the 20 Tools when a host does
+available through `electronics_capabilities` and the 22 Tools when a host does
 not expose Resources or Prompts; the two longer review guides are optional
 host-attached context.
 
@@ -495,6 +534,10 @@ projects; test-vector calls can additionally guard `expectedVectorDigest`.
 - `src/domain/capabilities.ts` — callable backend registry and model workflows
 - `src/domain/knowledge.ts` — bounded MCP Resources and reusable workflow
   Prompts
+- `src/domain/componentProfiles.ts` — strict neutral component-profile schema,
+  curated source citations, and the pinned Logisim 4.1.0 identity catalog
+- `src/domain/verification.ts` — deterministic claim-to-evidence planning
+  without file access or simulator execution
 - `src/domain/project-ir.ts` — small simulator-neutral project/netlist IR and
   explicit conversion-loss vocabulary
 - `src/adapters/crumb/` — `.cru` decoding, catalog, analysis, fixtures, and
@@ -506,6 +549,9 @@ projects; test-vector calls can additionally guard `expectedVectorDigest`.
   profile and tested-build metadata
 - `src/adapters/crumb/compare.ts` — digest-guarded controlled-save comparison
   with bounded, content-safe change reports
+- `src/adapters/crumb/trace.ts` — bounded deterministic conductive witness
+  construction with structured topology provenance
+- `examples/verification/` — copyable strict verification-planner requests
 - `src/adapters/crumb/icCatalog.ts` — CRUMB 1.3.5 tool-5 prefab and ordered-pin
   evidence
 - `src/server.ts` — local stdio MCP server

@@ -25,6 +25,11 @@ import { checkNetlist } from "./adapters/crumb/erc.js";
 import { listCrumbEvidenceVocabulary } from "./adapters/crumb/evidence.js";
 import { buildNetlist } from "./adapters/crumb/netlist.js";
 import {
+  CRUMB_NET_TRACE_TRAVERSAL_VERSION,
+  CrumbTraceSelectionError,
+  buildCrumbNetTrace,
+} from "./adapters/crumb/trace.js";
+import {
   CRUMB_FIXTURE_KINDS,
   generateFixture,
   type CrumbFixtureKind,
@@ -155,6 +160,7 @@ import {
   CrumbIcReferenceDataSchema,
   CrumbInspectionDataSchema,
   CrumbNetlistDataSchema,
+  CrumbNetTraceDataSchema,
   CrumbValidationDataSchema,
   CrumbWorkspaceDataSchema,
   ExperimentValidationDataSchema,
@@ -168,14 +174,17 @@ import {
   LogisimTruthTableDataSchema,
   LogisimWorkspaceDataSchema,
 } from "./domain/logisimToolSchemas.js";
+import {
+  VerificationPlanDataSchema,
+  VerificationPlanInputSchema,
+  planVerification,
+} from "./domain/verification.js";
 import { SERVER_NAME } from "./identity.js";
 import { executeServerCommand, processCommandIo } from "./terminal.js";
 
 const CRUMB_BACKEND_ID = "crumb.file";
 const CRUMB_ADAPTER_VERSION = "crumb.file/0.2";
-const ADAPTER_TESTED_CRUMB_COMPATIBILITY = [
-  "CRUMB 1.3.5 (Unity save format)",
-];
+const ADAPTER_TESTED_CRUMB_COMPATIBILITY = ["CRUMB 1.3.5 (Unity save format)"];
 const LOGISIM_RUNTIME_VERSION = "4.1.0";
 const MAX_LOGISIM_CIRCUITS_RETURNED = 128;
 const MAX_LOGISIM_LIBRARIES_RETURNED = 128;
@@ -273,11 +282,7 @@ const CrumbCompareInputSchema = z.object({
 const CrumbFixtureInputSchema = z.object({
   kind: z.enum(CRUMB_FIXTURE_KINDS),
   name: z.string().min(1).max(MAX_FIXTURE_NAME_CHARACTERS).optional(),
-  outputPath: z
-    .string()
-    .min(1)
-    .max(MAX_PROJECT_REF_CHARACTERS)
-    .optional(),
+  outputPath: z.string().min(1).max(MAX_PROJECT_REF_CHARACTERS).optional(),
   includeXml: z.boolean().default(false),
 });
 const CrumbListProjectsInputSchema = z.object({
@@ -307,7 +312,9 @@ const CrumbGetComponentInputSchema = z.object({
     .string()
     .min(1)
     .max(128)
-    .describe("Component id from analyze/netlist output; matching is case-insensitive"),
+    .describe(
+      "Component id from analyze/netlist output; matching is case-insensitive",
+    ),
   includeGeometry: z.boolean().default(true),
   includeSourceCode: z.boolean().default(false),
   sourceOffset: z
@@ -315,7 +322,9 @@ const CrumbGetComponentInputSchema = z.object({
     .int()
     .min(1)
     .default(0)
-    .describe("Character offset into embedded firmware source for continued reads"),
+    .describe(
+      "Character offset into embedded firmware source for continued reads",
+    ),
   topologyMode: z
     .enum(["direct-only", "known-board-v1.3.5"])
     .default("known-board-v1.3.5"),
@@ -340,7 +349,9 @@ const CrumbIcReferenceInputSchema = z.object({
     .min(1)
     .max(128)
     .optional()
-    .describe("Case-insensitive substring matched against IC label and package name"),
+    .describe(
+      "Case-insensitive substring matched against IC label and package name",
+    ),
 });
 const CrumbNetlistInputSchema = z.object({
   path: z
@@ -359,7 +370,51 @@ const CrumbNetlistInputSchema = z.object({
   applySwitchStates: z
     .boolean()
     .default(false)
-    .describe("Merge nets across saved switch positions using installed-build semantics"),
+    .describe(
+      "Merge nets across saved switch positions using installed-build semantics",
+    ),
+  cursor: z.string().min(1).max(MAX_CURSOR_CHARACTERS).optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+});
+const CrumbNetTraceInputSchema = z.object({
+  path: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_REF_CHARACTERS)
+    .describe("Workspace-relative .cru project ref"),
+  expectedProjectDigest: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_DIGEST_CHARACTERS)
+    .optional(),
+  componentId: z
+    .string()
+    .min(1)
+    .max(128)
+    .describe("Case-insensitive component id from CRUMB analysis"),
+  terminalIndex: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(65_535)
+    .describe(
+      "Zero-based terminal index; canonical within the exact project bytes",
+    ),
+  expectedTerminalName: z
+    .string()
+    .min(1)
+    .max(256)
+    .optional()
+    .describe("Optional exact-name guard for cross-model handoff"),
+  topologyMode: z
+    .enum(["direct-only", "known-board-v1.3.5"])
+    .default("known-board-v1.3.5"),
+  applySwitchStates: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Apply persisted switch closures as conditional installed-build evidence",
+    ),
   cursor: z.string().min(1).max(MAX_CURSOR_CHARACTERS).optional(),
   limit: z.number().int().min(1).max(200).default(50),
 });
@@ -457,7 +512,7 @@ const server = new McpServer(
   },
   {
     instructions:
-      "Call electronics_capabilities first when the workflow is unclear. Read circuitarium://capabilities or a narrower Circuitarium resource for static reference knowledge, and use the registered prompts only when the user explicitly chooses a reusable workflow. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation or simulation ran and found a failing design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. Static parsing and netlists are not simulation evidence. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability; it does not control a live simulation. The Logisim-evolution adapter distinguishes static .circ evidence, JAR project-load evidence, and bounded truth-table/test-vector simulation evidence. Logisim runtime tools require a separately installed official 4.1.0 all-JAR and Java 21; test-vector execution also requires X11 or Xvfb on Linux. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
+      "Call electronics_capabilities first when the workflow is unclear. Read circuitarium://capabilities or a narrower Circuitarium resource for static reference knowledge, and use the registered prompts only when the user explicitly chooses a reusable workflow. Component profiles and catalogs are source-cited planning knowledge: identity-only entries assert no ports or behavior, and semantic concepts never imply cross-simulator equivalence. electronics_plan_verification only organizes caller-reported, digest- and locus-bound evidence; it does not read files, run tools, authenticate receipts, approve hardware, or certify a design. Bind Logisim receipts to the exact circuit, test-vector receipts to the exact vector reference/digest pair, and CRUMB topology receipts to the exact topology/switch options. Invalid claim/scope pairs are rejected; failed supporting receipts and unsafe-runtime facts fail affected runtime claims closed. If Logisim runtime status is unknown, inspect electronics_capabilities, record the exact status, and replan before requesting a JAR step. Exhaustive vector receipts must report the full declared case count and distinct input assignments. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation or simulation ran and found a failing design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. Static parsing, netlists, and crumb_trace_net connectivity witnesses are not simulation evidence. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability; it does not control a live simulation. The Logisim-evolution adapter distinguishes static .circ evidence, JAR project-load evidence, and bounded truth-table/test-vector simulation evidence. Logisim runtime tools require a separately installed official 4.1.0 all-JAR and Java 21; test-vector execution also requires X11 or Xvfb on Linux. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
   },
 );
 registerKnowledgeSurfaces(server);
@@ -495,7 +550,9 @@ function canonicalJson(value: unknown): string {
 }
 
 function makeContext(
-  overrides: Partial<Omit<ContractContext, "serverInstanceId" | "sessionScope">> = {},
+  overrides: Partial<
+    Omit<ContractContext, "serverInstanceId" | "sessionScope">
+  > = {},
 ): ContractContext {
   return {
     serverInstanceId,
@@ -684,9 +741,12 @@ function classifyError(
     return {
       code: "PATH_DENIED",
       category: "filesystem",
-      message: "The requested Logisim path is outside the configured MCP workspace.",
+      message:
+        "The requested Logisim path is outside the configured MCP workspace.",
       retryable: false,
-      recovery: ["Use a workspace-relative ref returned by logisim_list_projects."],
+      recovery: [
+        "Use a workspace-relative ref returned by logisim_list_projects.",
+      ],
     };
   }
   if (error instanceof LogisimNotAFileError) {
@@ -712,7 +772,8 @@ function classifyError(
     return {
       code: "UNSUPPORTED_FORMAT",
       category: "format",
-      message: "The Logisim adapter requires a .circ project or .vec/.txt vector.",
+      message:
+        "The Logisim adapter requires a .circ project or .vec/.txt vector.",
       retryable: false,
       recovery: ["Use a supported workspace-relative Logisim artifact ref."],
     };
@@ -739,7 +800,8 @@ function classifyError(
     return {
       code: "FORMAT_INVALID",
       category: "format",
-      message: "The file is not a supported, safely parseable Logisim .circ project.",
+      message:
+        "The file is not a supported, safely parseable Logisim .circ project.",
       retryable: false,
       recovery: [
         "Open and resave the project with Logisim-evolution 4.1.0.",
@@ -797,7 +859,9 @@ function classifyError(
           message: error.message,
           retryable: false,
           argumentPath: "vectorPath",
-          recovery: ["Check the vector header, circuit name, and expected pin labels."],
+          recovery: [
+            "Check the vector header, circuit name, and expected pin labels.",
+          ],
         };
       case "EXECUTION_FAILED":
       case "OUTPUT_INVALID":
@@ -849,9 +913,13 @@ function classifyError(
     return {
       code: "ALREADY_EXISTS",
       category: "filesystem",
-      message: "The destination already exists; this server does not overwrite files.",
+      message:
+        "The destination already exists; this server does not overwrite files.",
       retryable: false,
-      recovery: ["Choose a new outputPath.", "Validate or inspect the existing file."],
+      recovery: [
+        "Choose a new outputPath.",
+        "Validate or inspect the existing file.",
+      ],
     };
   }
   if (error instanceof CruFileTooLargeError) {
@@ -869,7 +937,8 @@ function classifyError(
     return {
       code: "PROJECT_STATE_CONFLICT",
       category: "project",
-      message: "The project changed while one coherent file snapshot was being read.",
+      message:
+        "The project changed while one coherent file snapshot was being read.",
       retryable: true,
       recovery: ["Wait for the save operation to finish, then retry the read."],
     };
@@ -891,7 +960,9 @@ function classifyError(
       message: "The requested directory ref is not a directory.",
       retryable: false,
       argumentPath: "dir",
-      recovery: ["Pass a workspace-relative directory ref, or omit dir for the root."],
+      recovery: [
+        "Pass a workspace-relative directory ref, or omit dir for the root.",
+      ],
     };
   }
   if (fallback === "FORMAT_INVALID" || error instanceof CruFormatError) {
@@ -953,36 +1024,38 @@ function errorResult(
         ]
       : details.code === "PROJECT_STATE_CONFLICT" &&
           context.projectRef !== undefined
-      ? [
-          {
-            tool: isLogisim
-              ? "logisim_analyze_design"
-              : "crumb_analyze_design",
-            reason:
-              "Re-baseline the changed artifact and review its current digest.",
-            arguments: {
-              path: context.projectRef,
-              ...(isLogisim ? {} : { view: "summary" }),
-            },
-          },
-        ]
-      : details.code === "PROJECT_INVALID" &&
-          context.projectRef !== undefined &&
-          !isLogisim
         ? [
             {
-              tool: "crumb_validate_design",
-              reason: "Read the structural diagnostics before attempting analysis.",
-              arguments: { path: context.projectRef },
+              tool: isLogisim
+                ? "logisim_analyze_design"
+                : "crumb_analyze_design",
+              reason:
+                "Re-baseline the changed artifact and review its current digest.",
+              arguments: {
+                path: context.projectRef,
+                ...(isLogisim ? {} : { view: "summary" }),
+              },
             },
           ]
-        : [
-            {
-              tool: "electronics_capabilities",
-              reason: "Review callable backends, constraints, and recovery workflows.",
-              arguments: {},
-            },
-          ];
+        : details.code === "PROJECT_INVALID" &&
+            context.projectRef !== undefined &&
+            !isLogisim
+          ? [
+              {
+                tool: "crumb_validate_design",
+                reason:
+                  "Read the structural diagnostics before attempting analysis.",
+                arguments: { path: context.projectRef },
+              },
+            ]
+          : [
+              {
+                tool: "electronics_capabilities",
+                reason:
+                  "Review callable backends, constraints, and recovery workflows.",
+                arguments: {},
+              },
+            ];
   return result<never>({
     contractVersion: CONTRACT_VERSION,
     ok: false,
@@ -1062,9 +1135,7 @@ function logisimSuccessResult<T>(options: SuccessResultOptions<T>) {
   }
   const candidate = successResult(sanitized);
   const serialized = candidate.content[0]?.text ?? "";
-  if (
-    Buffer.byteLength(serialized, "utf8") <= MAX_LOGISIM_ENVELOPE_BYTES
-  ) {
+  if (Buffer.byteLength(serialized, "utf8") <= MAX_LOGISIM_ENVELOPE_BYTES) {
     return candidate;
   }
   return errorResult(
@@ -1295,6 +1366,7 @@ type PagedView =
   | "components"
   | "connections"
   | "netlist"
+  | "net-trace"
   | "logisim-netlist"
   | "comparison-components";
 
@@ -1310,7 +1382,9 @@ function encodeCursor(cursor: PageCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
 
-function paginationOptionsFingerprint(options: Record<string, unknown>): string {
+function paginationOptionsFingerprint(
+  options: Record<string, unknown>,
+): string {
   return sha256(canonicalJson(options));
 }
 
@@ -1483,6 +1557,7 @@ const electronicsCapabilitiesTool = server.registerTool(
           concerns: [...GENERAL_TOOLSET.concerns],
           fidelityLevels: [...GENERAL_TOOLSET.fidelityLevels],
           validationTool: "electronics_validate_experiment",
+          planningTool: "electronics_plan_verification",
         },
         callableBackends,
         roadmapBackends: ROADMAP_BACKENDS,
@@ -1518,6 +1593,26 @@ const electronicsCapabilitiesTool = server.registerTool(
             "Understand the included Logisim full-adder using static, explicitly partial evidence.",
           arguments: {
             path: "examples/logisim/full-adder.circ",
+          },
+        },
+        {
+          tool: "electronics_plan_verification",
+          reason:
+            "Turn explicit claims into a bounded, evidence-aware verification plan.",
+          arguments: {
+            target: {
+              backendId: "logisim.evolution",
+              projectRef: "examples/logisim/full-adder.circ",
+              circuit: "Main",
+            },
+            claims: [
+              {
+                id: "full-adder-behavior",
+                claimClass: "combinational-behavior",
+                objective: "verify",
+                scope: "selected-circuit",
+              },
+            ],
           },
         },
         {
@@ -1602,7 +1697,8 @@ const electronicsExperimentTool = server.registerTool(
         : [
             {
               tool: "electronics_capabilities",
-              reason: "Review the neutral experiment model and workflow conventions.",
+              reason:
+                "Review the neutral experiment model and workflow conventions.",
               arguments: {},
             },
           ],
@@ -1613,6 +1709,65 @@ envelopeTools.set("electronics_validate_experiment", {
   inputSchema: ElectronicsExperimentInputSchema,
   outputSchema: ElectronicsExperimentOutputSchema,
   registeredTool: electronicsExperimentTool,
+  context: makeContext,
+});
+
+const ElectronicsVerificationPlanOutputSchema = envelopeSchema(
+  VerificationPlanDataSchema,
+);
+const electronicsVerificationPlanTool = server.registerTool(
+  "electronics_plan_verification",
+  {
+    title: "Plan evidence-aware electronics verification",
+    description:
+      "Builds a deterministic, simulator-neutral plan for explicit claims using bounded caller-reported evidence. It reads no files, runs no tools or simulators, authenticates no receipts, and never certifies physical hardware.",
+    inputSchema: VerificationPlanInputSchema,
+    outputSchema: ElectronicsVerificationPlanOutputSchema,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async (input) => {
+    const plan = planVerification(input);
+    const firstRunnableSteps = plan.steps
+      .filter(
+        (
+          step,
+        ): step is Extract<
+          (typeof plan.steps)[number],
+          { actionType: "mcp-tool" }
+        > => step.actionType === "mcp-tool",
+      )
+      .filter((step) => step.dependsOn.length === 0)
+      .slice(0, 3);
+    return successResult({
+      summary:
+        `Planned ${plan.steps.length} verification step(s) for ${plan.claims.length} claim(s); ` +
+        `overall status is ${plan.overallStatus}.`,
+      data: plan,
+      context: makeContext({
+        ...(plan.target.projectDigest === undefined
+          ? {}
+          : {
+              projectRef: plan.target.projectRef,
+              projectDigest: plan.target.projectDigest,
+            }),
+      }),
+      nextActions: firstRunnableSteps.map((step) => ({
+        tool: step.tool,
+        reason:
+          "Run this first dependency-free step, then record its exact digest-bound result as reported evidence before replanning.",
+        arguments: step.arguments,
+      })),
+    });
+  },
+);
+envelopeTools.set("electronics_plan_verification", {
+  inputSchema: VerificationPlanInputSchema,
+  outputSchema: ElectronicsVerificationPlanOutputSchema,
+  registeredTool: electronicsVerificationPlanTool,
   context: makeContext,
 });
 
@@ -1816,33 +1971,26 @@ const crumbAnalysisTool = server.registerTool(
           annotationTextMode: "untrusted-bounded-preview" as const,
           rawXmlIncluded: false as const,
           limits: {
-            designNamePreviewCharacters:
-              MAX_DESIGN_NAME_PREVIEW_CHARACTERS,
-            componentGeometryPoints:
-              MAX_COMPONENT_GEOMETRY_POINTS_RETURNED,
+            designNamePreviewCharacters: MAX_DESIGN_NAME_PREVIEW_CHARACTERS,
+            componentGeometryPoints: MAX_COMPONENT_GEOMETRY_POINTS_RETURNED,
             componentTerminals: MAX_COMPONENT_TERMINALS_RETURNED,
-            componentPayloadEntries:
-              MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED,
-            parameterCollectionItems:
-              MAX_PARAMETER_COLLECTION_ITEMS_RETURNED,
+            componentPayloadEntries: MAX_COMPONENT_PAYLOAD_ENTRIES_RETURNED,
+            parameterCollectionItems: MAX_PARAMETER_COLLECTION_ITEMS_RETURNED,
             connectionGroupMembersPerField:
               MAX_CONNECTION_GROUP_MEMBERS_RETURNED,
             kindCounts: MAX_KIND_COUNTS_RETURNED,
             diagnostics: MAX_RESULT_DIAGNOSTICS_RETURNED,
             diagnosticCodeCharacters: MAX_DIAGNOSTIC_CODE_CHARACTERS,
             diagnosticPathCharacters: MAX_DIAGNOSTIC_PATH_CHARACTERS,
-            diagnosticMessageCharacters:
-              MAX_DIAGNOSTIC_MESSAGE_CHARACTERS,
+            diagnosticMessageCharacters: MAX_DIAGNOSTIC_MESSAGE_CHARACTERS,
             cruXsiTypeCharacters: MAX_CRU_XSI_TYPE_CHARACTERS,
-            cruNumericLexicalCharacters:
-              MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
+            cruNumericLexicalCharacters: MAX_CRU_NUMERIC_LEXICAL_CHARACTERS,
             cruGuidTokenCharacters: MAX_CRU_GUID_TOKEN_CHARACTERS,
             cruXmlNameCharacters: MAX_CRU_XML_NAME_CHARACTERS,
             cruXmlElements: MAX_CRU_XML_ELEMENTS,
             cruXmlDepth: MAX_CRU_XML_DEPTH,
             cruComponents: MAX_CRU_COMPONENTS,
-            cruDataValuesPerComponent:
-              MAX_CRU_DATA_VALUES_PER_COMPONENT,
+            cruDataValuesPerComponent: MAX_CRU_DATA_VALUES_PER_COMPONENT,
           },
         },
       };
@@ -1942,7 +2090,8 @@ const crumbAnalysisTool = server.registerTool(
           },
           {
             tool: "crumb_validate_design",
-            reason: "Check structural validity before opening or sharing the file.",
+            reason:
+              "Check structural validity before opening or sharing the file.",
             arguments: {
               path: ref,
               expectedProjectDigest: project.digest,
@@ -2111,8 +2260,7 @@ const crumbComparisonTool = server.registerTool(
         });
       }
 
-      const effectiveIncludeGeometry =
-        view === "components" && includeGeometry;
+      const effectiveIncludeGeometry = view === "components" && includeGeometry;
       const comparison = compareCru(baselineFile.xml, candidateFile.xml, {
         includeGeometry: effectiveIncludeGeometry,
         topologyMode,
@@ -2151,7 +2299,8 @@ const crumbComparisonTool = server.registerTool(
           severity: "info",
           code: "page-limit-reduced",
           path: "limit",
-          message: "Component comparison pages with geometry are capped at 25 items.",
+          message:
+            "Component comparison pages with geometry are capped at 25 items.",
         });
       }
 
@@ -2325,7 +2474,8 @@ const crumbInspectionTool = server.registerTool(
         nextActions: [
           {
             tool: "crumb_analyze_design",
-            reason: "Get a semantic, version-pinned understanding of the design.",
+            reason:
+              "Get a semantic, version-pinned understanding of the design.",
             arguments: {
               path: ref,
               view: "summary",
@@ -2396,7 +2546,8 @@ const crumbValidationTool = server.registerTool(
           ? [
               {
                 tool: "crumb_analyze_design",
-                reason: "Understand recognized components and inferred connections.",
+                reason:
+                  "Understand recognized components and inferred connections.",
                 arguments: {
                   path: ref,
                   view: "summary",
@@ -2478,7 +2629,8 @@ const crumbFixtureTool = server.registerTool(
             : [
                 {
                   tool: "crumb_analyze_design",
-                  reason: "Confirm the generated component and connection semantics.",
+                  reason:
+                    "Confirm the generated component and connection semantics.",
                   arguments: {
                     path: ref,
                     view: "summary",
@@ -2534,7 +2686,10 @@ const crumbListProjectsTool = server.registerTool(
       let digestBytesRead = 0;
       for (const entry of bounded.items) {
         if (!includeDigests) {
-          entries.push({ ...entry, digestOmittedReason: "not-requested" as const });
+          entries.push({
+            ...entry,
+            digestOmittedReason: "not-requested" as const,
+          });
         } else if (digestBytesRead >= MAX_DIGEST_BYTES_PER_LISTING) {
           entries.push({
             ...entry,
@@ -2625,8 +2780,12 @@ const crumbListProjectsTool = server.registerTool(
             ? [
                 {
                   tool: "crumb_generate_fixture",
-                  reason: "No projects exist yet; create a known-good fixture to explore.",
-                  arguments: { kind: "breadboard-led", outputPath: "generated/first-led.cru" },
+                  reason:
+                    "No projects exist yet; create a known-good fixture to explore.",
+                  arguments: {
+                    kind: "breadboard-led",
+                    outputPath: "generated/first-led.cru",
+                  },
                 },
               ]
             : [
@@ -2708,20 +2867,17 @@ const crumbGetComponentTool = server.registerTool(
       const relatedGroups = loaded.analysis.connectivity.groups
         .filter((group) =>
           fullConnectionGroupMembership(group).componentTerminals.some(
-            (terminal) =>
-              terminal.componentId.toLowerCase() === componentKey,
+            (terminal) => terminal.componentId.toLowerCase() === componentKey,
           ),
         )
         .map((group) => {
           const fullTerminals =
             fullConnectionGroupMembership(group).componentTerminals;
           const focused = fullTerminals.filter(
-            (terminal) =>
-              terminal.componentId.toLowerCase() === componentKey,
+            (terminal) => terminal.componentId.toLowerCase() === componentKey,
           );
           const retained = group.componentTerminals.filter(
-            (terminal) =>
-              terminal.componentId.toLowerCase() !== componentKey,
+            (terminal) => terminal.componentId.toLowerCase() !== componentKey,
           );
           return {
             ...group,
@@ -2769,7 +2925,9 @@ const crumbGetComponentTool = server.registerTool(
           );
           const strings =
             raw?.values.filter(
-              (value): value is Extract<CruDecodedDataValue, { kind: "string" }> =>
+              (
+                value,
+              ): value is Extract<CruDecodedDataValue, { kind: "string" }> =>
                 value.kind === "string",
             ) ?? [];
           const source = strings[0]?.value ?? "";
@@ -2819,7 +2977,8 @@ const crumbGetComponentTool = server.registerTool(
             : [
                 {
                   tool: "crumb_export_netlist",
-                  reason: "See every electrical net this component participates in.",
+                  reason:
+                    "See every electrical net this component participates in.",
                   arguments: {
                     path: loaded.ref,
                     topologyMode,
@@ -2933,7 +3092,7 @@ const crumbIcReferenceTool = server.registerTool(
   {
     title: "Look up CRUMB IC packages and pinouts",
     description:
-      "Queries the version-pinned tool-5 IC registry by prefabId or by a label/package substring (for example \"74HC138\"). Returns package labels, ordered pin names, and explicit unresolved pins.",
+      'Queries the version-pinned tool-5 IC registry by prefabId or by a label/package substring (for example "74HC138"). Returns package labels, ordered pin names, and explicit unresolved pins.',
     inputSchema: CrumbIcReferenceInputSchema,
     outputSchema: CrumbIcReferenceOutputSchema,
     annotations: {
@@ -2982,7 +3141,8 @@ const crumbIcReferenceTool = server.registerTool(
       nextActions: [
         {
           tool: "crumb_component_catalog",
-          reason: "Read the full tool-5 payload signature and evidence vocabulary.",
+          reason:
+            "Read the full tool-5 payload signature and evidence vocabulary.",
           arguments: { toolId: 5 },
         },
       ],
@@ -3111,6 +3271,213 @@ envelopeTools.set("crumb_export_netlist", {
   context: makeCrumbContext,
 });
 
+function traceSelectionFailure(
+  error: CrumbTraceSelectionError,
+): ContractFailure {
+  if (error.kind === "terminal-name-mismatch") {
+    return invalidArgument(error.message, "expectedTerminalName", [
+      "Remove expectedTerminalName or copy the exact name from crumb_get_component.",
+      "Keep componentId and terminalIndex unchanged when continuing a trace.",
+    ]);
+  }
+  if (error.kind === "graph-quota-exceeded") {
+    return new ContractFailure({
+      code: "QUOTA_EXCEEDED",
+      category: "backend",
+      message: error.message,
+      retryable: false,
+      recovery: [
+        "Reduce the project before tracing this net.",
+        "Use crumb_export_netlist for the bounded net inventory.",
+      ],
+    });
+  }
+  if (error.kind === "component-ambiguous") {
+    return new ContractFailure({
+      code: "PROJECT_INVALID",
+      category: "project",
+      message: error.message,
+      retryable: false,
+      recovery: [
+        "Repair duplicate component identifiers before relying on terminal identity.",
+        "Call crumb_validate_design for structural diagnostics.",
+      ],
+    });
+  }
+  const argumentPath =
+    error.details.argumentPath ??
+    (error.kind === "component-not-found" ? "componentId" : "terminalIndex");
+  return new ContractFailure({
+    code: "NOT_FOUND",
+    category: "project",
+    message: error.message,
+    retryable: false,
+    argumentPath,
+    recovery: [
+      "Call crumb_get_component to confirm the component and its bounded terminal inventory.",
+      ...(error.details.terminalCount === undefined
+        ? []
+        : [
+            `Choose terminalIndex from 0 through ${Math.max(
+              0,
+              error.details.terminalCount - 1,
+            )}.`,
+          ]),
+      "Restart without a pagination cursor after correcting the selector.",
+    ],
+  });
+}
+
+const CrumbNetTraceOutputSchema = envelopeSchema(CrumbNetTraceDataSchema);
+const crumbNetTraceTool = server.registerTool(
+  "crumb_trace_net",
+  {
+    title: "Trace one inferred CRUMB electrical net",
+    description:
+      "Selects one component terminal by stable index and returns a paged deterministic connectivity witness with structured attachment, board, jumper, and optional saved-switch provenance. It is static conductive inference, not current flow, path enumeration, or simulation.",
+    inputSchema: CrumbNetTraceInputSchema,
+    outputSchema: CrumbNetTraceOutputSchema,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({
+    path,
+    expectedProjectDigest,
+    componentId,
+    terminalIndex,
+    expectedTerminalName,
+    topologyMode,
+    applySwitchStates,
+    cursor,
+    limit,
+  }) => {
+    let operationContext = makeCrumbContext();
+    try {
+      const loaded = await loadAnalyzedCruProject(
+        { path, expectedProjectDigest, topologyMode },
+        (context) => {
+          operationContext = context;
+        },
+      );
+      const netlist = buildNetlist(loaded.analysis, { applySwitchStates });
+      const trace = buildCrumbNetTrace(
+        loaded.analysis,
+        netlist,
+        {
+          componentId,
+          terminalIndex,
+          ...(expectedTerminalName === undefined
+            ? {}
+            : { expectedTerminalName }),
+        },
+        { applySwitchStates },
+      );
+      const optionsFingerprint = paginationOptionsFingerprint({
+        traceVersion: trace.traceVersion,
+        traversalVersion: CRUMB_NET_TRACE_TRAVERSAL_VERSION,
+        topologyMode,
+        applySwitchStates,
+        componentId: trace.root.componentId.toLowerCase(),
+        terminalIndex: trace.root.terminalIndex,
+      });
+      const offset = decodeCursor(
+        cursor,
+        "net-trace",
+        loaded.project.digest,
+        trace.visits.length,
+        optionsFingerprint,
+      );
+      const paged = pageResult(
+        trace.visits,
+        offset,
+        limit,
+        "net-trace",
+        loaded.project.digest,
+        optionsFingerprint,
+      );
+      const diagnostics: Diagnostic[] = [
+        ...loaded.structuralDiagnostics,
+        ...loaded.analysis.diagnostics,
+        ...netlist.diagnostics,
+        ...trace.diagnostics,
+      ];
+      return successResult({
+        summary:
+          `Traced ${trace.resolvedNet.counts.terminals} terminal(s) across ` +
+          `${trace.resolvedNet.counts.nodes} evidence node(s) on ${trace.resolvedNet.id}.`,
+        data: {
+          traceVersion: trace.traceVersion,
+          traversalVersion: trace.traversalVersion,
+          project: { ...loaded.project, ref: loaded.ref },
+          root: trace.root,
+          topologyMode: trace.topologyMode,
+          scope: trace.scope,
+          applySwitchStates: trace.applySwitchStates,
+          resolvedNet: trace.resolvedNet,
+          witness: trace.witness,
+          provenance: trace.provenance,
+          page: paged.page,
+          visits: paged.items,
+        },
+        diagnostics,
+        context: operationContext,
+        nextActions:
+          paged.page.nextCursor === undefined
+            ? [
+                {
+                  tool: "crumb_check_design",
+                  reason:
+                    "Run static electrical rules over the complete inferred design.",
+                  arguments: {
+                    path: loaded.ref,
+                    expectedProjectDigest: loaded.project.digest,
+                    topologyMode,
+                    applySwitchStates,
+                  },
+                },
+              ]
+            : [
+                {
+                  tool: "crumb_trace_net",
+                  reason:
+                    "Continue the same connectivity witness without overlap.",
+                  arguments: {
+                    path: loaded.ref,
+                    expectedProjectDigest: loaded.project.digest,
+                    componentId: trace.root.componentId,
+                    terminalIndex: trace.root.terminalIndex,
+                    expectedTerminalName: trace.root.terminalName,
+                    topologyMode,
+                    applySwitchStates,
+                    cursor: paged.page.nextCursor,
+                    limit,
+                  },
+                },
+              ],
+      });
+    } catch (error) {
+      return errorResult(
+        error instanceof CrumbTraceSelectionError
+          ? traceSelectionFailure(error)
+          : error,
+        {
+          fallback: "FORMAT_INVALID",
+          context: operationContext,
+        },
+      );
+    }
+  },
+);
+envelopeTools.set("crumb_trace_net", {
+  inputSchema: CrumbNetTraceInputSchema,
+  outputSchema: CrumbNetTraceOutputSchema,
+  registeredTool: crumbNetTraceTool,
+  context: makeCrumbContext,
+});
+
 const CrumbErcOutputSchema = envelopeSchema(CrumbErcDataSchema);
 const crumbErcTool = server.registerTool(
   "crumb_check_design",
@@ -3188,9 +3555,7 @@ envelopeTools.set("crumb_check_design", {
   context: makeCrumbContext,
 });
 
-const LogisimWorkspaceOutputSchema = envelopeSchema(
-  LogisimWorkspaceDataSchema,
-);
+const LogisimWorkspaceOutputSchema = envelopeSchema(LogisimWorkspaceDataSchema);
 const logisimListProjectsTool = server.registerTool(
   "logisim_list_projects",
   {
@@ -3281,9 +3646,7 @@ envelopeTools.set("logisim_list_projects", {
   context: makeLogisimContext,
 });
 
-const LogisimAnalysisOutputSchema = envelopeSchema(
-  LogisimAnalysisDataSchema,
-);
+const LogisimAnalysisOutputSchema = envelopeSchema(LogisimAnalysisDataSchema);
 const logisimAnalyzeTool = server.registerTool(
   "logisim_analyze_design",
   {
@@ -3330,9 +3693,7 @@ const logisimAnalyzeTool = server.registerTool(
         const boundedTypes = boundCollection(
           [...typeCounts.entries()]
             .map(([name, count]) => ({ name, count }))
-            .sort((left, right) =>
-              left.name.localeCompare(right.name),
-            ),
+            .sort((left, right) => left.name.localeCompare(right.name)),
           MAX_LOGISIM_COMPONENT_TYPES_RETURNED,
         );
         return {
@@ -3408,17 +3769,15 @@ const logisimAnalyzeTool = server.registerTool(
               (total, circuit) => total + circuit.wires.length,
               0,
             ),
-            pins: allComponents.filter(
-              (component) => component.kind === "pin",
-            ).length,
+            pins: allComponents.filter((component) => component.kind === "pin")
+              .length,
             clocks: allComponents.filter(
               (component) => component.kind === "clock",
             ).length,
             unknownComponents: allComponents.filter(
               (component) => component.kind === "unknown",
             ).length,
-            unknownConstructs:
-              loaded.project.unknownConstructs.totalCount,
+            unknownConstructs: loaded.project.unknownConstructs.totalCount,
           },
           circuits,
           circuitBounds: boundedCircuits.bounds,
@@ -3457,7 +3816,8 @@ const logisimAnalyzeTool = server.registerTool(
           },
           {
             tool: "logisim_component_stats",
-            reason: "Ask Logisim itself to load the project and count components.",
+            reason:
+              "Ask Logisim itself to load the project and count components.",
             arguments: {
               path: loaded.file.ref,
               expectedProjectDigest: loaded.file.digest,
@@ -3477,9 +3837,7 @@ envelopeTools.set("logisim_analyze_design", {
   context: makeLogisimContext,
 });
 
-const LogisimNetlistOutputSchema = envelopeSchema(
-  LogisimNetlistDataSchema,
-);
+const LogisimNetlistOutputSchema = envelopeSchema(LogisimNetlistDataSchema);
 const logisimNetlistTool = server.registerTool(
   "logisim_export_netlist",
   {
@@ -3503,10 +3861,7 @@ const logisimNetlistTool = server.registerTool(
           operationContext = context;
         },
       );
-      const sourceCircuit = selectLogisimCircuit(
-        loaded.project,
-        circuit,
-      );
+      const sourceCircuit = selectLogisimCircuit(loaded.project, circuit);
       const irCircuit = loaded.ir.circuits.find(
         (candidate) => candidate.id === sourceCircuit.id,
       );
@@ -3646,13 +4001,7 @@ const logisimComponentStatsTool = server.registerTool(
       openWorldHint: false,
     },
   },
-  async ({
-    path,
-    expectedProjectDigest,
-    circuit,
-    limit,
-    timeoutMs,
-  }) => {
+  async ({ path, expectedProjectDigest, circuit, limit, timeoutMs }) => {
     let operationContext = makeLogisimContext();
     try {
       const loaded = await loadLogisimProject(
@@ -3765,17 +4114,13 @@ const logisimTruthTableTool = server.registerTool(
       );
       requireSafeLogisimRuntimeProject(loaded.project);
       const selected = selectLogisimCircuit(loaded.project, circuit);
-      const io = summarizeLogisimCircuitIo(
-        loaded.project,
-        selected.name,
-      );
+      const io = summarizeLogisimCircuitIo(loaded.project, selected.name);
       const pinLabels = io.pins
         .map((pin) => pin.label?.trim())
         .filter((label): label is string => label !== undefined);
       const interfaceIsComplete =
         io.inputBitTotalComplete &&
         io.pinCount > 0 &&
-        io.inputPinCount > 0 &&
         io.outputPinCount > 0 &&
         pinLabels.length === io.pinCount &&
         pinLabels.every((label) => label.length > 0) &&
@@ -3785,10 +4130,10 @@ const logisimTruthTableTool = server.registerTool(
           code: "UNSUPPORTED_OPERATION",
           category: "project",
           message:
-            "Truth-table generation is refused because the selected circuit does not expose a complete, uniquely labeled input/output Pin interface.",
+            "Truth-table generation is refused because the selected circuit does not expose at least one uniquely labeled output Pin plus complete metadata for every input/output Pin.",
           retryable: false,
           recovery: [
-            "Give every input/output Pin a unique nonblank label and recognized direction/width.",
+            "Add at least one output Pin, and give every input/output Pin a unique nonblank label and recognized direction/width.",
             "Use an explicit test vector after confirming its pin contract.",
           ],
         });
@@ -4051,8 +4396,7 @@ const logisimTestVectorTool = server.registerTool(
                 severity: "error",
                 code: "test-vector-failed",
                 path: "failures",
-                message:
-                  `${testResult.failedVectors} of ${testResult.totalVectors} vectors failed.`,
+                message: `${testResult.failedVectors} of ${testResult.totalVectors} vectors failed.`,
               },
             ],
         context: operationContext,
@@ -4145,7 +4489,9 @@ async function invokeEnvelopeTool(
       callResult.data.structuredContent,
     );
     if (!output.success) {
-      throw new Error("The tool returned structured content outside its output schema");
+      throw new Error(
+        "The tool returned structured content outside its output schema",
+      );
     }
     return callResult.data;
   } catch (error) {

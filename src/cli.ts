@@ -23,11 +23,13 @@ same validation, bounds, and result envelopes:
   compare <baseline.cru> <candidate.cru> [summary|root|components] [limit] [cursor]
   component <file.cru> <componentId>
   netlist <file.cru> [limit] [cursor]
+  trace-net <file.cru> <componentId> <terminalIndex> [limit] [cursor]
   check <file.cru>
   bom <file.cru>
   ic [label-or-package-query]
   validate <file.cru>
   validate-experiment <experiment.json>
+  plan-verification <request.json>
 
 Logisim-evolution commands use the same MCP envelopes. Runtime commands need
 Java 21 and CIRCUITARIUM_LOGISIM_JAR pointing at the official 4.1.0 all-JAR:
@@ -153,6 +155,27 @@ async function main(): Promise<void> {
       });
       return;
     }
+    case "trace-net": {
+      const path = requirePath(positional[0], "trace-net");
+      const componentId = positional[1];
+      if (!componentId) {
+        throw new Error("trace-net requires a componentId");
+      }
+      const terminalIndex = Number.parseInt(positional[2] ?? "", 10);
+      if (!Number.isInteger(terminalIndex) || terminalIndex < 0) {
+        throw new Error("trace-net requires a nonnegative terminalIndex");
+      }
+      const limit = Number.parseInt(positional[3] ?? "50", 10);
+      const cursor = positional[4];
+      await runTool("crumb_trace_net", {
+        path,
+        componentId,
+        terminalIndex,
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      return;
+    }
     case "check": {
       await runTool(
         "crumb_check_design",
@@ -184,11 +207,36 @@ async function main(): Promise<void> {
       if (!path) {
         throw new Error("validate-experiment requires a JSON path");
       }
-      const experiment = JSON.parse(await readFile(resolve(path), "utf8")) as unknown;
+      const experiment = JSON.parse(
+        await readFile(resolve(path), "utf8"),
+      ) as unknown;
       await runTool(
         "electronics_validate_experiment",
         { experiment },
         { failWhenDataInvalid: true },
+      );
+      return;
+    }
+    case "plan-verification": {
+      const path = positional[0];
+      if (!path) {
+        throw new Error("plan-verification requires a JSON path");
+      }
+      const request = JSON.parse(
+        await readFile(resolve(path), "utf8"),
+      ) as unknown;
+      if (
+        request === null ||
+        typeof request !== "object" ||
+        Array.isArray(request)
+      ) {
+        throw new Error(
+          "plan-verification JSON must contain one request object",
+        );
+      }
+      await runTool(
+        "electronics_plan_verification",
+        request as Record<string, unknown>,
       );
       return;
     }
@@ -201,9 +249,7 @@ async function main(): Promise<void> {
     case "logisim-analyze": {
       await runTool("logisim_analyze_design", {
         path: requireLogisimPath(positional[0], "logisim-analyze"),
-        ...(positional[1] === undefined
-          ? {}
-          : { circuit: positional[1] }),
+        ...(positional[1] === undefined ? {} : { circuit: positional[1] }),
       });
       return;
     }
@@ -212,9 +258,7 @@ async function main(): Promise<void> {
       const cursor = positional[3];
       await runTool("logisim_export_netlist", {
         path: requireLogisimPath(positional[0], "logisim-netlist"),
-        ...(positional[1] === undefined
-          ? {}
-          : { circuit: positional[1] }),
+        ...(positional[1] === undefined ? {} : { circuit: positional[1] }),
         limit,
         ...(cursor === undefined ? {} : { cursor }),
       });
@@ -223,9 +267,7 @@ async function main(): Promise<void> {
     case "logisim-stats": {
       await runTool("logisim_component_stats", {
         path: requireLogisimPath(positional[0], "logisim-stats"),
-        ...(positional[1] === undefined
-          ? {}
-          : { circuit: positional[1] }),
+        ...(positional[1] === undefined ? {} : { circuit: positional[1] }),
       });
       return;
     }
@@ -233,18 +275,13 @@ async function main(): Promise<void> {
       const limit = Number.parseInt(positional[2] ?? "256", 10);
       await runTool("logisim_truth_table", {
         path: requireLogisimPath(positional[0], "logisim-table"),
-        ...(positional[1] === undefined
-          ? {}
-          : { circuit: positional[1] }),
+        ...(positional[1] === undefined ? {} : { circuit: positional[1] }),
         limit,
       });
       return;
     }
     case "logisim-test": {
-      const projectPath = requireLogisimPath(
-        positional[0],
-        "logisim-test",
-      );
+      const projectPath = requireLogisimPath(positional[0], "logisim-test");
       const vectorPath = positional[1];
       if (!vectorPath) {
         throw new Error("logisim-test requires a .vec or .txt path");
@@ -254,9 +291,7 @@ async function main(): Promise<void> {
         {
           path: projectPath,
           vectorPath,
-          ...(positional[2] === undefined
-            ? {}
-            : { circuit: positional[2] }),
+          ...(positional[2] === undefined ? {} : { circuit: positional[2] }),
         },
         { failWhenDataInvalid: true },
       );
@@ -265,7 +300,9 @@ async function main(): Promise<void> {
     case "generate": {
       const [kind, path, name] = positional;
       if (!kind || !CRUMB_FIXTURE_KINDS.includes(kind as CrumbFixtureKind)) {
-        throw new Error(`generate kind must be one of: ${CRUMB_FIXTURE_KINDS.join(", ")}`);
+        throw new Error(
+          `generate kind must be one of: ${CRUMB_FIXTURE_KINDS.join(", ")}`,
+        );
       }
       if (!path) {
         throw new Error("generate requires an output .cru path");
@@ -313,6 +350,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(
+    `${error instanceof Error ? error.message : String(error)}\n`,
+  );
   process.exitCode = 1;
 });

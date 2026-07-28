@@ -8,7 +8,7 @@ reproducible evidence.
 
 ## Current source milestone: Unreleased 0.3.0
 
-This section describes the 20-tool, seven-Resource, four-Prompt source tree.
+This section describes the 22-tool, nine-Resource, four-Prompt source tree.
 The published 0.2.1 npm package and MCPB remain the prior 14-tool CRUMBLE
 release and do not contain the Logisim-evolution adapter or knowledge
 surfaces.
@@ -24,7 +24,15 @@ surfaces.
 - Cross-model artifact handoff using workspace-relative references and SHA-256
   digests.
 - Bounded MCP Resources for compatibility profiles, the CRUMBLE catalog,
-  synthetic examples, electrical review, and digital-logic testing.
+  synthetic examples, electrical review, digital-logic testing, a strict
+  neutral component-profile schema, and the complete 14-library/169-identity
+  Logisim-evolution 4.1.0 built-in catalog.
+- Deterministic, simulator-neutral verification planning from explicit claims
+  and bounded caller-reported evidence, with no file access, simulator launch,
+  receipt authentication, or physical certification.
+- Paged CRUMBLE terminal-to-net witnesses with structured topology provenance,
+  full internal terminal coverage, digest/selector-bound cursors, and explicit
+  no-simulation/no-current-flow boundaries.
 - User-invoked MCP Prompts for review, controlled comparison, Logisim
   verification, and cross-model handoff.
 - Version-pinned Logisim-evolution 4.1.0 project discovery, strict `.circ`
@@ -52,6 +60,11 @@ one-shot subprocesses.
 
 ## Portable circuit projects and conversion
 
+- Expand detailed source-cited component profiles only when official
+  documentation and independent fixtures support their attributes, logical
+  ports, behavior class, and verification eligibility.
+- Add a neutral component-reference Tool fallback for MCP hosts that cannot
+  read Resources, with exact source identity lookup and bounded search.
 - Define hierarchical components, ports, nets, parameters, firmware artifacts,
   stimuli, probes, and assertions independently of any simulator.
 - Report conversion losses rather than forcing unsupported concepts into a

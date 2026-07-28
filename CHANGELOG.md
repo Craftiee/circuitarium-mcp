@@ -8,9 +8,13 @@ remains experimental.
 
 ### Added
 
-- Added seven deterministic, read-only MCP Resources for capability
+- Added nine deterministic, read-only MCP Resources for capability
   orientation, version-pinned profiles, the CRUMBLE catalog, synthetic
-  examples, low-voltage review, and digital-logic test planning.
+  examples, low-voltage review, digital-logic test planning, a strict
+  source-cited neutral component-profile schema, and a commit-pinned
+  Logisim-evolution 4.1.0 standard-library catalog. The Logisim catalog records
+  all 14 built-in libraries and 169 exact component identities while keeping
+  158 entries explicitly identity-only.
 - Added four bounded MCP Prompts for circuit review, controlled CRUMB
   comparison, Logisim verification, and digest-guarded cross-model handoff,
   with installed-package and MCPB protocol smoke tests.
@@ -31,9 +35,25 @@ remains experimental.
 - Added optional MCPB selectors for the Logisim JAR and Java executable, a
   Logisim adapter/security guide, CLI parity commands, parser/runtime unit
   tests, and public setup documentation.
+- Added `electronics_plan_verification`, a pure deterministic planner for
+  explicit artifact, topology, ERC, runtime, behavior, conversion, and
+  physical claims. It returns digest- and locus-bound evidence requirements,
+  ordered steps, bounded test suggestions, and gaps; claimed exhaustive
+  coverage is checked against the declared interface and vector distinctness.
+  The planner does not read files, invoke tools, authenticate caller receipts,
+  or certify hardware.
+- Added `crumb_trace_net`, bringing the source surface to 22 tools. It selects
+  a terminal by component ID and zero-based index and pages a deterministic
+  conductive witness with structured attachment, board-topology, jumper, and
+  optional persisted-switch provenance.
 
 ### Fixed
 
+- Make verification-plan canonicalization locale-independent, and stop an
+  unknown Logisim runtime plan after capability discovery until the caller
+  records the exact status and replans.
+- Permit a zero-input circuit with one or more uniquely labeled output Pins to
+  produce its single-row Logisim truth table.
 - Refuse `logisim_truth_table` when an output Pin label normalizes to the
   reserved label `halt` under Logisim-evolution 4.1.0's TTY label rules (for
   example, `halt!`), because that label selects run-until-halt behavior rather
@@ -69,6 +89,17 @@ remains experimental.
   is malformed.
 - Bound every public Logisim result string to 4,096 characters and the
   aggregate serialized result envelope to 2 MiB.
+- Bound CRUMB net-trace construction to 50,000 graph nodes and 100,000 edges,
+  use hub nodes instead of pairwise same-hole cliques, bind cursors to the
+  exact digest/root/options/traversal version, and fail closed without a
+  partial trace when a work limit is exceeded.
+- Bound test-vector receipts to an exact vector reference and digest, reject
+  invalid claim/scope pairs and mixed vector identities, propagate failed
+  supporting or unsafe-runtime evidence, and support the single exhaustive row
+  of a zero-input combinational circuit.
+- Corrected source-cited profile guidance for Logisim level-triggered D
+  flip-flops/registers and Active On High LEDs, and made the structural JSON
+  Schema's additional uniqueness/cross-reference constraints explicit.
 - Document that these controls reduce project-driven risk but do not provide an
   operating-system sandbox or protect against a malicious configured JAR.
 

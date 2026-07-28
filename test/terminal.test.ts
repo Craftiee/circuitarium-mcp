@@ -202,7 +202,7 @@ test("public launcher doctor reports optional Logisim readiness", () => {
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0);
   assert.match(result.stdout, /^circuitarium-mcp doctor/mu);
-  assert.match(result.stdout, /Registered tools: 20/u);
+  assert.match(result.stdout, /Registered tools: 22/u);
   assert.match(result.stdout, /Logisim static adapter: ready/u);
   assert.match(result.stdout, /optional, not configured/u);
   assert.equal(result.stderr, "");

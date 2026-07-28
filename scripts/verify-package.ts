@@ -86,8 +86,22 @@ interface Envelope {
   contractVersion?: string;
   data?: {
     circuitName?: string;
+    kind?: string;
+    planVersion?: string;
     project?: {
       ref?: string;
+    };
+    provenance?: {
+      simulationPerformed?: boolean;
+    };
+    resolvedNet?: {
+      counts?: {
+        terminals?: number;
+      };
+    };
+    root?: {
+      componentId?: string;
+      terminalIndex?: number;
     };
     runtime?: {
       authenticity?: string;
@@ -100,6 +114,7 @@ interface Envelope {
       recursiveCount?: number;
       uniqueCount?: number;
     };
+    traceVersion?: string;
   };
   ok?: boolean;
 }
@@ -107,7 +122,7 @@ interface Envelope {
 const SDK_VERSION = "1.29.0";
 const UPSTREAM_HONO_RANGE = "^1.19.9";
 const AUDITED_HONO_VERSION = "2.0.11";
-const EXPECTED_TOOL_COUNT = 20;
+const EXPECTED_TOOL_COUNT = 22;
 const MAX_TARBALL_BYTES = 5 * 1024 * 1024;
 const MAX_UNPACKED_BYTES = 20 * 1024 * 1024;
 const MAX_PACKAGE_FILES = 4_000;
@@ -256,7 +271,9 @@ function parseSdkManifest(
   content: Uint8Array,
   expectedHonoRange: string,
 ): SdkManifest {
-  const manifest = JSON.parse(Buffer.from(content).toString("utf8")) as SdkManifest;
+  const manifest = JSON.parse(
+    Buffer.from(content).toString("utf8"),
+  ) as SdkManifest;
   assert.equal(manifest.name, "@modelcontextprotocol/sdk");
   assert.equal(manifest.version, SDK_VERSION);
   assert.equal(
@@ -285,11 +302,15 @@ async function packFromIsolatedStaging(
   parseSdkManifest(sourceManifest, UPSTREAM_HONO_RANGE);
   try {
     for (const directory of stagedDirectories) {
-      await cp(resolve(repositoryRoot, directory), resolve(stagingRoot, directory), {
-        errorOnExist: true,
-        force: false,
-        recursive: true,
-      });
+      await cp(
+        resolve(repositoryRoot, directory),
+        resolve(stagingRoot, directory),
+        {
+          errorOnExist: true,
+          force: false,
+          recursive: true,
+        },
+      );
     }
     for (const file of stagedFiles) {
       await cp(resolve(repositoryRoot, file), resolve(stagingRoot, file), {
@@ -387,7 +408,9 @@ async function collectMarkdownFiles(
   return markdownFiles;
 }
 
-async function assertMarkdownLinksResolve(installedRoot: string): Promise<void> {
+async function assertMarkdownLinksResolve(
+  installedRoot: string,
+): Promise<void> {
   for (const markdownPath of await collectMarkdownFiles(installedRoot)) {
     const markdown = await readFile(markdownPath, "utf8");
     for (const match of markdown.matchAll(/\]\(([^)\n]+)\)/g)) {
@@ -553,6 +576,7 @@ try {
     "examples/model-host/minimal-system-prompt.txt",
     "examples/logisim/full-adder.circ",
     "examples/logisim/full-adder.vec",
+    "examples/verification/full-adder-plan.json",
     "dist/src/bin.js",
     "dist/src/server.js",
   ]) {
@@ -604,10 +628,7 @@ try {
   ) as PackageManifest;
   assert.equal(installedManifest.name, result.name);
   assert.equal(installedManifest.version, result.version);
-  assert.equal(
-    installedManifest.bin?.["circuitarium-mcp"],
-    "dist/src/bin.js",
-  );
+  assert.equal(installedManifest.bin?.["circuitarium-mcp"], "dist/src/bin.js");
   assert.deepEqual(
     installedManifest.exports,
     {},
@@ -615,10 +636,7 @@ try {
   );
   assert.equal(installedManifest.main, undefined);
   assert.equal(installedManifest.types, undefined);
-  assert.equal(
-    installedManifest.mcpName,
-    "io.github.Craftiee/circuitarium",
-  );
+  assert.equal(installedManifest.mcpName, "io.github.Craftiee/circuitarium");
   const installedShrinkwrap = JSON.parse(
     await readFile(resolve(installedRoot, "npm-shrinkwrap.json"), "utf8"),
   ) as ShrinkwrapManifest;
@@ -654,10 +672,7 @@ try {
     [AUDITED_HONO_VERSION],
     "published shrinkwrap must retain the audited Hono override",
   );
-  runNpm(
-    ["audit", "--omit=dev", "--audit-level=moderate"],
-    consumerDirectory,
-  );
+  runNpm(["audit", "--omit=dev", "--audit-level=moderate"], consumerDirectory);
 
   const installedServer = resolve(installedRoot, "dist", "src", "server.js");
   assert.equal((await stat(installedServer)).isFile(), true);
@@ -696,10 +711,7 @@ try {
     consumerDirectory,
   );
   assert.equal(versionResult.status, 0);
-  assert.equal(
-    versionResult.stdout,
-    `circuitarium-mcp ${result.version}\n`,
-  );
+  assert.equal(versionResult.stdout, `circuitarium-mcp ${result.version}\n`);
   assert.equal(versionResult.stderr, "");
   const doctorResult = runInstalledPackageBin(["doctor"], consumerDirectory);
   assert.equal(doctorResult.status, 0);
@@ -730,7 +742,9 @@ try {
   });
   let serverStderr = "";
   transport.stderr?.on("data", (chunk: unknown) => {
-    serverStderr += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+    serverStderr += Buffer.isBuffer(chunk)
+      ? chunk.toString("utf8")
+      : String(chunk);
   });
   const client = new Client({
     name: "circuitarium-package-smoke",
@@ -796,6 +810,55 @@ try {
     );
     assert.equal(knowledge.contents.length, 1);
     assert.equal(knowledge.contents[0]?.mimeType, "application/json");
+    const standardLibraryCatalog = await withTimeout(
+      client.readResource({
+        uri: "circuitarium://catalogs/logisim-evolution/4.1.0/standard-library",
+      }),
+      STARTUP_TIMEOUT_MS,
+      "MCP standard-library resource read",
+    );
+    assert.equal(
+      standardLibraryCatalog.contents[0]?.mimeType,
+      "application/json",
+    );
+    const componentProfileSchema = await withTimeout(
+      client.readResource({
+        uri: "circuitarium://schemas/component-profile/0.1",
+      }),
+      STARTUP_TIMEOUT_MS,
+      "MCP component-profile schema resource read",
+    );
+    assert.equal(componentProfileSchema.contents.length, 1);
+    const componentProfileSchemaContent = componentProfileSchema.contents[0];
+    assert.equal(componentProfileSchemaContent?.mimeType, "application/json");
+    assert.ok(
+      componentProfileSchemaContent !== undefined &&
+        "text" in componentProfileSchemaContent,
+      "component-profile schema resource must contain JSON text",
+    );
+    const componentProfileSchemaPayload = JSON.parse(
+      componentProfileSchemaContent.text,
+    ) as {
+      profileCount?: number;
+      profileVersion?: string;
+      schemaVersion?: string;
+      semanticConstraints?: unknown[];
+      validationBoundary?: string;
+    };
+    assert.equal(
+      componentProfileSchemaPayload.schemaVersion,
+      "circuitarium.schema-resource/0.1",
+    );
+    assert.equal(
+      componentProfileSchemaPayload.profileVersion,
+      "electronics.component-profile/0.1",
+    );
+    assert.equal(componentProfileSchemaPayload.profileCount, 11);
+    assert.equal(componentProfileSchemaPayload.semanticConstraints?.length, 7);
+    assert.match(
+      componentProfileSchemaPayload.validationBoundary ?? "",
+      /also enforce semanticConstraints/u,
+    );
     const reviewPrompt = await withTimeout(
       client.getPrompt({
         name: "review-circuit-design",
@@ -813,6 +876,78 @@ try {
       /Circuitarium circuit artifact/u,
     );
     assert.equal(client.getServerVersion()?.version, result.version);
+
+    const planResult = await withTimeout(
+      client.callTool({
+        name: "electronics_plan_verification",
+        arguments: {
+          target: {
+            backendId: "logisim.evolution",
+            projectRef: "examples/logisim/full-adder.circ",
+            circuit: "Main",
+          },
+          claims: [
+            {
+              id: "package-smoke",
+              claimClass: "combinational-behavior",
+              objective: "characterize",
+              scope: "selected-circuit",
+            },
+          ],
+        },
+      }),
+      STARTUP_TIMEOUT_MS,
+      "packaged MCP electronics_plan_verification",
+    );
+    const planEnvelope = envelopeOf(planResult);
+    assert.equal(planResult.isError ?? false, false);
+    assert.equal(
+      planEnvelope.data?.planVersion,
+      "electronics.verification-plan/0.1",
+    );
+
+    const generatedCrumbRef = "release-audit/synthetic-led.cru";
+    const generationResult = await withTimeout(
+      client.callTool({
+        name: "crumb_generate_fixture",
+        arguments: {
+          kind: "breadboard-led",
+          outputPath: generatedCrumbRef,
+        },
+      }),
+      STARTUP_TIMEOUT_MS,
+      "packaged MCP crumb_generate_fixture",
+    );
+    assert.equal(generationResult.isError ?? false, false);
+    const generationEnvelope = envelopeOf(generationResult);
+    assert.equal(generationEnvelope.data?.kind, "breadboard-led");
+    assert.match(
+      generationEnvelope.context?.projectDigest ?? "",
+      /^sha256:[0-9a-f]{64}$/u,
+    );
+    const traceResult = await withTimeout(
+      client.callTool({
+        name: "crumb_trace_net",
+        arguments: {
+          path: generatedCrumbRef,
+          expectedProjectDigest: generationEnvelope.context?.projectDigest,
+          componentId: "3d43171c-bf55-44f9-9e95-dfa7cdd8ed38",
+          terminalIndex: 0,
+        },
+      }),
+      STARTUP_TIMEOUT_MS,
+      "packaged MCP crumb_trace_net",
+    );
+    assert.equal(traceResult.isError ?? false, false);
+    const traceEnvelope = envelopeOf(traceResult);
+    assert.equal(traceEnvelope.data?.traceVersion, "crumb.net-trace/0.1");
+    assert.equal(
+      traceEnvelope.data?.root?.componentId,
+      "3d43171c-bf55-44f9-9e95-dfa7cdd8ed38",
+    );
+    assert.equal(traceEnvelope.data?.root?.terminalIndex, 0);
+    assert.ok((traceEnvelope.data?.resolvedNet?.counts?.terminals ?? 0) >= 1);
+    assert.equal(traceEnvelope.data?.provenance?.simulationPerformed, false);
 
     const analyzeResult = await withTimeout(
       client.callTool({
@@ -839,8 +974,7 @@ try {
           arguments: {
             path: "examples/logisim/full-adder.circ",
             circuit: "Main",
-            expectedProjectDigest:
-              analyzeEnvelope.context?.projectDigest,
+            expectedProjectDigest: analyzeEnvelope.context?.projectDigest,
             timeoutMs: LOGISIM_SMOKE_TIMEOUT_MS,
           },
         }),

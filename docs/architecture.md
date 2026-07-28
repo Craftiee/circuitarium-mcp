@@ -112,6 +112,42 @@ Portable project / experiments / artifacts
     uses the exact already-read byte snapshot, not a second read of the caller's
     path. A 4.1.0 self-report is compatibility evidence, not binary or publisher
     authentication.
+11. **Neutral schema does not mean behavioral equivalence.** Component
+    profiles preserve exact simulator bindings and source citations. Shared
+    semantic concepts carry `equivalenceClaim: "none"`; they guide planning
+    but do not make one simulator's implementation executable in another.
+12. **Plans and reported receipts are not execution or proof.**
+    `electronics_plan_verification` is deterministic and side-effect free. It
+    reads no artifact, calls no Tool, launches no simulator, authenticates no
+    caller receipt, and provides no physical certification.
+
+## Current neutral knowledge and planning layer
+
+The component-profile schema is structurally strict, bounded, and source-cited;
+its Resource separately enumerates the uniqueness and width-reference rules
+that JSON Schema cannot fully express. The first catalog pins
+Logisim-evolution 4.1.0 to upstream commit
+`632d66dca880ac089e2c6c2c383ea20d9c707ee2`: all 14 built-in libraries and
+169 exact project component identities are discoverable, while only 11
+officially documented components currently expose curated neutral port and
+verification guidance. Identity-only entries remain opaque. This catalog does
+not make the deliberately partial Logisim neutral IR complete and never
+overrides runtime preflight.
+
+The verification planner maps explicit claims to static, project-load,
+simulation, specification, measurement, and qualified-review evidence. It
+keeps characterization distinct from verification: a truth table without an
+independent expected result is not an oracle, finite vectors cover only listed
+cases or sequences, and physical evidence remains caller-reported rather than
+Circuitarium approval. Receipts are bound to an exact backend/profile plus an
+artifact, CRUMB topology/switch configuration, or Logisim circuit locus.
+Claimed exhaustive coverage is checked against the declared input space;
+test-vector row counts also require a distinct-assignment count and bind to the
+exact vector reference/digest pair. Invalid claim/scope pairs are rejected.
+Failed supporting receipts and caller-reported unsafe-runtime facts fail
+affected runtime verification paths closed. A zero-input combinational
+interface has one exhaustive assignment and can use one Logisim truth-table
+row.
 
 ## Current Logisim-evolution backend
 
@@ -184,6 +220,9 @@ The adapter currently supports:
   `known-board-v1.3.5`;
 - jumper-collapsed netlist export with deterministic supply naming and optional
   saved slide/DIP-switch connectivity, including bounded provenance;
+- terminal-indexed conductive witnesses over terminal, attachment, board-hub,
+  jumper, and optional conditional saved-switch edges, with full internal
+  terminal coverage and digest/root/options-bound pagination;
 - static electrical rule checks for evidence-supported supply shorts, bypassed
   parts, LED series resistance, resistor power, floating IC power pins, and
   floating terminals;

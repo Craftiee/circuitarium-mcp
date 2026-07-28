@@ -47,8 +47,21 @@ interface Envelope {
 	};
 	data?: {
 		circuitName?: string;
+		planVersion?: string;
 		project?: {
 			ref?: string;
+		};
+		provenance?: {
+			simulationPerformed?: boolean;
+		};
+		resolvedNet?: {
+			counts?: {
+				terminals?: number;
+			};
+		};
+		root?: {
+			componentId?: string;
+			terminalIndex?: number;
 		};
 		runtime?: {
 			authenticity?: string;
@@ -61,13 +74,14 @@ interface Envelope {
 			recursiveCount?: number;
 			uniqueCount?: number;
 		};
+		traceVersion?: string;
 		valid?: boolean;
 	};
 	ok?: boolean;
 }
 
 const MCPB_PACKAGE = "@anthropic-ai/mcpb@2.1.2";
-const EXPECTED_TOOL_COUNT = 20;
+const EXPECTED_TOOL_COUNT = 22;
 const BUNDLE_ENTRY_ARGUMENT = "$" + "{__dirname}/server/dist/src/server.js";
 const WORKSPACE_CONFIG_REFERENCE = "$" + "{user_config.workspace}";
 const LOGISIM_JAR_CONFIG_REFERENCE = "$" + "{user_config.logisim_jar}";
@@ -163,13 +177,7 @@ function assertSemVerValidationCases(): void {
 	]) {
 		assertValidSemVer(valid, `SemVer validation fixture ${valid}`);
 	}
-	for (const invalid of [
-		"v1.2.3",
-		"1.2",
-		"01.2.3",
-		"1.2.3-01",
-		"1.2.3-",
-	]) {
+	for (const invalid of ["v1.2.3", "1.2", "01.2.3", "1.2.3-01", "1.2.3-"]) {
 		assert.doesNotMatch(
 			invalid,
 			SEMVER_PATTERN,
@@ -483,6 +491,55 @@ try {
 			"MCPB resources/read",
 		);
 		assert.equal(knowledge.contents[0]?.mimeType, "application/json");
+		const standardLibraryCatalog = await withTimeout(
+			client.readResource({
+				uri: "circuitarium://catalogs/logisim-evolution/4.1.0/standard-library",
+			}),
+			10_000,
+			"MCPB standard-library resource read",
+		);
+		assert.equal(
+			standardLibraryCatalog.contents[0]?.mimeType,
+			"application/json",
+		);
+		const componentProfileSchema = await withTimeout(
+			client.readResource({
+				uri: "circuitarium://schemas/component-profile/0.1",
+			}),
+			10_000,
+			"MCPB component-profile schema resource read",
+		);
+		assert.equal(componentProfileSchema.contents.length, 1);
+		const componentProfileSchemaContent = componentProfileSchema.contents[0];
+		assert.equal(componentProfileSchemaContent?.mimeType, "application/json");
+		assert.ok(
+			componentProfileSchemaContent !== undefined &&
+				"text" in componentProfileSchemaContent,
+			"component-profile schema resource must contain JSON text",
+		);
+		const componentProfileSchemaPayload = JSON.parse(
+			componentProfileSchemaContent.text,
+		) as {
+			profileCount?: number;
+			profileVersion?: string;
+			schemaVersion?: string;
+			semanticConstraints?: unknown[];
+			validationBoundary?: string;
+		};
+		assert.equal(
+			componentProfileSchemaPayload.schemaVersion,
+			"circuitarium.schema-resource/0.1",
+		);
+		assert.equal(
+			componentProfileSchemaPayload.profileVersion,
+			"electronics.component-profile/0.1",
+		);
+		assert.equal(componentProfileSchemaPayload.profileCount, 11);
+		assert.equal(componentProfileSchemaPayload.semanticConstraints?.length, 7);
+		assert.match(
+			componentProfileSchemaPayload.validationBoundary ?? "",
+			/also enforce semanticConstraints/u,
+		);
 		const reviewPrompt = await withTimeout(
 			client.getPrompt({
 				name: "review-circuit-design",
@@ -499,6 +556,56 @@ try {
 			/Circuitarium circuit artifact/u,
 		);
 		assert.equal(client.getServerVersion()?.version, packageManifest.version);
+
+		const planResult = await withTimeout(
+			client.callTool({
+				name: "electronics_plan_verification",
+				arguments: {
+					target: {
+						backendId: "crumb.file",
+						projectRef: "synthetic-led.cru",
+					},
+					claims: [
+						{
+							id: "mcpb-smoke",
+							claimClass: "static-electrical-rules",
+							objective: "characterize",
+							scope: "artifact",
+						},
+					],
+				},
+			}),
+			10_000,
+			"MCPB electronics_plan_verification",
+		);
+		assert.equal(planResult.isError ?? false, false);
+		assert.equal(
+			envelopeOf(planResult).data?.planVersion,
+			"electronics.verification-plan/0.1",
+		);
+
+		const traceResult = await withTimeout(
+			client.callTool({
+				name: "crumb_trace_net",
+				arguments: {
+					path: "synthetic-led.cru",
+					componentId: "3d43171c-bf55-44f9-9e95-dfa7cdd8ed38",
+					terminalIndex: 0,
+				},
+			}),
+			10_000,
+			"MCPB crumb_trace_net",
+		);
+		assert.equal(traceResult.isError ?? false, false);
+		const traceEnvelope = envelopeOf(traceResult);
+		assert.equal(traceEnvelope.data?.traceVersion, "crumb.net-trace/0.1");
+		assert.equal(
+			traceEnvelope.data?.root?.componentId,
+			"3d43171c-bf55-44f9-9e95-dfa7cdd8ed38",
+		);
+		assert.equal(traceEnvelope.data?.root?.terminalIndex, 0);
+		assert.ok((traceEnvelope.data?.resolvedNet?.counts?.terminals ?? 0) >= 1);
+		assert.equal(traceEnvelope.data?.provenance?.simulationPerformed, false);
 
 		const checkResult = await withTimeout(
 			client.callTool({
@@ -536,8 +643,7 @@ try {
 					arguments: {
 						path: "full-adder.circ",
 						circuit: "Main",
-						expectedProjectDigest:
-							analyzeEnvelope.context?.projectDigest,
+						expectedProjectDigest: analyzeEnvelope.context?.projectDigest,
 						timeoutMs: LOGISIM_SMOKE_TIMEOUT_MS,
 					},
 				}),
@@ -546,10 +652,7 @@ try {
 			);
 			assert.equal(statisticsResult.isError ?? false, false);
 			const statisticsEnvelope = envelopeOf(statisticsResult);
-			assert.equal(
-				statisticsEnvelope.contractVersion,
-				"electronics.mcp/0.2",
-			);
+			assert.equal(statisticsEnvelope.contractVersion, "electronics.mcp/0.2");
 			assert.equal(statisticsEnvelope.ok, true);
 			assert.equal(statisticsEnvelope.data?.circuitName, "Main");
 			assert.deepEqual(statisticsEnvelope.data?.totalWithSubcircuits, {

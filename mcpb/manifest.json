@@ -5,7 +5,7 @@
   "display_name": "Circuitarium MCP",
   "version": "0.3.0",
   "description": "A model-neutral electronics workbench for CRUMB artifacts and version-pinned Logisim-evolution projects.",
-  "long_description": "Use 20 bounded MCP tools, seven read-only knowledge resources, and four workflow prompts to inspect and review Unity-era CRUMB .cru files, parse Logisim-evolution .circ projects, export explicit partial IR, and optionally run truth tables or test vectors through a separately installed official Logisim-evolution 4.1.0 JAR. Circuitarium bundles neither simulator and controls no live GUI session.",
+  "long_description": "Use 22 bounded MCP tools, nine read-only knowledge resources, and four workflow prompts to inspect and review Unity-era CRUMB .cru files, trace inferred nets, plan claim-specific verification, read source-cited neutral component profiles, parse Logisim-evolution .circ projects, export explicit partial IR, and optionally run truth tables or test vectors through a separately installed official Logisim-evolution 4.1.0 JAR. Circuitarium bundles neither simulator and controls no live GUI session.",
   "author": {
     "name": "Craftiee",
     "url": "https://github.com/Craftiee"

@@ -6,7 +6,7 @@ all production Node.js dependencies; it does not contain CRUMB,
 Logisim-evolution, Java, simulator assets, or user circuit files.
 
 The current source manifest identifies the Unreleased 0.3.0 bundle and its
-20-tool, seven-Resource, four-Prompt Logisim-capable server. It is not the
+22-tool, nine-Resource, four-Prompt Logisim-capable server. It is not the
 already-published
 `circuitarium-mcp-0.2.1.mcpb`, which remains a 14-tool CRUMBLE bundle with only
 the workspace selector.
@@ -19,10 +19,12 @@ npm run mcpb:check
 
 The default check creates the bundle in a guarded temporary directory,
 validates and unpacks it with the pinned MCPB CLI, starts the unpacked server,
-lists all 20 tools, lists and reads the knowledge Resources, lists and gets a
-workflow Prompt, runs `crumb_check_design` against the independently authored
-synthetic LED fixture, and runs `logisim_analyze_design` against the full-adder
-copied from the unpacked bundle before removing the temporary artifact.
+lists all 22 tools, lists all nine knowledge Resources and reads representative
+capability, component-profile, and Logisim-catalog Resources, lists and gets a
+workflow Prompt, plans verification, runs `crumb_trace_net` and
+`crumb_check_design` against the independently authored synthetic LED fixture,
+and runs `logisim_analyze_design` against the full-adder copied from the
+unpacked bundle before removing the temporary artifact.
 
 When `CIRCUITARIUM_LOGISIM_JAR` identifies a Logisim-evolution 4.1.0 JAR, the
 same audit also makes a real stdio `logisim_component_stats` call through the

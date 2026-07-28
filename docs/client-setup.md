@@ -75,7 +75,7 @@ literally.
 A tagged source checkout and its same-version package launch the same stdio
 server. During Unreleased development, they intentionally differ: the command
 below installs published 0.2.1 with 14 CRUMBLE tools, while this source tree
-identifies as 0.3.0 and registers 20 tools, seven Resources, and four Prompts.
+identifies as 0.3.0 and registers 22 tools, nine Resources, and four Prompts.
 Prefer the immutable release when you do not need to test the Unreleased
 Logisim and knowledge-surface work:
 
@@ -119,9 +119,8 @@ in the other steps:
 
 1. Call `electronics_capabilities`.
 2. Treat only backends with `availability: "callable"` as usable.
-   The current canonical IDs are `crumb.file` and `logisim.evolution`;
-   `backend: "crumb"` and `backend: "logisim"` are selectors used only by the
-   `review-circuit-design` Prompt.
+   The current canonical IDs are `crumb.file` and `logisim.evolution`; use
+   those exact IDs in Tool context, Prompt arguments, and handoffs.
 3. When no `.cru` path is known, call `crumb_list_projects` and pick an entry;
    its returned digest becomes `expectedProjectDigest` for the next read.
 4. For an existing CRUMB file, call `crumb_analyze_design` with
@@ -215,7 +214,7 @@ Claude Desktop users can download
 open it. The protected release workflow builds that bundle from the same
 verified npm tarball, validates its manifest, and smoke-tests its 14-tool stdio
 server against a synthetic fixture before attaching it. That published bundle
-has a workspace selector only. The Unreleased 0.3.0 source manifest exposes 20
+has a workspace selector only. The Unreleased 0.3.0 source manifest exposes 22
 tools and optional Logisim JAR/Java file selectors; no matching 0.3.0 MCPB is
 published yet.
 
