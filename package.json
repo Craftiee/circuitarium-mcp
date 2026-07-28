@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "mcpName": "io.github.Craftiee/circuitarium",
   "type": "module",
-  "description": "Model-neutral MCP tools for CRUMB artifacts and version-pinned Logisim-evolution file analysis and headless simulation.",
+  "description": "Model-neutral MCP tools for CRUMB artifacts and version-pinned Logisim-evolution file analysis and non-interactive simulation.",
   "license": "Apache-2.0",
   "bin": {
     "circuitarium-mcp": "dist/src/bin.js"

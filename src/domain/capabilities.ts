@@ -246,6 +246,7 @@ export const CALLABLE_BACKENDS: CallableBackendDescriptor[] = [
       "Public Logisim strings are limited to 4,096 characters and the aggregate serialized result envelope to 2 MiB.",
       "The runtime controls are not an operating-system sandbox or a security boundary against a malicious configured JAR.",
       "Runtime tools return BACKEND_UNAVAILABLE until CIRCUITARIUM_LOGISIM_JAR and Java 21 are available.",
+      "On Linux, Logisim 4.1.0 test-vector execution additionally requires a trusted X11 DISPLAY; Xvfb is sufficient on a display-less host.",
       "The JAR is not bundled, downloaded, linked, or redistributed by Circuitarium MCP.",
       "No persistent or live Logisim GUI session is controlled.",
       "The backend runs locally, but returned data may leave the machine through the MCP client or model host.",
@@ -256,7 +257,7 @@ export const CALLABLE_BACKENDS: CallableBackendDescriptor[] = [
       expansion: "Circuitarium Logisim-evolution interoperability adapter",
       targetProduct: "Logisim-evolution",
       scope:
-        "Version-pinned .circ structure, neutral IR conversion, and bounded configured-JAR headless execution.",
+        "Version-pinned .circ structure, neutral IR conversion, and bounded configured-JAR non-interactive execution.",
       status: "experimental",
     },
     compatibilityProfiles: [
@@ -576,8 +577,8 @@ export const VOCABULARY = [
       "The configured simulator accepted and inventoried an artifact; this is stronger than static parsing but does not prove circuit outputs.",
   },
   {
-    term: "headless simulation evidence",
+    term: "non-interactive simulation evidence",
     meaning:
-      "Bounded truth-table or test-vector output produced by the configured simulator subprocess for one exact project digest.",
+      "Bounded truth-table or test-vector output produced without a user-controlled GUI session for one exact project digest; Logisim 4.1.0 test-vector mode still needs X11 or Xvfb on Linux.",
   },
 ] as const;

@@ -28,6 +28,7 @@ const JAVA_LOCALE_ARGUMENTS = [
 const SAFE_JAVA_ENVIRONMENT_KEYS = new Set([
   "APPDATA",
   "COMSPEC",
+  "DISPLAY",
   "FONTCONFIG_PATH",
   "HOME",
   "JAVA_HOME",
@@ -40,6 +41,7 @@ const SAFE_JAVA_ENVIRONMENT_KEYS = new Set([
   "TMPDIR",
   "USERPROFILE",
   "WINDIR",
+  "XAUTHORITY",
   "XDG_CACHE_HOME",
   "XDG_CONFIG_HOME",
   "XDG_DATA_HOME",
@@ -70,6 +72,16 @@ export class LogisimBackendUnavailableError extends LogisimRuntimeError {
   constructor(message: string) {
     super(message, "BACKEND_UNAVAILABLE", false);
     this.name = "LogisimBackendUnavailableError";
+  }
+}
+
+export class LogisimDisplayUnavailableError extends LogisimBackendUnavailableError {
+  constructor() {
+    super(
+      "Logisim-evolution 4.1.0 test-vector mode requires an X11 display on Linux. " +
+        "Run the MCP host under Xvfb (for example, xvfb-run -a) or provide a trusted DISPLAY.",
+    );
+    this.name = "LogisimDisplayUnavailableError";
   }
 }
 
@@ -176,6 +188,7 @@ export type LogisimPathInspector = (path: string) => Promise<LogisimPathKind>;
 export interface LogisimRuntimeOptions {
   environment?: NodeJS.ProcessEnv;
   currentWorkingDirectory?: string;
+  platform?: NodeJS.Platform;
   runtime?: LogisimRuntimeConfig;
   timeoutMs?: number;
   stdoutLimitBytes?: number;
@@ -423,6 +436,7 @@ interface PreparedRuntime {
   runtime: LogisimRuntimeConfig;
   currentWorkingDirectory: string;
   environment: NodeJS.ProcessEnv;
+  platform: NodeJS.Platform;
   timeoutMs: number;
   stdoutLimitBytes: number;
   stderrLimitBytes: number;
@@ -448,6 +462,7 @@ function prepareRuntime(options: LogisimRuntimeOptions): PreparedRuntime {
     runtime: resolvedRuntime(options, currentWorkingDirectory, environment),
     currentWorkingDirectory,
     environment: stableEnvironment,
+    platform: options.platform ?? process.platform,
     timeoutMs: boundedPositiveInteger(
       options.timeoutMs,
       DEFAULT_LOGISIM_TIMEOUT_MS,
@@ -652,7 +667,11 @@ function requireSuccessfulProjectRun(
   );
 }
 
-function parseOutput<T>(operation: string, parser: () => T): T {
+function parseOutput<T>(
+  operation: string,
+  parser: () => T,
+  diagnostic?: string,
+): T {
   try {
     return parser();
   } catch (error) {
@@ -660,9 +679,19 @@ function parseOutput<T>(operation: string, parser: () => T): T {
       throw error;
     }
     throw new LogisimInvalidOutputError(
-      `Logisim Evolution returned invalid ${operation} output: ${error.message}`,
+      `Logisim Evolution returned invalid ${operation} output: ${error.message}` +
+        (diagnostic === undefined ? "" : ` Diagnostic: ${diagnostic}`),
       error,
     );
+  }
+}
+
+function requireTestVectorDisplay(prepared: PreparedRuntime): void {
+  if (
+    prepared.platform === "linux" &&
+    !nonEmptySetting(prepared.environment.DISPLAY)
+  ) {
+    throw new LogisimDisplayUnavailableError();
   }
 }
 
@@ -884,6 +913,7 @@ export async function runLogisimTestVectorWithRuntime(
   const projectPath = await requireProject(project, prepared);
   const vectorPath = await requireTestVector(vector, prepared);
   const circuit = boundedIdentifier(circuitName, "circuitName");
+  requireTestVectorDisplay(prepared);
   const runtime = await probePreparedRuntime(prepared);
   const result = await executeLogisim(
     prepared,
@@ -902,6 +932,9 @@ export async function runLogisimTestVectorWithRuntime(
     prepared.runtime.jarPath,
     projectPath,
     vectorPath,
+    ...(nonEmptySetting(prepared.environment.XAUTHORITY)
+      ? [prepared.environment.XAUTHORITY as string]
+      : []),
   ]);
   if (
     /error loading circuit file|failed to load.*(?:project|circuit)|invalid.*(?:xml|circuit)/i.test(
@@ -921,6 +954,11 @@ export async function runLogisimTestVectorWithRuntime(
       `Logisim Evolution rejected the test request: ${diagnostic}`,
     );
   }
+  if (result.exitCode !== 0) {
+    throw new LogisimExecutionError(
+      `Logisim Evolution exited with code ${result.exitCode ?? "none"}: ${diagnostic}`,
+    );
+  }
 
   const parsed = parseOutput("test-vector", () =>
     parseLogisimTestVector(result.stdout, result.stderr, {
@@ -928,12 +966,8 @@ export async function runLogisimTestVectorWithRuntime(
         ? {}
         : { maxFailures: options.maxFailures }),
     }),
+    diagnostic,
   );
-  if (result.exitCode !== 0 && parsed.failedVectors === 0) {
-    throw new LogisimExecutionError(
-      `Logisim Evolution exited with code ${result.exitCode ?? "none"}: ${diagnostic}`,
-    );
-  }
   return { runtime, result: parsed };
 }
 

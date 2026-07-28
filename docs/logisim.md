@@ -49,6 +49,24 @@ as a currently downloadable release.
 `LOGISIM_JAR` remains a compatibility fallback, but new configurations should
 use `CIRCUITARIUM_LOGISIM_JAR`.
 
+### Linux test-vector display requirement
+
+Logisim-evolution 4.1.0 implements `--test-vector` through its non-TTY AWT
+startup path. On Linux, `logisim_run_test_vector` therefore requires a working
+X11 `DISPLAY`; the statistics and truth-table tools do not. Circuitarium does
+not start or control an X server. On a display-less host, install Xvfb and
+launch the MCP host beneath it:
+
+```text
+xvfb-run -a node /absolute/path/to/circuitarium-mcp/dist/src/bin.js
+```
+
+For an MCP client configuration, use `xvfb-run` as the command and place
+`-a`, `node`, and the server entrypoint at the beginning of `args`. The Java
+JAR remains a direct, shell-free child of the MCP server. If Linux has no
+trusted `DISPLAY`, the test-vector tool returns `BACKEND_UNAVAILABLE` before
+starting Java rather than reporting an opaque parser failure.
+
 The adapter probes `--version` before each runtime operation and accepts only a
 JAR that self-reports Logisim-evolution 4.1.0 using the expected four-line
 response. This is a compatibility check, not publisher authentication: the
@@ -91,8 +109,10 @@ The adapter deliberately distinguishes three levels:
 2. **Project-load evidence** comes from Logisim's `--tty stats` command. It
    proves the configured JAR loaded and inventoried the selected circuit, but
    it does not prove outputs.
-3. **Headless simulation evidence** comes from Logisim's documented truth-table
-   or test-vector commands for one exact project digest.
+3. **Non-interactive simulation evidence** comes from Logisim's documented
+   truth-table or test-vector commands for one exact project digest.
+   Test-vector mode still initializes AWT internally and needs an X11 display
+   on Linux, even though Circuitarium does not automate or expose a live GUI.
 
 The neutral netlist is marked `partial`. It joins exact wire endpoints and
 ports whose coordinates the clean-room adapter can model safely. It does not
@@ -152,7 +172,9 @@ summary instead of treating the process exit code as the test verdict.
 - Every child has a timeout and separate stdout/stderr byte limits.
 - A child is force-terminated when a limit is exceeded.
 - The child receives an allowlisted environment rather than the MCP server's
-  API tokens or Java option-injection variables.
+  API tokens or Java option-injection variables. `DISPLAY` and `XAUTHORITY`
+  are forwarded only when already present so Linux test-vector mode can use a
+  host-provided X server.
 - Compatibility probes use a headless early-exit TTY command that avoids
   initializing Logisim preferences.
 - Project execution forces English output for strict parsing. Upstream
@@ -186,8 +208,9 @@ set CIRCUITARIUM_LOGISIM_JAR=C:\path\to\logisim-evolution-4.1.0-all.jar
 npm run logisim:e2e
 ```
 
-On macOS or Linux, use the equivalent `export` syntax. The dedicated CI job
-downloads the upstream official v4.1.0 release asset and verifies SHA-256
+On macOS, use the equivalent `export` syntax. On display-less Linux, run the
+same command beneath `xvfb-run -a`. The dedicated CI job uses Xvfb, downloads
+the upstream official v4.1.0 release asset, and verifies SHA-256
 `fe6386a3217a591bcc311a4eda49e1f43a389b499dd3d0f6f40f344fc85f2577`
 before checking project load, the eight-row truth table, all 8/8 vectors, and
 all six MCP envelopes. CI then installs the npm tarball and unpacks the MCPB

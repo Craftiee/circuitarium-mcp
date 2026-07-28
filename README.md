@@ -117,7 +117,7 @@ automation. See the [CRUMBLE integration guide](docs/crumble.md).
 | Logisim profile `logisim-evolution/4.1.0` | Experimental support | Hardened `.circ` reader plus configured-JAR project-load, truth-table, and vector checks; CI separately verifies the official v4.1.0 asset SHA-256 |
 | Future CRUMBLE Godot profile | Not supported yet | Requires separate controlled saves, mapping, and reopen testing |
 | Live CRUMB simulation control | Not implemented | Requires a documented or developer-supported bridge |
-| Live Logisim GUI control | Not implemented | Current JAR calls are bounded one-shot headless processes |
+| Live Logisim GUI control | Not implemented | Current JAR calls are bounded one-shot subprocesses; Linux test vectors use host-provided X11 or Xvfb without GUI automation |
 
 Support is an interoperability claim about the tested file format, not a claim
 of affiliation or behavioral equivalence. See [PROVENANCE.md](PROVENANCE.md)
@@ -204,7 +204,9 @@ for the evidence categories used by the project.
   project-load statistics, combinational truth tables, and test vectors. The
   self-report is not binary or publisher authentication.
 - Distinguish static file evidence, JAR project-load evidence, and actual
-  headless truth-table/test-vector evidence in every result. See the
+  non-interactive truth-table/test-vector evidence in every result. Logisim
+  4.1.0 test-vector mode requires an X11 display on Linux; use Xvfb on a
+  display-less host. See the
   [Logisim-evolution adapter guide](docs/logisim.md).
 - Ship an independently authored one-bit full-adder `.circ` project and an
   8/8 passing vector as a reproducible first-run example.
@@ -342,7 +344,7 @@ The published 0.2.1 package contains the first 14 entries only and ends with
 | `logisim_export_netlist` | Export bounded, explicitly partial coordinate-endpoint neutral nets | Reads one file |
 | `logisim_component_stats` | Ask the configured JAR that self-reports 4.1.0 to load and inventory one circuit | Reads one file; stages its exact bytes privately; launches Java, which may update Logisim preferences |
 | `logisim_truth_table` | Run bounded CSV/binary combinational evaluation in the configured JAR that self-reports 4.1.0 | Reads one file; stages its exact bytes privately; launches Java, which may update Logisim preferences |
-| `logisim_run_test_vector` | Run a workspace `.vec`/`.txt` file and return structured pass/fail evidence | Reads two files; stages their exact bytes privately; launches Java, which may update Logisim preferences |
+| `logisim_run_test_vector` | Run a workspace `.vec`/`.txt` file and return structured pass/fail evidence | Reads two files; stages their exact bytes privately; launches Java, which may update Logisim preferences; requires X11 or Xvfb on Linux |
 
 All tools have input and output schemas. Successful tool execution and valid
 domain data are separate states: a validator can return `ok: true` with

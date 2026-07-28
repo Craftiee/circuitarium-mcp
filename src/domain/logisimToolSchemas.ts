@@ -278,7 +278,7 @@ export const LogisimTruthTableDataSchema = z.object({
   valueEncoding: z.literal("binary"),
   delimiter: z.literal("comma"),
   evidence: z.object({
-    kind: z.literal("logisim-headless-simulation"),
+    kind: z.literal("logisim-noninteractive-simulation"),
     proves: z.array(PublicStringSchema),
     doesNotProve: z.array(PublicStringSchema),
   }),
@@ -316,7 +316,7 @@ export const LogisimTestVectorDataSchema = z.object({
   ),
   failureBounds: BoundsSchema,
   evidence: z.object({
-    kind: z.literal("logisim-headless-simulation"),
+    kind: z.literal("logisim-noninteractive-simulation"),
     proves: z.array(PublicStringSchema),
     doesNotProve: z.array(PublicStringSchema),
   }),

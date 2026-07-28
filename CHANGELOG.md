@@ -47,6 +47,10 @@ remains experimental.
   while marking all three project-execution tools non-read-only because
   Logisim may update per-user Java preferences when forcing deterministic
   English output.
+- Detect Logisim 4.1.0's Linux test-vector X11 requirement before launch,
+  forward only host-provided `DISPLAY`/`XAUTHORITY`, run official-JAR CI under
+  Xvfb, and include bounded path-redacted subprocess context when vector output
+  is malformed.
 - Bound every public Logisim result string to 4,096 characters and the
   aggregate serialized result envelope to 2 MiB.
 - Document that these controls reduce project-driven risk but do not provide an

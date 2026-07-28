@@ -5,6 +5,8 @@ import test from "node:test";
 
 import {
   LogisimBackendUnavailableError,
+  LogisimExecutionError,
+  LogisimInvalidOutputError,
   LogisimOutputLimitError,
   LogisimProjectInvalidError,
   LogisimRuntimeVersionMismatchError,
@@ -122,10 +124,12 @@ test("the exact version probe validates Logisim and captures its Java runtime", 
     inspectPath: everyPathIsAFile,
     currentWorkingDirectory: "C:\\workspace",
     environment: {
+      DISPLAY: ":99",
       JAVA_TOOL_OPTIONS: "-Duser.language=fr",
       _JAVA_OPTIONS: "-Duser.country=FR",
       JDK_JAVA_OPTIONS: "-Dfile.encoding=ISO-8859-1",
       NPM_TOKEN: "must-not-reach-the-child",
+      XAUTHORITY: "/tmp/circuitarium-xauthority",
     },
   });
 
@@ -145,6 +149,8 @@ test("the exact version probe validates Logisim and captures its Java runtime", 
   assert.deepEqual(request.args.slice(-3), ["--version", "--tty", "stats"]);
   assert.equal(request.args.includes("--locale"), false);
   assert.equal(request.env.LC_ALL, "en_US.UTF-8");
+  assert.equal(request.env.DISPLAY, ":99");
+  assert.equal(request.env.XAUTHORITY, "/tmp/circuitarium-xauthority");
   assert.equal(request.env.JAVA_TOOL_OPTIONS, undefined);
   assert.equal(request.env._JAVA_OPTIONS, undefined);
   assert.equal(request.env.JDK_JAVA_OPTIONS, undefined);
@@ -349,6 +355,12 @@ test("test-vector failures are valid structured evidence despite exit code zero"
       },
       inspectPath: everyPathIsAFile,
       currentWorkingDirectory: "C:\\workspace",
+      environment: {
+        DISPLAY: ":99",
+        NPM_TOKEN: "must-not-reach-the-child",
+        XAUTHORITY: "/tmp/circuitarium-xauthority",
+      },
+      platform: "linux",
     },
   );
   const result = execution.result;
@@ -378,6 +390,91 @@ test("test-vector failures are valid structured evidence despite exit code zero"
     resolve("C:\\workspace", "vectors.txt"),
     resolve("C:\\workspace", "full-adder.circ"),
   ]);
+  assert.equal(request.env.DISPLAY, ":99");
+  assert.equal(request.env.XAUTHORITY, "/tmp/circuitarium-xauthority");
+  assert.equal(request.env.NPM_TOKEN, undefined);
+});
+
+test("Linux test-vector execution requires an inherited X11 display", async () => {
+  let runnerCalls = 0;
+  await assert.rejects(
+    runLogisimTestVector("full-adder.circ", "Main", "vectors.vec", {
+      environment: {},
+      inspectPath: everyPathIsAFile,
+      platform: "linux",
+      runner: async () => {
+        runnerCalls += 1;
+        return officialVersionProcess();
+      },
+      runtime: fakeRuntime,
+    }),
+    (error: unknown) =>
+      error instanceof LogisimBackendUnavailableError &&
+      error.message.includes("requires an X11 display") &&
+      error.message.includes("xvfb-run -a"),
+  );
+  assert.equal(runnerCalls, 0);
+});
+
+test("test-vector process and parser failures include bounded redacted diagnostics", async () => {
+  const workspace = "C:\\private\\circuitarium-vector-workspace";
+  const absoluteProject = resolve(workspace, "full-adder.circ");
+  const absoluteVector = resolve(workspace, "vectors.vec");
+  const commonOptions = {
+    currentWorkingDirectory: workspace,
+    environment: { DISPLAY: ":99" },
+    inspectPath: everyPathIsAFile,
+    platform: "linux" as const,
+    runtime: fakeRuntime,
+  };
+
+  await assert.rejects(
+    runLogisimTestVector(
+      "full-adder.circ",
+      "Main",
+      "vectors.vec",
+      {
+        ...commonOptions,
+        runner: afterPinnedVersion(() =>
+          completedProcess({
+            exitCode: 1,
+            stderr:
+              `java.awt.AWTError: cannot open ${absoluteProject} ` +
+              `${absoluteVector}`,
+            stderrBytes: 256,
+          }),
+        ),
+      },
+    ),
+    (error: unknown) =>
+      error instanceof LogisimExecutionError &&
+      error.message.includes("java.awt.AWTError") &&
+      error.message.includes("<local-path>") &&
+      !error.message.includes(workspace),
+  );
+
+  await assert.rejects(
+    runLogisimTestVector(
+      "full-adder.circ",
+      "Main",
+      "vectors.vec",
+      {
+        ...commonOptions,
+        runner: afterPinnedVersion(() =>
+          completedProcess({
+            stdout: `Loading ${absoluteVector} without a final summary`,
+            stdoutBytes: 128,
+          }),
+        ),
+      },
+    ),
+    (error: unknown) =>
+      error instanceof LogisimInvalidOutputError &&
+      error.message.includes("did not include a Passed/Failed summary") &&
+      error.message.includes("Diagnostic:") &&
+      error.message.includes("<local-path>") &&
+      !error.message.includes(workspace),
+  );
 });
 
 test("test-vector summary consistency is validated", () => {

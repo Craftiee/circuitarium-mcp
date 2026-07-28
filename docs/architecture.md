@@ -135,8 +135,11 @@ Java processes use argument-array invocation without a shell, an allowlisted
 environment, timeouts, output byte caps, and forced termination. Compatibility
 probes use a preference-free headless early-exit command. Project execution
 forces English output but may update Logisim's per-user Java preferences.
-Public
-Logisim result strings are limited to 4,096 characters, and the aggregate
+Logisim 4.1.0 test-vector mode also initializes AWT: on Linux the host must
+provide a trusted X11 `DISPLAY` (normally through Xvfb on a display-less
+server), while Circuitarium continues to spawn Java directly and does not
+manage that display. Public Logisim result strings are limited to 4,096
+characters, and the aggregate
 serialized envelope is limited to 2 MiB. These controls reduce project-driven
 risk; they are not an operating-system sandbox or a malicious-JAR boundary.
 Circuitarium neither bundles nor links Logisim-evolution, and it controls no

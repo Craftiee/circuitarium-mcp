@@ -626,7 +626,7 @@ not publisher or binary authentication.
 Checks declared Pin direction and input width statically before invoking
 Logisim's CSV/binary table mode. The caller-selected input-bit bound defaults
 to 8 and cannot exceed 12. Returned rows are bounded separately from the
-number Logisim evaluated. This is **headless simulation evidence** for the
+number Logisim evaluated. This is **non-interactive simulation evidence** for the
 selected circuit and exact project digest, not a live session.
 
 ### `logisim_run_test_vector`
@@ -637,6 +637,12 @@ vector identity in addition to `expectedProjectDigest`. A failed assertion
 returns `ok: true` and `data.valid: false` with bounded mismatches. The verdict
 comes from Logisim's validated final pass/fail summary because version 4.1.0
 may exit with process code zero even when vectors fail.
+
+Upstream 4.1.0 routes this flag through its non-TTY AWT startup path. Linux
+therefore requires a trusted X11 `DISPLAY` (Xvfb is sufficient); without one,
+the tool returns typed `BACKEND_UNAVAILABLE` before launching Java.
+Circuitarium forwards only an already-present `DISPLAY` and `XAUTHORITY` and
+never starts or controls an X server.
 
 Before any runtime call, a full-stream safety preflight defaults to denial for
 external file/JAR libraries, VHDL, unsafe or path-bearing runtime features,

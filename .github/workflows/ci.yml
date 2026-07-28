@@ -138,7 +138,7 @@ jobs:
       - name: Run version-pinned JAR and MCP end-to-end checks
         env:
           CIRCUITARIUM_LOGISIM_JAR: ${{ runner.temp }}/logisim-evolution-4.1.0-all.jar
-        run: npm run logisim:e2e
+        run: xvfb-run -a npm run logisim:e2e
 
       - name: Verify installable package with the official JAR
         id: package

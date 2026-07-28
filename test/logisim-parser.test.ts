@@ -4,6 +4,7 @@ import {
 	mkdir,
 	mkdtemp,
 	readFile,
+	realpath,
 	rm,
 	symlink,
 	writeFile,
@@ -16,6 +17,7 @@ import {
 	listLogisimFiles,
 	LogisimFileTooLargeError,
 	LogisimWorkspacePathDeniedError,
+	logisimWorkspaceRef,
 	readLogisimFile,
 	readLogisimVectorFile,
 	resolveLogisimAuxiliaryFile,
@@ -435,6 +437,58 @@ test("workspace reads expose raw digests and lazy UTF-8 while auxiliary paths ar
 	} finally {
 		await rm(root, { recursive: true });
 		await rm(outside, { recursive: true });
+	}
+});
+
+test("canonical child paths remain contained when the configured root uses an OS alias", async (context) => {
+	const temporaryBase = await mkdtemp(
+		join(tmpdir(), "circuitarium-logisim-root-alias-"),
+	);
+	try {
+		const realParent = join(temporaryBase, "real-parent");
+		const workspace = join(realParent, "workspace");
+		await mkdir(realParent);
+		await mkdir(workspace);
+		let configuredRoot = workspace;
+		let canonicalRoot = await realpath(configuredRoot);
+		if (canonicalRoot === configuredRoot) {
+			const aliasParent = join(temporaryBase, "root-alias");
+			try {
+				await symlink(
+					realParent,
+					aliasParent,
+					process.platform === "win32" ? "junction" : "dir",
+				);
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				if (code === "EPERM" || code === "EACCES" || code === "ENOTSUP") {
+					context.skip(`Root aliases are unavailable on this runner (${code})`);
+					return;
+				}
+				throw error;
+			}
+			configuredRoot = join(aliasParent, "workspace");
+			canonicalRoot = await realpath(configuredRoot);
+		}
+		const canonicalProjectPath = join(canonicalRoot, "aliased.circ");
+		await writeFile(canonicalProjectPath, MINIMAL_PROJECT, "utf8");
+
+		const snapshot = await readLogisimFile(canonicalProjectPath, {
+			root: configuredRoot,
+		});
+		assert.equal(snapshot.ref, "aliased.circ");
+		assert.equal(
+			logisimWorkspaceRef(canonicalProjectPath, configuredRoot),
+			"aliased.circ",
+		);
+
+		const listing = await listLogisimFiles(".", { root: configuredRoot });
+		assert.deepEqual(
+			listing.entries.map((entry) => entry.ref),
+			["aliased.circ"],
+		);
+	} finally {
+		await rm(temporaryBase, { recursive: true });
 	}
 });
 

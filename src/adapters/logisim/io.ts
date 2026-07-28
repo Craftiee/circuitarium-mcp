@@ -100,17 +100,47 @@ function absoluteWorkspacePath(path: string, configuredRoot: string): string {
 	return isAbsolute(path) ? resolve(path) : resolve(configuredRoot, path);
 }
 
-function requireContained(root: string, target: string): void {
+function relativeIfContained(root: string, target: string): string | undefined {
 	const relativePath = relative(root, target);
 	if (
 		relativePath === ".." ||
 		relativePath.startsWith(`..${sep}`) ||
 		isAbsolute(relativePath)
 	) {
+		return undefined;
+	}
+	return relativePath;
+}
+
+function requireContained(root: string, target: string): string {
+	const relativePath = relativeIfContained(root, target);
+	if (relativePath === undefined) {
 		throw new LogisimWorkspacePathDeniedError(
 			`Path is outside CIRCUITARIUM_MCP_ROOT (${root}): ${target}`,
 		);
 	}
+	return relativePath;
+}
+
+/**
+ * Accepts the configured spelling of the workspace root or the one spelling
+ * returned by realpath. macOS commonly maps /var to /private/var, while
+ * Windows can expand an 8.3 root before returning a child path.
+ */
+function requireContainedRootAlias(
+	configuredRoot: string,
+	canonicalRoot: string,
+	target: string,
+): string {
+	const relativePath =
+		relativeIfContained(configuredRoot, target) ??
+		relativeIfContained(canonicalRoot, target);
+	if (relativePath === undefined) {
+		throw new LogisimWorkspacePathDeniedError(
+			`Path is outside CIRCUITARIUM_MCP_ROOT (${configuredRoot}): ${target}`,
+		);
+	}
+	return relativePath;
 }
 
 function normalizedRelative(path: string): string {
@@ -128,14 +158,13 @@ async function requireReadablePath(
 ): Promise<{ root: string; target: string }> {
 	const root = await realpath(configuredRoot);
 	const absolutePath = absoluteWorkspacePath(inputPath, configuredRoot);
-	requireContained(configuredRoot, absolutePath);
-	const target = await realpath(absolutePath);
-	requireContained(root, target);
-
 	const lexicalRelative = normalizedRelative(
-		relative(configuredRoot, absolutePath),
+		requireContainedRootAlias(configuredRoot, root, absolutePath),
 	);
-	const canonicalRelative = normalizedRelative(relative(root, target));
+	const target = await realpath(absolutePath);
+	const canonicalRelative = normalizedRelative(
+		requireContained(root, target),
+	);
 	if (lexicalRelative !== canonicalRelative) {
 		throw new LogisimWorkspacePathDeniedError(
 			`Refusing a path that traverses a symbolic link or reparse point: ${absolutePath}`,
@@ -369,15 +398,15 @@ export function logisimWorkspaceRef(
 	root = LOGISIM_WORKSPACE_ROOT,
 ): string {
 	const configuredRoot = resolve(root);
-	const canonicalRoot = realpathSync(configuredRoot);
+	const canonicalRoot = realpathSync.native(configuredRoot);
 	const absolutePath = absoluteWorkspacePath(path, configuredRoot);
-	requireContained(configuredRoot, absolutePath);
-	const target = realpathSync(absolutePath);
-	requireContained(canonicalRoot, target);
 	const lexicalRelative = normalizedRelative(
-		relative(configuredRoot, absolutePath),
+		requireContainedRootAlias(configuredRoot, canonicalRoot, absolutePath),
 	);
-	const canonicalRelative = normalizedRelative(relative(canonicalRoot, target));
+	const target = realpathSync.native(absolutePath);
+	const canonicalRelative = normalizedRelative(
+		requireContained(canonicalRoot, target),
+	);
 	if (lexicalRelative !== canonicalRelative) {
 		throw new LogisimWorkspacePathDeniedError(
 			`Refusing a path that traverses a symbolic link or reparse point: ${absolutePath}`,

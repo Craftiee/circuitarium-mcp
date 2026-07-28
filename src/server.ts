@@ -81,6 +81,7 @@ import {
   parseLogisimCircBytes,
 } from "./adapters/logisim/parser.js";
 import {
+  LogisimDisplayUnavailableError,
   LogisimRuntimeError,
   LogisimRuntimeVersionMismatchError,
   probeLogisimRuntime,
@@ -450,7 +451,7 @@ const server = new McpServer(
   },
   {
     instructions:
-      "Call electronics_capabilities first when the workflow is unclear. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation or simulation ran and found a failing design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. Static parsing and netlists are not simulation evidence. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability; it does not control a live simulation. The Logisim-evolution adapter distinguishes static .circ evidence, JAR project-load evidence, and bounded truth-table/test-vector simulation evidence. Logisim runtime tools require a separately installed official 4.1.0 all-JAR and Java 21. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
+      "Call electronics_capabilities first when the workflow is unclear. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation or simulation ran and found a failing design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. Static parsing and netlists are not simulation evidence. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability; it does not control a live simulation. The Logisim-evolution adapter distinguishes static .circ evidence, JAR project-load evidence, and bounded truth-table/test-vector simulation evidence. Logisim runtime tools require a separately installed official 4.1.0 all-JAR and Java 21; test-vector execution also requires X11 or Xvfb on Linux. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
   },
 );
 
@@ -747,10 +748,16 @@ function classifyError(
           category: "backend",
           message: error.message,
           retryable: false,
-          recovery: [
-            "Set CIRCUITARIUM_LOGISIM_JAR to the official Logisim-evolution 4.1.0 all-JAR.",
-            "Install Java 21 or set CIRCUITARIUM_JAVA to its executable.",
-          ],
+          recovery:
+            error instanceof LogisimDisplayUnavailableError
+              ? [
+                  "Run the MCP host under xvfb-run -a, or start a trusted X server and expose its DISPLAY to the host.",
+                  "Use logisim_truth_table when the circuit is combinational and a test-vector display is unavailable.",
+                ]
+              : [
+                  "Set CIRCUITARIUM_LOGISIM_JAR to the official Logisim-evolution 4.1.0 all-JAR.",
+                  "Install Java 21 or set CIRCUITARIUM_JAVA to its executable.",
+                ],
         };
       case "TIMEOUT":
         return {
@@ -1447,7 +1454,7 @@ const electronicsCapabilitiesTool = server.registerTool(
     const callableBackends = await callableBackendsWithRuntimeStatus();
     return successResult({
       summary:
-        "Circuitarium provides local CRUMB file analysis plus version-pinned Logisim-evolution .circ analysis and optional configured-JAR headless simulation; neither backend controls a live GUI session.",
+        "Circuitarium provides local CRUMB file analysis plus version-pinned Logisim-evolution .circ analysis and optional configured-JAR non-interactive simulation; neither backend controls a live GUI session.",
       data: {
         server: {
           name: SERVER_NAME,
@@ -3588,7 +3595,7 @@ const logisimNetlistTool = server.registerTool(
           {
             tool: "logisim_truth_table",
             reason:
-              "Use Logisim's own headless engine when behavioral output is needed.",
+              "Use Logisim's own non-interactive CLI when behavioral output is needed.",
             arguments: {
               path: loaded.file.ref,
               circuit: sourceCircuit.name,
@@ -3836,7 +3843,7 @@ const logisimTruthTableTool = server.registerTool(
           valueEncoding: table.valueEncoding,
           delimiter: table.delimiter,
           evidence: {
-            kind: "logisim-headless-simulation" as const,
+            kind: "logisim-noninteractive-simulation" as const,
             proves: [
               "The configured JAR self-reported Logisim-evolution 4.1.0 and evaluated the returned staged-project rows.",
               "Values use Logisim's binary CSV truth-table output for the selected circuit.",
@@ -3993,7 +4000,7 @@ const logisimTestVectorTool = server.registerTool(
             truncated: testResult.failuresTruncated,
           },
           evidence: {
-            kind: "logisim-headless-simulation" as const,
+            kind: "logisim-noninteractive-simulation" as const,
             proves: [
               "The configured JAR self-reported Logisim-evolution 4.1.0 and executed the staged project/vector snapshots.",
               "Pass/fail counts come from Logisim's final summary, not its process exit code.",
