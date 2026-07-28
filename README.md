@@ -1,6 +1,19 @@
 # Circuitarium MCP
 
+Run the published local MCP server with one command:
+
+```text
+npx -y circuitarium-mcp@0.2.0
+```
+
+That is a stdio server command for an MCP host, not an interactive shell
+program: it stays open until the host disconnects. Copy a ready-to-use setup
+for [Codex, Claude Code, VS Code, LM Studio, or Jan](examples/client-configs/README.md),
+choose a narrow circuit workspace, then ask the model to call
+`electronics_capabilities`.
+
 [![CI](https://github.com/Craftiee/circuitarium-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Craftiee/circuitarium-mcp/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/circuitarium-mcp.svg)](https://www.npmjs.com/package/circuitarium-mcp)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Give Claude, ChatGPT/Codex, or a local MCP-capable model a safe, typed
@@ -12,17 +25,14 @@ Project analysis is read-only; the sole file-writing tool emits only one of
 five fixed synthetic fixtures. The longer-term neutral layer is designed to
 support additional simulators without making CRUMB the universal data model.
 
-```powershell
-git clone https://github.com/Craftiee/circuitarium-mcp.git
-cd circuitarium-mcp
-npm ci
-npm run check
-```
+![Circuitarium MCP checks a synthetic LED fixture, builds its BOM, and exports its netlist](docs/assets/circuitarium-terminal-demo.gif)
 
-Then connect the compiled `dist/src/server.js` stdio entrypoint using the
-[model-host setup guide](docs/client-setup.md). The current boundary is file
-analysis: no live CRUMB control, arbitrary editing, or circuit simulation is
-claimed.
+Claude Desktop users can download `circuitarium-mcp-0.2.0.mcpb` from the
+matching [GitHub Release](https://github.com/Craftiee/circuitarium-mcp/releases)
+and open it for a one-click local installation. The bundle prompts for the
+circuit workspace and contains the production Node.js dependencies. The
+current boundary is still file analysis: no live CRUMB control, arbitrary
+editing, or circuit simulation is claimed.
 
 > [!IMPORTANT]
 > Circuitarium MCP and its CRUMBLE integration are independent, unofficial
@@ -180,6 +190,14 @@ simulated or validated as electrically correct.
 
 Requirements: a supported Node.js release listed in `package.json`.
 
+For a published-package setup, use the pinned `npx` command shown at the top
+of this README in one of the
+[copyable client configurations](examples/client-configs/README.md). Set
+`CIRCUITARIUM_MCP_ROOT` to the smallest directory that should contain the
+circuits available to the model.
+
+To develop or verify the server from source:
+
 ```powershell
 git clone https://github.com/Craftiee/circuitarium-mcp.git
 cd circuitarium-mcp
@@ -188,9 +206,9 @@ npm run check
 node dist/src/server.js
 ```
 
-The packaged `circuitarium-mcp` command is install-smoke-tested in CI. Until
-the first npm release is published, use the source-checkout instructions
-above; do not assume the registry package exists yet.
+The packaged `circuitarium-mcp` command and the one-click `.mcpb` bundle are
+install-smoke-tested before publication. Directly running either stdio
+entrypoint waits for an MCP client by design.
 
 Useful CLI commands:
 
@@ -311,8 +329,10 @@ See the [cross-model handoff example](examples/cross-model/handoff.md).
 - `docs/release-checklist.md` — local and GitHub publication gates
 - `ROADMAP.md` — adapter, portable project, simulation, and live-bridge stages
 - `CHANGELOG.md` — public interface and release history
+- `examples/client-configs/` — copyable setup for five MCP hosts
 - `examples/model-host/minimal-system-prompt.txt` — compact, vendor-neutral
   operating rules for a model host
+- `mcpb/` — one-click local bundle manifest and packaging notes
 
 ## Status
 

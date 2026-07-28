@@ -2,9 +2,14 @@
 
 ## Supported versions
 
-Until the first tagged release, only the latest revision of `main` receives
-security fixes. This experimental project provides no support guarantee for
-older commits or independently modified copies.
+The first supported release line is `0.2.x`. Security fixes target the latest
+`0.2.x` patch and the latest revision of `main`; older releases, older commits,
+and independently modified copies receive no support guarantee.
+
+| Version | Supported |
+| --- | --- |
+| `0.2.x` | Yes |
+| `< 0.2.0` | No |
 
 ## Reporting a vulnerability
 
@@ -18,8 +23,8 @@ to contact the maintainers without publishing the report.
 
 No project security email is published yet. If private vulnerability reporting
 is not available, open a public issue containing no technical details and ask
-the maintainers to establish a private contact channel. Before a tagged
-release, maintainers must verify that private vulnerability reporting remains
+the maintainers to establish a private contact channel. As part of every
+release, maintainers verify that private vulnerability reporting remains
 enabled or publish another stable private route.
 
 Include the affected revision, operating system, Node.js version, impact,
@@ -28,7 +33,7 @@ fixture and remove personal, proprietary, and third-party circuit data.
 
 Maintainers will acknowledge a private report, assess impact, coordinate a fix,
 and agree on disclosure timing. Response times are best effort while the
-project is pre-release.
+project is maintained by a small, early-stage community.
 
 ## Security boundary
 

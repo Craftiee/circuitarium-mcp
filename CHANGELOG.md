@@ -6,8 +6,20 @@ remains experimental.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.2.0] - 2026-07-26
+
 ### Added
 
+- Uniform `electronics.mcp/0.2` result envelopes and capability discovery.
+- Portable experiment validation.
+- CRUMB 1.3.5 Unity-era file inspection, validation, and bounded semantic
+  analysis.
+- Version-pinned component and IC catalogs.
+- Five synthetic CRUMB fixtures.
+- Cross-model handoff guards using project digests.
+- Default source redaction and bounded handling for EEPROM and annotation data.
 - Six new read-only CRUMB tools: `crumb_list_projects` (workspace discovery
   with digests), `crumb_get_component` (single-component detail with windowed
   firmware source), `crumb_export_netlist` (jumper-collapsed nets with
@@ -75,11 +87,21 @@ remains experimental.
   data, connection membership, summaries, and diagnostics.
 - Typed `INVALID_ARGUMENT` envelopes for malformed registered-tool calls while
   retaining strict published input schemas.
-- An installable `circuitarium-mcp` package entrypoint and typed ESM export
-  with an allowlisted artifact, installed-package import/MCP handshakes, and
-  release-version coherence checks.
+- An installable `circuitarium-mcp` executable with an allowlisted artifact,
+  installed-package MCP handshakes, and release-version coherence checks. The
+  binary is the only supported package API in this release.
+- Official-Registry metadata through matching `mcpName` and `server.json`
+  identities.
+- A manifest-v0.3 MCPB bundle for one-click Claude Desktop installation, built
+  from the exact verified npm tarball and smoke-tested through all 14 tool
+  registrations plus a synthetic ERC call.
+- An `npx`-first onboarding path with copyable Codex, Claude Code, VS Code,
+  LM Studio, and Jan configurations and a reproducible terminal GIF generated
+  only from live synthetic-fixture output.
 - SHA-pinned CI, package/coverage gates, dependency review, CodeQL scanning,
-  and a protected tag-driven npm publication workflow.
+  and a protected tag-driven release workflow that publishes verified bytes to
+  npm before registering the server with the MCP Registry and creating a
+  GitHub Release.
 - A controlled-observation issue form for community CRUMB format evidence.
 
 ### Changed
@@ -144,16 +166,3 @@ remains experimental.
 - Partial-node comparison retains conservative `opaque-payload`
   classification alongside narrower modeled changes; unused, well-formed
   namespace declarations remain representation-neutral.
-
-## [0.2.0] - 2026-07-25
-
-### Added
-
-- Uniform `electronics.mcp/0.2` result envelopes and capability discovery.
-- Portable experiment validation.
-- CRUMB 1.3.5 Unity-era file inspection, validation, and bounded semantic
-  analysis.
-- Version-pinned component and IC catalogs.
-- Five synthetic CRUMB fixtures.
-- Cross-model handoff guards using project digests.
-- Default source redaction and bounded handling for EEPROM and annotation data.

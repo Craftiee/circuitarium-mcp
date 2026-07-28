@@ -37,14 +37,16 @@ recuse themselves when another maintainer can review it.
 
 ## Reporting
 
-Do not publish sensitive incident details in a repository issue. Use the
-project's private maintainer contact when one is listed. Until that contact is
-configured, use [GitHub's private abuse-reporting
-form](https://support.github.com/contact/report-abuse) for conduct that violates
-GitHub policy. For other project conduct, open an issue containing no incident
-details and ask a maintainer to establish a private channel. Maintainers must
-not request sensitive details in public. This temporary route must be replaced
-with a dedicated private contact before a tagged release.
+Do not publish sensitive incident details in a repository issue. Email private
+conduct reports to
+[daxwickland@gmail.com](mailto:daxwickland@gmail.com). Maintainers must not
+request sensitive details in public.
+
+If the conduct also violates GitHub policy, you may additionally use
+[GitHub's private abuse-reporting
+form](https://support.github.com/contact/report-abuse). Reports sent there are
+handled by GitHub and do not replace contacting the project maintainers when
+project action is needed.
 
 Reports will be handled as privately as practical, reviewed promptly and
 fairly, and shared only with people needed to investigate or protect those

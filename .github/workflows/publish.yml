@@ -1,26 +1,25 @@
-name: Publish npm package
+name: Publish release
 
 on:
   push:
     tags:
       - "v*"
 
-permissions:
-  contents: read
-  id-token: write
-
 concurrency:
-  group: npm-publish-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    name: Verify and publish
+    name: Verify and publish npm
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     environment:
       name: npm
       url: https://www.npmjs.com/package/circuitarium-mcp
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Check out tagged source
@@ -53,6 +52,7 @@ jobs:
         run: |
           npm run lint
           npm run check
+          npm run test:coverage
 
       - name: Build and smoke-test package
         id: package
@@ -60,19 +60,264 @@ jobs:
           CIRCUITARIUM_KEEP_PACKAGE: "1"
         run: npm run package:check
 
-      - name: Retain verified package
+      - name: Build and verify MCPB bundle
+        id: mcpb
+        env:
+          CIRCUITARIUM_PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
+          CIRCUITARIUM_KEEP_MCPB: "1"
+        run: npm run mcpb:check
+
+      - name: Retain verified npm package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: circuitarium-mcp-${{ github.ref_name }}
+          name: npm-package-${{ github.ref_name }}
           path: ${{ steps.package.outputs.tarball }}
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish the verified package
+      - name: Retain verified MCPB bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mcpb-bundle-${{ github.ref_name }}
+          path: ${{ steps.mcpb.outputs.bundle }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish the exact verified package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: >-
-          npm publish "${{ steps.package.outputs.tarball }}"
-          --access public
-          --provenance
-          --tag "${{ contains(github.ref_name, '-') && 'next' || 'latest' }}"
+          NPM_DIST_TAG: ${{ contains(github.ref_name, '-') && 'next' || 'latest' }}
+          PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          package_spec="${package_name}@${package_version}"
+          expected_integrity="$(
+            node --input-type=commonjs \
+              -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`);' \
+              "$PACKAGE_TARBALL"
+          )"
+
+          if published_json="$(npm view "$package_spec" dist.integrity --json 2>/dev/null)"; then
+            published_integrity="$(
+              node --input-type=commonjs \
+                -e 'const { readFileSync } = require("node:fs"); const value = JSON.parse(readFileSync(0, "utf8")); if (typeof value !== "string") process.exit(2); process.stdout.write(value);' \
+                <<<"$published_json"
+            )"
+            test "$published_integrity" = "$expected_integrity"
+            echo "$package_spec already exists with the verified tarball integrity."
+          else
+            npm publish "$PACKAGE_TARBALL" \
+              --access public \
+              --provenance \
+              --tag "$NPM_DIST_TAG"
+          fi
+
+      - name: Verify npm publication is visible and byte-identical
+        env:
+          PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          package_spec="${package_name}@${package_version}"
+          expected_integrity="$(
+            node --input-type=commonjs \
+              -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`);' \
+              "$PACKAGE_TARBALL"
+          )"
+          published_integrity=""
+
+          for attempt in {1..18}; do
+            if published_json="$(npm view "$package_spec" dist.integrity --json 2>/dev/null)"; then
+              published_integrity="$(
+                node --input-type=commonjs \
+                  -e 'const { readFileSync } = require("node:fs"); const value = JSON.parse(readFileSync(0, "utf8")); if (typeof value !== "string") process.exit(2); process.stdout.write(value);' \
+                  <<<"$published_json"
+              )"
+              if [[ "$published_integrity" = "$expected_integrity" ]]; then
+                echo "Verified $package_spec at the public npm registry."
+                break
+              fi
+              echo "::error::$package_spec exists with unexpected tarball integrity."
+              exit 1
+            fi
+            echo "Waiting for npm visibility (attempt $attempt/18)..."
+            sleep 10
+          done
+
+          test "$published_integrity" = "$expected_integrity"
+
+  registry:
+    name: Publish MCP Registry metadata
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned MCP publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          curl \
+            --fail \
+            --location \
+            --proto '=https' \
+            --proto-redir '=https' \
+            --silent \
+            --show-error \
+            --tlsv1.2 \
+            --output "$archive" \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.0/$archive"
+          echo "1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf  $archive" |
+            sha256sum --check --strict
+          tar -xzf "$archive" mcp-publisher
+          chmod +x mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Validate Registry metadata
+        run: ./mcp-publisher validate server.json
+
+      - name: Publish and verify Registry version
+        shell: bash
+        run: |
+          set -euo pipefail
+          server_name="$(jq -r '.name' server.json)"
+          server_version="$(jq -r '.version' server.json)"
+          encoded_name="$(jq -nr --arg value "$server_name" '$value|@uri')"
+          registry_url="https://registry.modelcontextprotocol.io/v0.1/servers/${encoded_name}/versions/${server_version}"
+          registry_response=""
+
+          registry_matches() {
+            jq -e \
+              --arg name "$server_name" \
+              --arg version "$server_version" \
+              '.server.name == $name and
+               .server.version == $version and
+               (.server.packages | length) == 1 and
+               .server.packages[0].registryType == "npm" and
+               .server.packages[0].identifier == "circuitarium-mcp" and
+               .server.packages[0].version == $version and
+               .server.packages[0].transport.type == "stdio"' \
+              <<<"$1" >/dev/null
+          }
+
+          if registry_response="$(curl --fail --silent --show-error "$registry_url" 2>/dev/null)"; then
+            if ! registry_matches "$registry_response"; then
+              echo "::error::The existing Registry version does not match server.json."
+              exit 1
+            fi
+            echo "$server_name@$server_version is already present in the MCP Registry."
+          else
+            ./mcp-publisher login github-oidc
+            ./mcp-publisher publish server.json
+          fi
+
+          for attempt in {1..18}; do
+            if registry_response="$(curl --fail --silent --show-error "$registry_url" 2>/dev/null)"; then
+              if registry_matches "$registry_response"; then
+                echo "Verified $server_name@$server_version in the official MCP Registry."
+                break
+              fi
+              echo "::error::The Registry version does not match server.json."
+              exit 1
+            fi
+            echo "Waiting for MCP Registry visibility (attempt $attempt/18)..."
+            sleep 10
+          done
+
+          registry_matches "$registry_response"
+
+  github-release:
+    name: Create GitHub Release
+    needs:
+      - publish
+      - registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download verified npm package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: npm-package-${{ github.ref_name }}
+          path: release-artifacts/npm
+
+      - name: Download verified MCPB bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mcpb-bundle-${{ github.ref_name }}
+          path: release-artifacts/mcpb
+
+      - name: Create release from verified artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t tarballs < <(find release-artifacts/npm -maxdepth 1 -type f -name '*.tgz')
+          mapfile -t bundles < <(find release-artifacts/mcpb -maxdepth 1 -type f -name '*.mcpb')
+          test "${#tarballs[@]}" -eq 1
+          test "${#bundles[@]}" -eq 1
+
+          release_version="${GITHUB_REF_NAME#v}"
+          release_heading="## [${release_version}]"
+          awk -v heading="$release_heading" '
+            index($0, heading) == 1 {
+              capture = 1
+            }
+            capture && /^## \[/ && index($0, heading) != 1 {
+              exit
+            }
+            capture {
+              print
+            }
+          ' CHANGELOG.md > release-notes.md
+          [[ "$(head -n 1 release-notes.md)" == "$release_heading"* ]]
+          grep -Eq '[^[:space:]]' release-notes.md
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit \
+              "$GITHUB_REF_NAME" \
+              --title "Circuitarium MCP $GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+            gh release upload \
+              "$GITHUB_REF_NAME" \
+              "${tarballs[0]}" \
+              "${bundles[0]}" \
+              --clobber
+          else
+            release_flags=(
+              --verify-tag
+              --notes-file release-notes.md
+              --title "Circuitarium MCP $GITHUB_REF_NAME"
+            )
+            if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+              release_flags+=(--prerelease)
+            fi
+            gh release create \
+              "$GITHUB_REF_NAME" \
+              "${tarballs[0]}" \
+              "${bundles[0]}" \
+              "${release_flags[@]}"
+          fi
