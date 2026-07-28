@@ -6,6 +6,56 @@ remains experimental.
 
 ## [Unreleased]
 
+### Added
+
+- Added the experimental `logisim.evolution` backend pinned to
+  Logisim-evolution 4.1.0, bringing the registered surface to 20 tools.
+- Added `logisim_list_projects`, `logisim_analyze_design`, and
+  `logisim_export_netlist` for containment-checked `.circ` discovery, hardened
+  XML structure, and explicitly partial `circuitarium.project-ir/0.1`
+  coordinate netlists with machine-readable conversion losses.
+- Added `logisim_component_stats`, `logisim_truth_table`, and
+  `logisim_run_test_vector`, which invoke a configured, user-supplied JAR that
+  self-reports 4.1.0 through shell-free, timeout- and output-bounded Java
+  subprocesses. Runtime evidence labels that self-report as unauthenticated;
+  project-load, static, and simulation evidence are distinguished explicitly.
+- Added an independently authored one-bit full-adder `.circ` project and 8/8
+  passing vector, plus a pinned official-JAR CI job that verifies the release
+  asset SHA-256 and all six MCP envelopes.
+- Added optional MCPB selectors for the Logisim JAR and Java executable, a
+  Logisim adapter/security guide, CLI parity commands, parser/runtime unit
+  tests, and public setup documentation.
+
+### Security
+
+- Reject Logisim DTD/entity declarations, malformed UTF-8, hostile XML work,
+  workspace escape, symlink/reparse traversal, oversized project/vector
+  artifacts, child-process timeouts, and stdout/stderr floods.
+- Added a full-stream, default-deny runtime preflight for external file/JAR
+  libraries, VHDL, unsafe or path-bearing runtime features, and
+  unknown/malformed constructs.
+- Stage exact already-read project/vector bytes under private fixed-name
+  temporary files, remove them after success or failure, and launch Java
+  without a shell using an allowlisted environment.
+- Isolate test-vector startup from executable-directory defaults by copying
+  the configured JAR under a fixed name in that same private directory before
+  its version probe and vector run.
+- Reuse each operation's immediately preceding version probe as runtime
+  evidence, so each runtime tool launches one probe and one operation process
+  without weakening the 4.1.0 pin.
+- Make version probes preference-free with a headless, early-exit TTY command,
+  while marking all three project-execution tools non-read-only because
+  Logisim may update per-user Java preferences when forcing deterministic
+  English output.
+- Detect Logisim 4.1.0's Linux test-vector X11 requirement before launch,
+  forward only host-provided `DISPLAY`/`XAUTHORITY`, run official-JAR CI under
+  Xvfb, and include bounded path-redacted subprocess context when vector output
+  is malformed.
+- Bound every public Logisim result string to 4,096 characters and the
+  aggregate serialized result envelope to 2 MiB.
+- Document that these controls reduce project-driven risk but do not provide an
+  operating-system sandbox or protect against a malicious configured JAR.
+
 ## [0.2.1] - 2026-07-28
 
 ### Added

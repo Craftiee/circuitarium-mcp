@@ -3,7 +3,9 @@
 ## The important separation
 
 This MCP server does not contain or call an AI model. It exposes electronics
-tools. The host application supplies the model:
+tools. The diagram below describes the Unreleased 0.3.0 source tree; the
+published 0.2.1 package has only the `crumb.file` backend and 14 tools. The host
+application supplies the model:
 
 ```text
 model access (subscription, API, or local runtime)
@@ -12,7 +14,7 @@ MCP-capable model host/client
                          +
 this local Circuitarium MCP process
                          +
-CRUMBLE integration / callable backend: crumb.file
+callable backends: crumb.file + logisim.evolution
 ```
 
 The same model-neutral schemas can be presented to a hosted frontier model or a
@@ -24,7 +26,7 @@ Circuitarium is the general-purpose umbrella. CRUMBLE — Circuit Representation
 CRUMB-specific integration family. The branding does not change the stable
 `electronics_*`, `crumb_*`, or `electronics.mcp/0.2` protocol identifiers.
 
-For the published `0.2.x` package, launch the stdio server with:
+Launch the prior, published 14-tool CRUMBLE release with:
 
 ```powershell
 npx -y circuitarium-mcp@0.2.1
@@ -69,19 +71,22 @@ literally.
 
 ## Package versus source checkout
 
-The tagged package and source checkout launch the same stdio server. Prefer the
-immutable released version in client configuration:
+A tagged source checkout and its same-version package launch the same stdio
+server. During Unreleased development, they intentionally differ: the command
+below installs published 0.2.1 with 14 CRUMBLE tools, while this source tree
+identifies as 0.3.0 and registers 20 tools. Prefer the immutable release when
+you do not need to test the Unreleased Logisim work:
 
 ```text
 Command: npx
 Arguments: -y circuitarium-mcp@0.2.1
 ```
 
-Use a source checkout when contributing or testing an unreleased change. Keep
-the client's working directory or `CIRCUITARIUM_MCP_ROOT` pointed at the
-intended circuit workspace in either case. An npm installation does not bundle
-user projects or make repository-relative fixture paths appear in that
-workspace.
+Use a source checkout when contributing or testing the Unreleased 0.3.0
+Logisim changes. Keep the client's working directory or
+`CIRCUITARIUM_MCP_ROOT` pointed at the intended circuit workspace in either
+case. An npm installation does not bundle user projects or make
+repository-relative fixture paths appear in that workspace.
 
 The default file boundary is the working directory. Set
 `CIRCUITARIUM_MCP_ROOT` to the intended shared project directory when the
@@ -90,9 +95,25 @@ fallback for existing installations; new configurations should use the
 Circuitarium name. Do not point either variable at a broad or sensitive
 directory.
 
-## First calls for every host
+The six Logisim tools are present only in the Unreleased 0.3.0 source tree
+until that release is published. Its three runtime tools are optional. To
+enable them in a source-checkout host configuration, install Java 21 and add:
 
-Give an unfamiliar model this operating sequence:
+```text
+CIRCUITARIUM_LOGISIM_JAR=/absolute/path/to/logisim-evolution-4.1.0-all.jar
+CIRCUITARIUM_JAVA=java
+```
+
+The first value must identify the separately downloaded official 4.1.0
+all-JAR. Omit `CIRCUITARIUM_JAVA` when `java` already resolves to Java 21.
+Static `.circ` discovery, analysis, and partial-IR export need neither Java nor
+the JAR. See [the Logisim adapter guide](logisim.md).
+
+## First calls by release
+
+Give an unfamiliar model this operating sequence. Steps 9 and 10 apply only to
+the Unreleased 0.3.0 source server; published 0.2.1 exposes the CRUMB workflow
+in the other steps:
 
 1. Call `electronics_capabilities`.
 2. Treat only backends with `availability: "callable"` as usable.
@@ -109,9 +130,16 @@ Give an unfamiliar model this operating sequence:
 7. Keep the returned project reference and SHA-256 digest in any handoff.
 8. When continuing a handoff, pass the recorded digest as
    `expectedProjectDigest` on the first CRUMB file read.
-9. Do not claim run, pause, step, signal-read, arbitrary edit, or simulation
-   capability. Netlists and rule findings are static file inference, not
-   simulation output.
+9. For Logisim, use `logisim_list_projects`, then
+   `logisim_analyze_design`. Treat `logisim_export_netlist` as explicitly
+   partial static evidence.
+10. Use `logisim_component_stats`, `logisim_truth_table`, or
+    `logisim_run_test_vector` only when the capability and local JAR
+    configuration allow it. These are one-shot JAR processes, not live
+    sessions.
+11. Do not claim CRUMB run, pause, step, signal-read, arbitrary edit, or
+    simulation capability. CRUMB netlists and rule findings are static file
+    inference, not simulation output.
 
 Embedded firmware/source is redacted by default. Set the explicit source
 inclusion option only when the user's task actually requires source text and
@@ -181,7 +209,10 @@ Claude Desktop users can download
 [GitHub Release](https://github.com/Craftiee/circuitarium-mcp/releases) and
 open it. The protected release workflow builds that bundle from the same
 verified npm tarball, validates its manifest, and smoke-tests its 14-tool stdio
-server against a synthetic fixture before attaching it.
+server against a synthetic fixture before attaching it. That published bundle
+has a workspace selector only. The Unreleased 0.3.0 source manifest exposes 20
+tools and optional Logisim JAR/Java file selectors; no matching 0.3.0 MCPB is
+published yet.
 
 The host uses the Claude access already configured there. The electronics
 server itself does not need an Anthropic API key.

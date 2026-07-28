@@ -1,5 +1,9 @@
 # Architecture
 
+> This document describes the Unreleased 0.3.0 source tree. The published
+> 0.2.1 npm package and MCPB remain the 14-tool CRUMBLE release without the
+> Logisim-evolution adapter.
+
 ## Decision
 
 Keep the model host, MCP contract, portable electronics model, and
@@ -20,19 +24,25 @@ ChatGPT / Codex / Claude / local agent host
           Circuitarium MCP contract v0.2
               | capabilities | validation |
                          |
-                CRUMBLE file backend
- discover / catalog / inspect / validate / analyze / compare
- component / netlist / ERC / BOM / IC reference / fixture
-           profile: crumb.unity/1.3.5
+          +--------------+------------------+
+          |                                 |
+   CRUMBLE file backend          Logisim-evolution adapter
+ inspect / compare / ERC         static .circ -> partial IR
+ profile: crumb.unity/1.3.5      stats / table / test vector
+          |                      profile: 4.1.0 + Java 21
+          +--------------+------------------+
                          |
-          workspace-relative .cru artifact
-                + immutable SHA-256 digest
+       workspace-relative artifact + immutable SHA-256 digest
 ```
 
-Only `crumb.file` is callable through this server today. Thirteen of the
-fourteen registered tools have no file-writing side effect; the remaining tool
-can create only one of five fixed synthetic fixtures and never overwrites.
-None is a bridge into a running CRUMB process.
+`crumb.file` and `logisim.evolution` are callable through this server. No tool
+modifies an input circuit. One tool can create only one of five fixed
+synthetic CRUMB fixtures and never overwrites. Three Logisim tools launch a
+bounded, one-shot configured-JAR subprocess; upstream Logisim may update its
+per-user Java preferences, so those tools advertise `readOnlyHint: false`.
+None is a bridge into a running GUI process. Runtime output is labeled
+separately from static file evidence. The user-supplied JAR must self-report
+4.1.0; that response is not proof that it is the official binary.
 
 The branding boundary does not change protocol identity. Neutral tools retain
 the `electronics_*` namespace, CRUMB-specific tools retain `crumb_*`, and the
@@ -51,7 +61,7 @@ Portable project / experiments / artifacts
      |
      +-- CRUMBLE / CRUMB file adapter (callable now)
      +-- Wokwi cloud companion (external, separate server)
-     +-- Logisim-evolution adapter (planned)
+     +-- Logisim-evolution adapter (callable static + optional JAR runtime)
      +-- deterministic digital engine (planned)
      +-- SPICE / Verilator / GPU / FPGA tiers (research roadmap)
 ```
@@ -88,6 +98,53 @@ Portable project / experiments / artifacts
    access happens locally, but a cloud MCP client or model host may receive the
    returned data. Capability discovery therefore reports
    `dataLeavesMachine: "depends"`.
+10. **Static load and simulation are distinct evidence classes.** Parsing
+    `.circ` XML proves structure; `--tty stats` proves the configured JAR loaded
+    the project; truth tables and vectors provide bounded behavioral evidence
+    only for the exact artifact digest and selected circuit. Runtime execution
+    uses the exact already-read byte snapshot, not a second read of the caller's
+    path. A 4.1.0 self-report is compatibility evidence, not binary or publisher
+    authentication.
+
+## Current Logisim-evolution backend
+
+The adapter is pinned to `logisim-evolution/4.1.0` and has two independent
+layers:
+
+- a strict, streaming `.circ` reader that rejects DTDs/entities, malformed
+  UTF-8, hostile XML work, and workspace escape;
+- a shell-free Java runner for Logisim's documented `--tty stats`,
+  `--tty table,csv,binary`, and `--test-vector` modes.
+
+Static conversion targets `circuitarium.project-ir/0.1`. Its netlist is always
+marked partial because the clean-room reader does not guess every built-in
+component's port geometry, mid-wire junction behavior, timing, or state.
+Conversion losses are first-class data rather than hidden assumptions.
+
+The runtime JAR is user-supplied and probed for an exact self-reported version
+of 4.1.0. That probe is not publisher or digest authentication. Before launch,
+a full-stream safety preflight defaults to denial for external file/JAR
+libraries, VHDL, path-bearing or unsafe runtime features, and unknown or
+malformed constructs. Accepted project/vector snapshots are staged byte for
+byte under private fixed-name temporary files and removed after success or
+failure. For non-TTY test-vector startup, the configured JAR is copied into
+that directory before its probe and operation so Logisim cannot discover
+`logisim-defaults` beside the configured source JAR.
+
+Java processes use argument-array invocation without a shell, an allowlisted
+environment, timeouts, output byte caps, and forced termination. Compatibility
+probes use a preference-free headless early-exit command. Project execution
+forces English output but may update Logisim's per-user Java preferences.
+Logisim 4.1.0 test-vector mode also initializes AWT: on Linux the host must
+provide a trusted X11 `DISPLAY` (normally through Xvfb on a display-less
+server), while Circuitarium continues to spawn Java directly and does not
+manage that display. Public Logisim result strings are limited to 4,096
+characters, and the aggregate
+serialized envelope is limited to 2 MiB. These controls reduce project-driven
+risk; they are not an operating-system sandbox or a malicious-JAR boundary.
+Circuitarium neither bundles nor links Logisim-evolution, and it controls no
+persistent session. CI alone downloads the upstream official v4.1.0 asset and
+verifies its pinned SHA-256 for E2E coverage. See [logisim.md](logisim.md).
 
 The normative MCP result rules are in [contract.md](contract.md).
 
@@ -173,16 +230,17 @@ general editor or placement tool is exposed.
 
 ### Distribution and verification boundary
 
-The source checkout and npm artifact expose the same stdio server and tool
-envelopes. For the `0.2.x` release line, the npm package supports only the
-`circuitarium-mcp` executable; source exports used internally by the repository
-are not a JavaScript compatibility promise. Packaging is allowlisted and
-verified from an isolated packed tarball: CI installs that exact artifact in a
-clean consumer and completes an MCP handshake through the packaged executable.
-Pull requests additionally run the supported Node/OS matrix, lint, coverage,
-dependency review, CodeQL, and deterministic fixture verification. These gates
-establish build and packaging integrity; they do not add circuit-simulation or
-CRUMB-runtime capabilities.
+A tagged source checkout and its same-version npm artifact expose the same
+stdio server and tool envelopes. The Unreleased 0.3.0 source tree intentionally
+differs from the published 14-tool 0.2.1 artifact until 0.3.0 is released. The
+npm package supports only the `circuitarium-mcp` executable; source exports
+used internally by the repository are not a JavaScript compatibility promise.
+Packaging is allowlisted and verified from an isolated packed tarball: CI
+installs that exact artifact in a clean consumer and completes an MCP handshake
+through the packaged executable. Pull requests additionally run the supported
+Node/OS matrix, lint, coverage, dependency review, CodeQL, and deterministic
+fixture verification. These gates establish build and packaging integrity;
+they do not add CRUMB-runtime or live-session capabilities.
 
 ## Why a neutral electronics layer matters
 
@@ -269,9 +327,13 @@ capabilities remain separate from the local `crumb.file` backend.
 
 ### Logisim-evolution
 
-Use `.circ` as a version-pinned adapter format, not the canonical database.
-Potential headless test-vector and test-circuit workflows need their own
-implementation and verification. No Logisim tool is registered today.
+The Unreleased 0.3.0 source tree registers six version-pinned Logisim tools:
+three static `.circ`/partial-IR tools and three bounded configured-JAR
+execution tools. The configured JAR must self-report 4.1.0 but is not
+authenticated as the official asset. `.circ` remains an adapter format rather
+than the canonical database, and every runtime request is a one-shot subprocess
+rather than a live session. The next work is broader controlled coverage for
+subcircuits, buses, sequential state, and explicit conversion losses.
 
 ### Deterministic digital engine
 

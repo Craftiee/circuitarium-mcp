@@ -55,11 +55,53 @@ import {
   writeCruFile,
 } from "./adapters/crumb/io.js";
 import {
+  listLogisimFiles,
+  logisimWorkspaceRef,
+  LogisimFileChangedDuringReadError,
+  LogisimFileTooLargeError,
+  LogisimNotADirectoryError,
+  LogisimNotAFileError,
+  LogisimWorkspacePathDeniedError,
+  readLogisimFile,
+  readLogisimVectorFile,
+  UnsupportedLogisimPathError,
+} from "./adapters/logisim/io.js";
+import {
+  LOGISIM_ADAPTER_VERSION,
+  LOGISIM_BACKEND_ID,
+  LOGISIM_COMPATIBILITY_PROFILE,
+  LogisimFormatError,
+  MAX_LOGISIM_CIRC_BYTES,
+  assessLogisimRuntimeSafety,
+  summarizeLogisimCircuitIo,
+  type LogisimProject,
+} from "./adapters/logisim/model.js";
+import {
+  logisimProjectToIr,
+  parseLogisimCircBytes,
+} from "./adapters/logisim/parser.js";
+import {
+  LogisimDisplayUnavailableError,
+  LogisimRuntimeError,
+  LogisimRuntimeVersionMismatchError,
+  probeLogisimRuntime,
+  resolveLogisimRuntimeConfig,
+  runLogisimStatisticsWithRuntime,
+  runLogisimTestVectorWithRuntime,
+  runLogisimTruthTableWithRuntime,
+  type LogisimRuntimeProbe,
+} from "./adapters/logisim/runtime.js";
+import {
+  LogisimRuntimeJarStagingError,
+  withStagedLogisimArtifacts,
+} from "./adapters/logisim/staging.js";
+import {
   CALLABLE_BACKENDS,
   GENERAL_TOOLSET,
   ROADMAP_BACKENDS,
   VOCABULARY,
   WORKFLOWS,
+  type CallableBackendDescriptor,
 } from "./domain/capabilities.js";
 import {
   boundCollection,
@@ -111,6 +153,15 @@ import {
   CrumbWorkspaceDataSchema,
   ExperimentValidationDataSchema,
 } from "./domain/toolSchemas.js";
+import {
+  LogisimAnalysisDataSchema,
+  LogisimComponentStatsDataSchema,
+  MAX_LOGISIM_PUBLIC_STRING_CHARACTERS,
+  LogisimNetlistDataSchema,
+  LogisimTestVectorDataSchema,
+  LogisimTruthTableDataSchema,
+  LogisimWorkspaceDataSchema,
+} from "./domain/logisimToolSchemas.js";
 import { SERVER_NAME } from "./identity.js";
 import { executeServerCommand, processCommandIo } from "./terminal.js";
 
@@ -119,6 +170,17 @@ const CRUMB_ADAPTER_VERSION = "crumb.file/0.2";
 const ADAPTER_TESTED_CRUMB_COMPATIBILITY = [
   "CRUMB 1.3.5 (Unity save format)",
 ];
+const LOGISIM_RUNTIME_VERSION = "4.1.0";
+const MAX_LOGISIM_CIRCUITS_RETURNED = 128;
+const MAX_LOGISIM_LIBRARIES_RETURNED = 128;
+const MAX_LOGISIM_PINS_RETURNED = 256;
+const MAX_LOGISIM_COMPONENT_TYPES_RETURNED = 256;
+const MAX_LOGISIM_IR_LOSSES_RETURNED = 128;
+const MAX_LOGISIM_NET_NODES_RETURNED = 256;
+const MAX_LOGISIM_NET_WIRES_RETURNED = 512;
+const MAX_LOGISIM_NET_MEMBERS_RETURNED = 256;
+const MAX_LOGISIM_TEST_MISMATCHES_RETURNED = 256;
+const MAX_LOGISIM_TRUTH_TABLE_INPUT_BITS = 12;
 const serverInstanceId = randomUUID();
 const MAX_PROJECT_REF_CHARACTERS = 4096;
 const MAX_PROJECT_DIGEST_CHARACTERS = 71;
@@ -245,7 +307,7 @@ const CrumbGetComponentInputSchema = z.object({
   sourceOffset: z
     .number()
     .int()
-    .min(0)
+    .min(1)
     .default(0)
     .describe("Character offset into embedded firmware source for continued reads"),
   topologyMode: z
@@ -311,6 +373,67 @@ const CrumbErcInputSchema = z.object({
     .default("known-board-v1.3.5"),
   applySwitchStates: z.boolean().default(false),
 });
+const LogisimProjectReadInputSchema = z.object({
+  path: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_REF_CHARACTERS)
+    .describe("Workspace-relative .circ project ref"),
+  expectedProjectDigest: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_DIGEST_CHARACTERS)
+    .optional()
+    .describe("Optional sha256: digest from a prior cross-model handoff"),
+  circuit: z
+    .string()
+    .min(1)
+    .max(256)
+    .optional()
+    .describe("Circuit name; defaults to the declared main circuit"),
+});
+const LogisimListProjectsInputSchema = z.object({
+  dir: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_REF_CHARACTERS)
+    .default(".")
+    .describe("Workspace-relative directory ref to list"),
+  recursive: z.boolean().default(true),
+  limit: z.number().int().min(1).max(500).default(100),
+});
+const LogisimNetlistInputSchema = LogisimProjectReadInputSchema.extend({
+  cursor: z.string().min(1).max(MAX_CURSOR_CHARACTERS).optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+});
+const LogisimComponentStatsInputSchema = LogisimProjectReadInputSchema.extend({
+  limit: z.number().int().min(1).max(2_048).default(256),
+  timeoutMs: z.number().int().min(1_000).max(120_000).default(15_000),
+});
+const LogisimTruthTableInputSchema = LogisimProjectReadInputSchema.extend({
+  maxInputBits: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_LOGISIM_TRUTH_TABLE_INPUT_BITS)
+    .default(8),
+  limit: z.number().int().min(1).max(4_096).default(256),
+  timeoutMs: z.number().int().min(1_000).max(120_000).default(15_000),
+});
+const LogisimTestVectorInputSchema = LogisimProjectReadInputSchema.extend({
+  vectorPath: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_REF_CHARACTERS)
+    .describe("Workspace-relative .vec or .txt test-vector ref"),
+  expectedVectorDigest: z
+    .string()
+    .min(1)
+    .max(MAX_PROJECT_DIGEST_CHARACTERS)
+    .optional(),
+  maxFailures: z.number().int().min(1).max(1_024).default(100),
+  timeoutMs: z.number().int().min(1_000).max(120_000).default(15_000),
+});
 
 interface EnvelopeToolRegistration {
   inputSchema: z.ZodType;
@@ -328,7 +451,7 @@ const server = new McpServer(
   },
   {
     instructions:
-      "Call electronics_capabilities first when the workflow is unclear. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation ran and found an invalid design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. The component catalog returns machine-readable evidenceVocabulary; do not treat confidence strings as electrical-model accuracy. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability. Its callable backend reads and writes save files only; it does not control a live simulation. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
+      "Call electronics_capabilities first when the workflow is unclear. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation or simulation ran and found a failing design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. Static parsing and netlists are not simulation evidence. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability; it does not control a live simulation. The Logisim-evolution adapter distinguishes static .circ evidence, JAR project-load evidence, and bounded truth-table/test-vector simulation evidence. Logisim runtime tools require a separately installed official 4.1.0 all-JAR and Java 21; test-vector execution also requires X11 or Xvfb on Linux. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
   },
 );
 
@@ -394,6 +517,26 @@ function makeCrumbContext(
   });
 }
 
+function makeLogisimContext(
+  overrides: Partial<
+    Omit<
+      ContractContext,
+      | "serverInstanceId"
+      | "sessionScope"
+      | "backendId"
+      | "adapterVersion"
+      | "compatibilityProfile"
+    >
+  > = {},
+): ContractContext {
+  return makeContext({
+    backendId: LOGISIM_BACKEND_ID,
+    adapterVersion: LOGISIM_ADAPTER_VERSION,
+    compatibilityProfile: LOGISIM_COMPATIBILITY_PROFILE,
+    ...overrides,
+  });
+}
+
 function result<T>(envelope: ContractEnvelope<T>) {
   const structuredContent = envelope as unknown as Record<string, unknown>;
   return {
@@ -410,13 +553,15 @@ function result<T>(envelope: ContractEnvelope<T>) {
   };
 }
 
-function successResult<T>(options: {
+interface SuccessResultOptions<T> {
   summary: string;
   data: T;
   diagnostics?: ContractEnvelope<T>["diagnostics"];
   context?: ContractContext;
   nextActions?: NextAction[];
-}) {
+}
+
+function successResult<T>(options: SuccessResultOptions<T>) {
   return result<T>({
     contractVersion: CONTRACT_VERSION,
     ok: true,
@@ -480,6 +625,36 @@ function requireExpectedProjectDigest(
   }
 }
 
+function requireExpectedVectorDigest(
+  expectedVectorDigest: string | undefined,
+  actualVectorDigest: string,
+): void {
+  if (expectedVectorDigest === undefined) {
+    return;
+  }
+  if (!/^sha256:[0-9a-f]{64}$/.test(expectedVectorDigest)) {
+    throw invalidArgument(
+      "expectedVectorDigest must be a lowercase SHA-256 value prefixed with sha256:.",
+      "expectedVectorDigest",
+      ["Copy the vector digest unchanged from a prior tool result."],
+    );
+  }
+  if (expectedVectorDigest !== actualVectorDigest) {
+    throw new ContractFailure({
+      code: "PROJECT_STATE_CONFLICT",
+      category: "project",
+      message:
+        "The test-vector bytes changed since the supplied vector digest was recorded.",
+      retryable: false,
+      argumentPath: "expectedVectorDigest",
+      recovery: [
+        "Run the test vector again without expectedVectorDigest.",
+        "Review the changed vector digest before accepting new simulation evidence.",
+      ],
+    });
+  }
+}
+
 function nodeErrorCode(error: unknown): string | undefined {
   return error &&
     typeof error === "object" &&
@@ -498,6 +673,150 @@ function classifyError(
   }
 
   const filesystemCode = nodeErrorCode(error);
+  if (error instanceof LogisimWorkspacePathDeniedError) {
+    return {
+      code: "PATH_DENIED",
+      category: "filesystem",
+      message: "The requested Logisim path is outside the configured MCP workspace.",
+      retryable: false,
+      recovery: ["Use a workspace-relative ref returned by logisim_list_projects."],
+    };
+  }
+  if (error instanceof LogisimNotAFileError) {
+    return {
+      code: "NOT_FOUND",
+      category: "filesystem",
+      message: "The requested Logisim path is not a regular file.",
+      retryable: false,
+      recovery: ["Check the workspace-relative project or vector ref."],
+    };
+  }
+  if (error instanceof LogisimNotADirectoryError) {
+    return {
+      code: "INVALID_ARGUMENT",
+      category: "argument",
+      message: "The requested Logisim directory ref is not a directory.",
+      retryable: false,
+      argumentPath: "dir",
+      recovery: ["Pass a workspace-relative directory ref, or omit dir."],
+    };
+  }
+  if (error instanceof UnsupportedLogisimPathError) {
+    return {
+      code: "UNSUPPORTED_FORMAT",
+      category: "format",
+      message: "The Logisim adapter requires a .circ project or .vec/.txt vector.",
+      retryable: false,
+      recovery: ["Use a supported workspace-relative Logisim artifact ref."],
+    };
+  }
+  if (error instanceof LogisimFileTooLargeError) {
+    return {
+      code: "QUOTA_EXCEEDED",
+      category: "filesystem",
+      message: "The Logisim artifact exceeds the fixed read-size safety limit.",
+      retryable: false,
+      recovery: ["Use a smaller .circ project or test-vector file."],
+    };
+  }
+  if (error instanceof LogisimFileChangedDuringReadError) {
+    return {
+      code: "PROJECT_STATE_CONFLICT",
+      category: "project",
+      message: "The Logisim artifact changed during one coherent read.",
+      retryable: true,
+      recovery: ["Wait for the save operation to finish, then retry."],
+    };
+  }
+  if (error instanceof LogisimFormatError) {
+    return {
+      code: "FORMAT_INVALID",
+      category: "format",
+      message: "The file is not a supported, safely parseable Logisim .circ project.",
+      retryable: false,
+      recovery: [
+        "Open and resave the project with Logisim-evolution 4.1.0.",
+        "Inspect the file for malformed XML or unsupported encoding.",
+      ],
+    };
+  }
+  if (error instanceof LogisimRuntimeError) {
+    switch (error.code) {
+      case "BACKEND_UNAVAILABLE":
+        return {
+          code: "BACKEND_UNAVAILABLE",
+          category: "backend",
+          message: error.message,
+          retryable: false,
+          recovery:
+            error instanceof LogisimDisplayUnavailableError
+              ? [
+                  "Run the MCP host under xvfb-run -a, or start a trusted X server and expose its DISPLAY to the host.",
+                  "Use logisim_truth_table when the circuit is combinational and a test-vector display is unavailable.",
+                ]
+              : [
+                  "Set CIRCUITARIUM_LOGISIM_JAR to the official Logisim-evolution 4.1.0 all-JAR.",
+                  "Install Java 21 or set CIRCUITARIUM_JAVA to its executable.",
+                ],
+        };
+      case "TIMEOUT":
+        return {
+          code: "TIMEOUT",
+          category: "backend",
+          message: error.message,
+          retryable: true,
+          recovery: ["Retry with a larger timeoutMs, or simplify the circuit."],
+        };
+      case "OUTPUT_LIMIT":
+        return {
+          code: "QUOTA_EXCEEDED",
+          category: "backend",
+          message: error.message,
+          retryable: false,
+          recovery: ["Reduce circuit inputs or use a smaller test vector."],
+        };
+      case "PROJECT_INVALID":
+        return {
+          code: "PROJECT_INVALID",
+          category: "project",
+          message: error.message,
+          retryable: false,
+          recovery: ["Open and repair the project in Logisim-evolution 4.1.0."],
+        };
+      case "TEST_VECTOR_INVALID":
+        return {
+          code: "INVALID_ARGUMENT",
+          category: "argument",
+          message: error.message,
+          retryable: false,
+          argumentPath: "vectorPath",
+          recovery: ["Check the vector header, circuit name, and expected pin labels."],
+        };
+      case "EXECUTION_FAILED":
+      case "OUTPUT_INVALID":
+        return {
+          code: "BACKEND_UNAVAILABLE",
+          category: "backend",
+          message: error.message,
+          retryable: false,
+          recovery: [
+            "Replace the configured JAR with a trusted upstream Logisim-evolution 4.1.0 release asset and verify its SHA-256.",
+            "Retry the same project directly with Logisim's documented CLI.",
+          ],
+        };
+    }
+  }
+  if (error instanceof LogisimRuntimeJarStagingError) {
+    return {
+      code: "BACKEND_UNAVAILABLE",
+      category: "backend",
+      message: error.message,
+      retryable: false,
+      recovery: [
+        "Configure a trusted Logisim-evolution 4.1.0 all-JAR that can be copied into the private runtime directory.",
+      ],
+    };
+  }
   if (error instanceof WorkspacePathDeniedError) {
     return {
       code: "PATH_DENIED",
@@ -594,24 +913,55 @@ function errorResult(
   options: {
     context?: ContractContext;
     fallback?: "INTERNAL_ERROR" | "FORMAT_INVALID";
+    vectorConflict?: {
+      projectPath: string;
+      vectorPath: string;
+      circuit?: string;
+    };
   } = {},
 ) {
   const details = classifyError(error, options.fallback);
   const context = options.context ?? makeContext();
+  const isLogisim = context.backendId === LOGISIM_BACKEND_ID;
   const nextActions: NextAction[] =
-    details.code === "PROJECT_STATE_CONFLICT" && context.projectRef !== undefined
+    details.code === "PROJECT_STATE_CONFLICT" &&
+    details.argumentPath === "expectedVectorDigest" &&
+    options.vectorConflict !== undefined
       ? [
           {
-            tool: "crumb_analyze_design",
+            tool: "logisim_run_test_vector",
+            reason:
+              "Re-run the changed vector without a stale vector digest, then review the new evidence.",
+            arguments: {
+              path: options.vectorConflict.projectPath,
+              vectorPath: options.vectorConflict.vectorPath,
+              ...(options.vectorConflict.circuit === undefined
+                ? {}
+                : { circuit: options.vectorConflict.circuit }),
+              ...(context.projectDigest === undefined
+                ? {}
+                : { expectedProjectDigest: context.projectDigest }),
+            },
+          },
+        ]
+      : details.code === "PROJECT_STATE_CONFLICT" &&
+          context.projectRef !== undefined
+      ? [
+          {
+            tool: isLogisim
+              ? "logisim_analyze_design"
+              : "crumb_analyze_design",
             reason:
               "Re-baseline the changed artifact and review its current digest.",
             arguments: {
               path: context.projectRef,
-              view: "summary",
+              ...(isLogisim ? {} : { view: "summary" }),
             },
           },
         ]
-      : details.code === "PROJECT_INVALID" && context.projectRef !== undefined
+      : details.code === "PROJECT_INVALID" &&
+          context.projectRef !== undefined &&
+          !isLogisim
         ? [
             {
               tool: "crumb_validate_design",
@@ -642,6 +992,88 @@ function errorResult(
     nextActions,
     error: details,
   });
+}
+
+const MAX_LOGISIM_ENVELOPE_BYTES = 2 * 1024 * 1024;
+
+function logisimPublicText(
+  value: string,
+  truncation: { count: number },
+): string {
+  if (value.length <= MAX_LOGISIM_PUBLIC_STRING_CHARACTERS) {
+    return value;
+  }
+  truncation.count += 1;
+  const marker =
+    `... [truncated; characters=${value.length}; ` +
+    `bytes=${Buffer.byteLength(value, "utf8")}; ${sha256(value)}]`;
+  return `${value.slice(
+    0,
+    Math.max(0, MAX_LOGISIM_PUBLIC_STRING_CHARACTERS - marker.length),
+  )}${marker}`;
+}
+
+function sanitizeLogisimPublicValue(
+  value: unknown,
+  truncation: { count: number },
+): unknown {
+  if (typeof value === "string") {
+    return logisimPublicText(value, truncation);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeLogisimPublicValue(item, truncation));
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        sanitizeLogisimPublicValue(item, truncation),
+      ]),
+    );
+  }
+  return value;
+}
+
+function logisimSuccessResult<T>(options: SuccessResultOptions<T>) {
+  const truncation = { count: 0 };
+  const sanitized = sanitizeLogisimPublicValue(
+    options,
+    truncation,
+  ) as SuccessResultOptions<T>;
+  if (truncation.count > 0) {
+    sanitized.diagnostics = [
+      ...(sanitized.diagnostics ?? []),
+      {
+        severity: "warning",
+        code: "logisim-public-text-truncated",
+        path: "data",
+        message:
+          `${truncation.count} oversized text value(s) were replaced with ` +
+          "bounded previews carrying original character/byte counts and SHA-256 digests.",
+      },
+    ];
+  }
+  const candidate = successResult(sanitized);
+  const serialized = candidate.content[0]?.text ?? "";
+  if (
+    Buffer.byteLength(serialized, "utf8") <= MAX_LOGISIM_ENVELOPE_BYTES
+  ) {
+    return candidate;
+  }
+  return errorResult(
+    new ContractFailure({
+      code: "QUOTA_EXCEEDED",
+      category: "backend",
+      message:
+        "The bounded Logisim result still exceeds the fixed MCP response-byte limit.",
+      retryable: false,
+      recovery: [
+        "Request a smaller page or lower result limit.",
+        "Use a smaller circuit or shorter labels before retrying.",
+      ],
+    }),
+    { context: options.context ?? makeLogisimContext() },
+  );
 }
 
 function compactInspection(inspection: CruInspection) {
@@ -675,11 +1107,188 @@ function crumbArtifact(content: string | Buffer, ref?: string) {
   };
 }
 
+function logisimArtifact(
+  file: Awaited<ReturnType<typeof readLogisimFile>>,
+  project: LogisimProject,
+) {
+  return {
+    ref: file.ref,
+    format: "logisim-circ" as const,
+    mediaType: "application/xml" as const,
+    bytes: file.size,
+    digest: file.digest,
+    sourceVersion: project.metadata.sourceVersion,
+    fileFormatVersion: project.metadata.fileFormatVersion,
+    mainCircuit: project.metadata.mainCircuitName,
+  };
+}
+
+function selectLogisimCircuit(
+  project: LogisimProject,
+  requestedCircuit: string | undefined,
+) {
+  const circuitName =
+    requestedCircuit ??
+    project.metadata.mainCircuitName ??
+    project.circuits[0]?.name;
+  if (circuitName === undefined) {
+    throw new ContractFailure({
+      code: "PROJECT_INVALID",
+      category: "project",
+      message: "The Logisim project contains no circuits.",
+      retryable: false,
+      recovery: ["Create a circuit in Logisim-evolution and save the project."],
+    });
+  }
+  const circuit = project.circuits.find(
+    (candidate) => candidate.name === circuitName,
+  );
+  if (circuit === undefined) {
+    throw invalidArgument(
+      `Circuit ${JSON.stringify(circuitName)} is not present in the project.`,
+      "circuit",
+      ["Use a circuit name returned by logisim_analyze_design."],
+    );
+  }
+  return circuit;
+}
+
+function requireSafeLogisimRuntimeProject(project: LogisimProject) {
+  const assessment = assessLogisimRuntimeSafety(project);
+  if (!assessment.safe) {
+    throw new ContractFailure({
+      code: "UNSUPPORTED_OPERATION",
+      category: "project",
+      message:
+        "JAR execution is refused because static preflight found project constructs outside Circuitarium's safe runtime subset.",
+      retryable: false,
+      recovery: [
+        "Call logisim_analyze_design and inspect data.runtimeSafety for bounded reason codes and counts.",
+        "Remove external libraries, VHDL, unsafe resource paths, unsupported runtime components, and unknown or malformed constructs before retrying.",
+      ],
+    });
+  }
+  return assessment;
+}
+
+function logisimRuntimeEvidence(probe: LogisimRuntimeProbe) {
+  return {
+    engine: "Logisim-evolution" as const,
+    version: probe.logisimVersion,
+    buildId: probe.buildId,
+    buildDate: probe.buildDate,
+    javaRuntime: probe.javaRuntime,
+    javaVendor: probe.javaVendor,
+    invocation: "local-jar-subprocess" as const,
+    authenticity: "self-reported-unverified" as const,
+  };
+}
+
+const LOGISIM_RUNTIME_TOOL_NAMES = [
+  "logisim_component_stats",
+  "logisim_truth_table",
+  "logisim_run_test_vector",
+] as const;
+
+function logisimRuntimeConfiguration() {
+  return {
+    jarEnvironment: "CIRCUITARIUM_LOGISIM_JAR",
+    javaEnvironment: "CIRCUITARIUM_JAVA",
+    javaRequirement: "Java 21 or newer",
+  };
+}
+
+async function callableBackendsWithRuntimeStatus(): Promise<
+  CallableBackendDescriptor[]
+> {
+  const configured =
+    (process.env.CIRCUITARIUM_LOGISIM_JAR?.trim().length ?? 0) > 0 ||
+    (process.env.LOGISIM_JAR?.trim().length ?? 0) > 0;
+
+  let runtime: NonNullable<CallableBackendDescriptor["runtime"]> = {
+    status: "unconfigured",
+    requiredForTools: [...LOGISIM_RUNTIME_TOOL_NAMES],
+    configuration: logisimRuntimeConfiguration(),
+  };
+
+  if (configured) {
+    try {
+      const probe = await probeLogisimRuntime({ timeoutMs: 5_000 });
+      const detected = {
+        simulatorVersion: probe.logisimVersion,
+        javaRuntime: probe.javaRuntime,
+        javaVendor: probe.javaVendor,
+      };
+      if (probe.logisimVersion === LOGISIM_RUNTIME_VERSION) {
+        runtime = {
+          ...runtime,
+          status: "available",
+          detected,
+        };
+      } else {
+        runtime = {
+          ...runtime,
+          status: "version-mismatch",
+          detected,
+        };
+      }
+    } catch (error) {
+      runtime = {
+        ...runtime,
+        status:
+          error instanceof LogisimRuntimeVersionMismatchError
+            ? "version-mismatch"
+            : "unavailable",
+        ...(error instanceof LogisimRuntimeVersionMismatchError
+          ? {
+              detected: {
+                simulatorVersion: error.reportedVersion,
+              },
+            }
+          : {}),
+      };
+    }
+  }
+
+  return CALLABLE_BACKENDS.map((backend) =>
+    backend.backendId === LOGISIM_BACKEND_ID
+      ? {
+          ...backend,
+          runtime,
+        }
+      : backend,
+  );
+}
+
+async function loadLogisimProject(
+  args: {
+    path: string;
+    expectedProjectDigest: string | undefined;
+  },
+  publishContext: (context: ContractContext) => void,
+) {
+  const file = await readLogisimFile(args.path);
+  const context = makeLogisimContext({
+    projectRef: file.ref,
+    projectDigest: file.digest,
+  });
+  publishContext(context);
+  requireExpectedProjectDigest(args.expectedProjectDigest, file.digest);
+  const project = parseLogisimCircBytes(file.bytes);
+  const artifact = logisimArtifact(file, project);
+  const ir = logisimProjectToIr(project, {
+    sourceRef: file.ref,
+    sourceDigest: file.digest,
+  });
+  return { file, context, project, artifact, ir };
+}
+
 type AnalysisView = "summary" | "components" | "connections";
 type PagedView =
   | "components"
   | "connections"
   | "netlist"
+  | "logisim-netlist"
   | "comparison-components";
 
 interface PageCursor {
@@ -841,10 +1450,11 @@ const electronicsCapabilitiesTool = server.registerTool(
       openWorldHint: false,
     },
   },
-  async () =>
-    successResult({
+  async () => {
+    const callableBackends = await callableBackendsWithRuntimeStatus();
+    return successResult({
       summary:
-        "The experimental CRUMBLE integration provides one local CRUMB file backend; live simulation backends remain external or planned.",
+        "Circuitarium provides local CRUMB file analysis plus version-pinned Logisim-evolution .circ analysis and optional configured-JAR non-interactive simulation; neither backend controls a live GUI session.",
       data: {
         server: {
           name: SERVER_NAME,
@@ -867,7 +1477,7 @@ const electronicsCapabilitiesTool = server.registerTool(
           fidelityLevels: [...GENERAL_TOOLSET.fidelityLevels],
           validationTool: "electronics_validate_experiment",
         },
-        callableBackends: CALLABLE_BACKENDS,
+        callableBackends,
         roadmapBackends: ROADMAP_BACKENDS,
         workflows: WORKFLOWS,
         vocabulary: [...VOCABULARY],
@@ -890,6 +1500,14 @@ const electronicsCapabilitiesTool = server.registerTool(
           },
         },
         {
+          tool: "logisim_analyze_design",
+          reason:
+            "Understand the included Logisim full-adder using static, explicitly partial evidence.",
+          arguments: {
+            path: "examples/logisim/full-adder.circ",
+          },
+        },
+        {
           tool: "electronics_validate_experiment",
           reason: "Validate a simulator-neutral electronics experiment.",
           arguments: {
@@ -907,7 +1525,8 @@ const electronicsCapabilitiesTool = server.registerTool(
           },
         },
       ],
-    }),
+    });
+  },
 );
 envelopeTools.set("electronics_capabilities", {
   inputSchema: ElectronicsCapabilitiesInputSchema,
@@ -2556,6 +3175,889 @@ envelopeTools.set("crumb_check_design", {
   context: makeCrumbContext,
 });
 
+const LogisimWorkspaceOutputSchema = envelopeSchema(
+  LogisimWorkspaceDataSchema,
+);
+const logisimListProjectsTool = server.registerTool(
+  "logisim_list_projects",
+  {
+    title: "List Logisim-evolution projects",
+    description:
+      "Discovers workspace .circ projects with stable raw-byte digests. This is static file discovery and does not launch Logisim.",
+    inputSchema: LogisimListProjectsInputSchema,
+    outputSchema: LogisimWorkspaceOutputSchema,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({ dir, recursive, limit }) => {
+    try {
+      const listing = await listLogisimFiles(dir, { recursive });
+      const bounded = boundCollection(listing.entries, limit);
+      const diagnostics: Diagnostic[] = [];
+      if (listing.scanTruncated) {
+        diagnostics.push({
+          severity: "warning",
+          code: "directory-scan-truncated",
+          path: "scan",
+          message:
+            "The directory walk stopped at its fixed entry budget; deeper files were not seen.",
+        });
+      }
+      if (listing.digestBudgetTruncated) {
+        diagnostics.push({
+          severity: "warning",
+          code: "digest-budget-exhausted",
+          path: "entries",
+          message:
+            "Some .circ files were omitted after the fixed listing digest-byte budget was exhausted.",
+        });
+      }
+      if (bounded.bounds.truncated) {
+        diagnostics.push({
+          severity: "warning",
+          code: "listing-truncated",
+          path: "entries",
+          message: `Returned ${bounded.bounds.returned} of ${bounded.bounds.total} discovered .circ files.`,
+        });
+      }
+      const first = bounded.items[0];
+      return logisimSuccessResult({
+        summary:
+          `Found ${bounded.bounds.total} .circ project(s) within the digest budget; ` +
+          `returned ${bounded.bounds.returned}.`,
+        data: {
+          listingVersion: "logisim.workspace/0.1" as const,
+          rootRef: "." as const,
+          dirRef: logisimWorkspaceRef(dir),
+          recursive,
+          scan: {
+            scannedEntries: listing.scannedEntries,
+            scanTruncated: listing.scanTruncated,
+          },
+          entries: bounded.items,
+          entryBounds: bounded.bounds,
+        },
+        diagnostics,
+        context: makeLogisimContext(),
+        nextActions:
+          first === undefined
+            ? []
+            : [
+                {
+                  tool: "logisim_analyze_design",
+                  reason: "Inspect the first discovered project statically.",
+                  arguments: {
+                    path: first.ref,
+                    expectedProjectDigest: first.digest,
+                  },
+                },
+              ],
+      });
+    } catch (error) {
+      return errorResult(error, { context: makeLogisimContext() });
+    }
+  },
+);
+envelopeTools.set("logisim_list_projects", {
+  inputSchema: LogisimListProjectsInputSchema,
+  outputSchema: LogisimWorkspaceOutputSchema,
+  registeredTool: logisimListProjectsTool,
+  context: makeLogisimContext,
+});
+
+const LogisimAnalysisOutputSchema = envelopeSchema(
+  LogisimAnalysisDataSchema,
+);
+const logisimAnalyzeTool = server.registerTool(
+  "logisim_analyze_design",
+  {
+    title: "Analyze a Logisim-evolution project",
+    description:
+      "Parses bounded .circ XML into project, circuit, pin, clock, component, and explicit conversion-loss summaries. Static parsing is not simulation evidence.",
+    inputSchema: LogisimProjectReadInputSchema,
+    outputSchema: LogisimAnalysisOutputSchema,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({ path, expectedProjectDigest }) => {
+    let operationContext = makeLogisimContext();
+    try {
+      const loaded = await loadLogisimProject(
+        { path, expectedProjectDigest },
+        (context) => {
+          operationContext = context;
+        },
+      );
+      const boundedCircuits = boundCollection(
+        loaded.project.circuits,
+        MAX_LOGISIM_CIRCUITS_RETURNED,
+      );
+      const circuits = boundedCircuits.items.map((circuit) => {
+        const pinSummary = summarizeLogisimCircuitIo(
+          loaded.project,
+          circuit.name,
+        );
+        const boundedPins = boundCollection(
+          pinSummary.pins,
+          MAX_LOGISIM_PINS_RETURNED,
+        );
+        const typeCounts = new Map<string, number>();
+        for (const component of circuit.components) {
+          typeCounts.set(
+            component.name,
+            (typeCounts.get(component.name) ?? 0) + 1,
+          );
+        }
+        const boundedTypes = boundCollection(
+          [...typeCounts.entries()]
+            .map(([name, count]) => ({ name, count }))
+            .sort((left, right) =>
+              left.name.localeCompare(right.name),
+            ),
+          MAX_LOGISIM_COMPONENT_TYPES_RETURNED,
+        );
+        return {
+          id: circuit.id,
+          name: circuit.name,
+          componentCount: circuit.components.length,
+          wireCount: circuit.wires.length,
+          clockCount: circuit.components.filter(
+            (component) => component.kind === "clock",
+          ).length,
+          unknownComponentCount: circuit.components.filter(
+            (component) => component.kind === "unknown",
+          ).length,
+          pinSummary: {
+            ...pinSummary,
+            pins: boundedPins.items,
+            pinBounds: boundedPins.bounds,
+          },
+          componentTypes: boundedTypes.items,
+          componentTypeBounds: boundedTypes.bounds,
+        };
+      });
+      const boundedLibraries = boundCollection(
+        loaded.project.libraries,
+        MAX_LOGISIM_LIBRARIES_RETURNED,
+      );
+      const boundedLosses = boundCollection(
+        loaded.ir.losses,
+        MAX_LOGISIM_IR_LOSSES_RETURNED,
+      );
+      const allComponents = loaded.project.circuits.flatMap(
+        (circuit) => circuit.components,
+      );
+      const runtimeSafety = assessLogisimRuntimeSafety(loaded.project);
+      const diagnostics: Diagnostic[] = [];
+      if (
+        boundedCircuits.bounds.truncated ||
+        boundedLibraries.bounds.truncated ||
+        boundedLosses.bounds.truncated ||
+        circuits.some(
+          (circuit) =>
+            circuit.pinSummary.pinBounds.truncated ||
+            circuit.componentTypeBounds.truncated,
+        )
+      ) {
+        diagnostics.push({
+          severity: "warning",
+          code: "analysis-response-truncated",
+          path: "analysis",
+          message:
+            "One or more project summaries were bounded; full totals and truncation metadata are retained.",
+        });
+      }
+      return logisimSuccessResult({
+        summary:
+          `Parsed ${loaded.project.circuits.length} circuit(s), ` +
+          `${allComponents.length} component(s), and ` +
+          `${loaded.project.unknownConstructs.totalCount} unknown construct(s).`,
+        data: {
+          analysisVersion: "logisim.analysis/0.1" as const,
+          project: loaded.artifact,
+          source: {
+            sourceVersion: loaded.project.metadata.sourceVersion,
+            fileFormatVersion: loaded.project.metadata.fileFormatVersion,
+            mainCircuitName: loaded.project.metadata.mainCircuitName,
+            compatibility: loaded.project.metadata.compatibility,
+          },
+          counts: {
+            libraries: loaded.project.libraries.length,
+            circuits: loaded.project.circuits.length,
+            components: allComponents.length,
+            wires: loaded.project.circuits.reduce(
+              (total, circuit) => total + circuit.wires.length,
+              0,
+            ),
+            pins: allComponents.filter(
+              (component) => component.kind === "pin",
+            ).length,
+            clocks: allComponents.filter(
+              (component) => component.kind === "clock",
+            ).length,
+            unknownComponents: allComponents.filter(
+              (component) => component.kind === "unknown",
+            ).length,
+            unknownConstructs:
+              loaded.project.unknownConstructs.totalCount,
+          },
+          circuits,
+          circuitBounds: boundedCircuits.bounds,
+          libraries: boundedLibraries.items.map((library) => ({
+            id: library.id,
+            descriptor: library.descriptor,
+            external:
+              library.descriptor.length > 0 &&
+              !library.descriptor.startsWith("#"),
+          })),
+          libraryBounds: boundedLibraries.bounds,
+          unknownConstructs: loaded.project.unknownConstructs,
+          runtimeSafety,
+          neutralIr: {
+            irVersion: loaded.ir.irVersion,
+            completeness: loaded.ir.completeness,
+            losses: boundedLosses.items,
+            lossBounds: boundedLosses.bounds,
+          },
+          limitations: [
+            "The .circ parser recognizes structure and declared pin metadata; it does not execute built-in component behavior.",
+            "Neutral connectivity includes exact coordinate endpoints and explicitly modeled Pin/Clock ports only.",
+            "Use logisim_truth_table or logisim_run_test_vector for bounded behavioral evidence from the configured JAR.",
+          ],
+        },
+        diagnostics,
+        context: operationContext,
+        nextActions: [
+          {
+            tool: "logisim_export_netlist",
+            reason: "Inspect the explicitly partial coordinate netlist.",
+            arguments: {
+              path: loaded.file.ref,
+              expectedProjectDigest: loaded.file.digest,
+            },
+          },
+          {
+            tool: "logisim_component_stats",
+            reason: "Ask Logisim itself to load the project and count components.",
+            arguments: {
+              path: loaded.file.ref,
+              expectedProjectDigest: loaded.file.digest,
+            },
+          },
+        ],
+      });
+    } catch (error) {
+      return errorResult(error, { context: operationContext });
+    }
+  },
+);
+envelopeTools.set("logisim_analyze_design", {
+  inputSchema: LogisimProjectReadInputSchema,
+  outputSchema: LogisimAnalysisOutputSchema,
+  registeredTool: logisimAnalyzeTool,
+  context: makeLogisimContext,
+});
+
+const LogisimNetlistOutputSchema = envelopeSchema(
+  LogisimNetlistDataSchema,
+);
+const logisimNetlistTool = server.registerTool(
+  "logisim_export_netlist",
+  {
+    title: "Export a partial Logisim netlist",
+    description:
+      "Exports simulator-neutral coordinate-endpoint nets with explicit loss markers. It does not infer unmodeled gate geometry, mid-segment junctions, or behavior.",
+    inputSchema: LogisimNetlistInputSchema,
+    outputSchema: LogisimNetlistOutputSchema,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({ path, expectedProjectDigest, circuit, cursor, limit }) => {
+    let operationContext = makeLogisimContext();
+    try {
+      const loaded = await loadLogisimProject(
+        { path, expectedProjectDigest },
+        (context) => {
+          operationContext = context;
+        },
+      );
+      const sourceCircuit = selectLogisimCircuit(
+        loaded.project,
+        circuit,
+      );
+      const irCircuit = loaded.ir.circuits.find(
+        (candidate) => candidate.id === sourceCircuit.id,
+      );
+      if (irCircuit === undefined) {
+        throw new Error("Neutral IR omitted the selected circuit");
+      }
+      const fingerprint = paginationOptionsFingerprint({
+        circuit: sourceCircuit.name,
+        topologyMode: "coordinate-endpoints",
+      });
+      const offset = decodeCursor(
+        cursor,
+        "logisim-netlist",
+        loaded.file.digest,
+        irCircuit.netlist.nets.length,
+        fingerprint,
+      );
+      const paged = pageResult(
+        irCircuit.netlist.nets,
+        offset,
+        limit,
+        "logisim-netlist",
+        loaded.file.digest,
+        fingerprint,
+      );
+      const nets = paged.items.map((net) => {
+        const nodes = boundCollection(
+          net.nodes,
+          MAX_LOGISIM_NET_NODES_RETURNED,
+        );
+        const wires = boundCollection(
+          net.wireIds,
+          MAX_LOGISIM_NET_WIRES_RETURNED,
+        );
+        const members = boundCollection(
+          net.members,
+          MAX_LOGISIM_NET_MEMBERS_RETURNED,
+        );
+        return {
+          id: net.id,
+          nodes: nodes.items,
+          nodeBounds: nodes.bounds,
+          wireIds: wires.items,
+          wireBounds: wires.bounds,
+          members: members.items,
+          memberBounds: members.bounds,
+        };
+      });
+      const losses = boundCollection(
+        irCircuit.losses,
+        MAX_LOGISIM_IR_LOSSES_RETURNED,
+      );
+      const nestedTruncated = nets.some(
+        (net) =>
+          net.nodeBounds.truncated ||
+          net.wireBounds.truncated ||
+          net.memberBounds.truncated,
+      );
+      const diagnostics: Diagnostic[] = [];
+      if (
+        paged.page.nextCursor !== undefined ||
+        nestedTruncated ||
+        losses.bounds.truncated
+      ) {
+        diagnostics.push({
+          severity: "warning",
+          code: "netlist-response-truncated",
+          path: "nets",
+          message:
+            "The netlist response is bounded; use page.nextCursor for more nets and inspect nested bounds.",
+        });
+      }
+      return logisimSuccessResult({
+        summary:
+          `Returned ${paged.page.returned} of ${paged.page.total} ` +
+          `partial coordinate net(s) for ${sourceCircuit.name}.`,
+        data: {
+          netlistVersion: irCircuit.netlist.netlistVersion,
+          project: loaded.artifact,
+          circuit: {
+            id: sourceCircuit.id,
+            name: sourceCircuit.name,
+          },
+          topologyMode: irCircuit.netlist.topologyMode,
+          completeness: irCircuit.netlist.completeness,
+          nets,
+          page: paged.page,
+          losses: losses.items,
+          lossBounds: losses.bounds,
+          limitations: [
+            "This is a static coordinate graph, not Logisim simulation output.",
+            "Only exact wire endpoints and explicitly located Pin/Clock ports become members.",
+            "Unmodeled component port geometry and mid-segment junction semantics remain explicit losses.",
+          ],
+        },
+        diagnostics,
+        context: operationContext,
+        nextActions: [
+          {
+            tool: "logisim_truth_table",
+            reason:
+              "Use Logisim's own non-interactive CLI when behavioral output is needed.",
+            arguments: {
+              path: loaded.file.ref,
+              circuit: sourceCircuit.name,
+              expectedProjectDigest: loaded.file.digest,
+            },
+          },
+        ],
+      });
+    } catch (error) {
+      return errorResult(error, { context: operationContext });
+    }
+  },
+);
+envelopeTools.set("logisim_export_netlist", {
+  inputSchema: LogisimNetlistInputSchema,
+  outputSchema: LogisimNetlistOutputSchema,
+  registeredTool: logisimNetlistTool,
+  context: makeLogisimContext,
+});
+
+const LogisimComponentStatsOutputSchema = envelopeSchema(
+  LogisimComponentStatsDataSchema,
+);
+const logisimComponentStatsTool = server.registerTool(
+  "logisim_component_stats",
+  {
+    title: "Load a project and count Logisim components",
+    description:
+      "Invokes the separately installed JAR, after it self-reports Logisim-evolution 4.1.0, with --tty stats. Success proves that configured process loaded the staged project, not behavioral simulation or binary authenticity.",
+    inputSchema: LogisimComponentStatsInputSchema,
+    outputSchema: LogisimComponentStatsOutputSchema,
+    annotations: {
+      readOnlyHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({
+    path,
+    expectedProjectDigest,
+    circuit,
+    limit,
+    timeoutMs,
+  }) => {
+    let operationContext = makeLogisimContext();
+    try {
+      const loaded = await loadLogisimProject(
+        { path, expectedProjectDigest },
+        (context) => {
+          operationContext = context;
+        },
+      );
+      requireSafeLogisimRuntimeProject(loaded.project);
+      const selected = selectLogisimCircuit(loaded.project, circuit);
+      const execution = await withStagedLogisimArtifacts(
+        { projectBytes: loaded.file.bytes },
+        async ({ projectPath }) =>
+          runLogisimStatisticsWithRuntime(projectPath, {
+            toplevelCircuit: selected.name,
+            maxComponentRows: limit,
+            timeoutMs,
+          }),
+      );
+      const probe = execution.runtime;
+      const statistics = execution.result;
+      return logisimSuccessResult({
+        summary:
+          `Logisim loaded ${selected.name} and reported ` +
+          `${statistics.totalWithSubcircuits.recursiveCount} recursive component(s).`,
+        data: {
+          statisticsVersion: "logisim.statistics/0.1" as const,
+          project: loaded.artifact,
+          circuitName: selected.name,
+          runtime: logisimRuntimeEvidence(probe),
+          components: statistics.components,
+          componentBounds: {
+            total: statistics.componentRowsObserved,
+            returned: statistics.components.length,
+            limit,
+            truncated: statistics.componentsTruncated,
+          },
+          totalWithoutSubcircuits: statistics.totalWithoutSubcircuits,
+          totalWithSubcircuits: statistics.totalWithSubcircuits,
+          evidence: {
+            kind: "logisim-project-load" as const,
+            proves: [
+              "The configured JAR self-reported Logisim-evolution 4.1.0 and loaded the selected staged project and circuit.",
+              "Component counts are Logisim CLI output, including its recursive totals.",
+            ],
+            doesNotProve: [
+              "No input combinations were simulated by the statistics command.",
+              "Static neutral-netlist conversion completeness is not implied.",
+              "Version text does not authenticate the configured JAR binary; official-asset SHA-256 is verified only by this repository's CI fixture run.",
+            ],
+          },
+        },
+        context: operationContext,
+        nextActions: [
+          {
+            tool: "logisim_truth_table",
+            reason: "Run bounded combinational simulation when appropriate.",
+            arguments: {
+              path: loaded.file.ref,
+              circuit: selected.name,
+              expectedProjectDigest: loaded.file.digest,
+            },
+          },
+        ],
+      });
+    } catch (error) {
+      return errorResult(error, { context: operationContext });
+    }
+  },
+);
+envelopeTools.set("logisim_component_stats", {
+  inputSchema: LogisimComponentStatsInputSchema,
+  outputSchema: LogisimComponentStatsOutputSchema,
+  registeredTool: logisimComponentStatsTool,
+  context: makeLogisimContext,
+});
+
+const LogisimTruthTableOutputSchema = envelopeSchema(
+  LogisimTruthTableDataSchema,
+);
+const logisimTruthTableTool = server.registerTool(
+  "logisim_truth_table",
+  {
+    title: "Simulate a bounded Logisim truth table",
+    description:
+      "Invokes the separately installed JAR, after it self-reports Logisim-evolution 4.1.0, in CSV/binary table mode after statically bounding declared input width.",
+    inputSchema: LogisimTruthTableInputSchema,
+    outputSchema: LogisimTruthTableOutputSchema,
+    annotations: {
+      readOnlyHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({
+    path,
+    expectedProjectDigest,
+    circuit,
+    maxInputBits,
+    limit,
+    timeoutMs,
+  }) => {
+    let operationContext = makeLogisimContext();
+    try {
+      const loaded = await loadLogisimProject(
+        { path, expectedProjectDigest },
+        (context) => {
+          operationContext = context;
+        },
+      );
+      requireSafeLogisimRuntimeProject(loaded.project);
+      const selected = selectLogisimCircuit(loaded.project, circuit);
+      const io = summarizeLogisimCircuitIo(
+        loaded.project,
+        selected.name,
+      );
+      const pinLabels = io.pins
+        .map((pin) => pin.label?.trim())
+        .filter((label): label is string => label !== undefined);
+      const interfaceIsComplete =
+        io.inputBitTotalComplete &&
+        io.pinCount > 0 &&
+        io.inputPinCount > 0 &&
+        io.outputPinCount > 0 &&
+        pinLabels.length === io.pinCount &&
+        pinLabels.every((label) => label.length > 0) &&
+        new Set(pinLabels).size === pinLabels.length;
+      if (!interfaceIsComplete) {
+        throw new ContractFailure({
+          code: "UNSUPPORTED_OPERATION",
+          category: "project",
+          message:
+            "Truth-table generation is refused because the selected circuit does not expose a complete, uniquely labeled input/output Pin interface.",
+          retryable: false,
+          recovery: [
+            "Give every input/output Pin a unique nonblank label and recognized direction/width.",
+            "Use an explicit test vector after confirming its pin contract.",
+          ],
+        });
+      }
+      if (io.inputBitTotal > maxInputBits) {
+        throw new ContractFailure({
+          code: "QUOTA_EXCEEDED",
+          category: "backend",
+          message:
+            `The selected circuit declares ${io.inputBitTotal} input bits; ` +
+            `this call allows ${maxInputBits}.`,
+          retryable: false,
+          argumentPath: "maxInputBits",
+          recovery: [
+            `Raise maxInputBits up to ${MAX_LOGISIM_TRUTH_TABLE_INPUT_BITS}, or select a smaller circuit.`,
+            "Use logisim_run_test_vector for targeted input cases.",
+          ],
+        });
+      }
+      const execution = await withStagedLogisimArtifacts(
+        { projectBytes: loaded.file.bytes },
+        async ({ projectPath }) =>
+          runLogisimTruthTableWithRuntime(projectPath, {
+            toplevelCircuit: selected.name,
+            maxRows: limit,
+            maxColumns: 256,
+            timeoutMs,
+          }),
+      );
+      const probe = execution.runtime;
+      const table = execution.result;
+      const expectedRows = 2 ** io.inputBitTotal;
+      if (
+        table.columns.length !== io.pinCount ||
+        table.rowCount !== expectedRows
+      ) {
+        throw new LogisimRuntimeError(
+          "Logisim's truth-table columns or row count did not match the statically bounded Pin interface.",
+          "OUTPUT_INVALID",
+          false,
+        );
+      }
+      return logisimSuccessResult({
+        summary:
+          `Logisim simulated ${table.rowCount} truth-table row(s) for ` +
+          `${io.inputBitTotal} declared input bit(s).`,
+        data: {
+          truthTableVersion: "logisim.truth-table/0.1" as const,
+          project: loaded.artifact,
+          circuitName: selected.name,
+          runtime: logisimRuntimeEvidence(probe),
+          inputs: {
+            pinCount: io.inputPinCount,
+            bitTotal: io.inputBitTotal,
+            bitLimit: maxInputBits,
+          },
+          columns: table.columns,
+          rows: table.rows,
+          rowBounds: {
+            total: table.rowCount,
+            returned: table.rows.length,
+            limit,
+            truncated: table.rowsTruncated,
+          },
+          valueEncoding: table.valueEncoding,
+          delimiter: table.delimiter,
+          evidence: {
+            kind: "logisim-noninteractive-simulation" as const,
+            proves: [
+              "The configured JAR self-reported Logisim-evolution 4.1.0 and evaluated the returned staged-project rows.",
+              "Values use Logisim's binary CSV truth-table output for the selected circuit.",
+            ],
+            doesNotProve: [
+              "Static parsing does not independently verify every built-in component's semantics.",
+              "Sequential timing, analog behavior, and a live GUI session are not represented.",
+              "Version text does not authenticate the configured JAR binary; official-asset SHA-256 is verified only by this repository's CI fixture run.",
+            ],
+          },
+        },
+        diagnostics: table.rowsTruncated
+          ? [
+              {
+                severity: "warning",
+                code: "truth-table-response-truncated",
+                path: "rows",
+                message:
+                  "Logisim evaluated more rows than the response limit returned; raise limit for more rows.",
+              },
+            ]
+          : [],
+        context: operationContext,
+        nextActions: [
+          {
+            tool: "logisim_run_test_vector",
+            reason:
+              "Use assertions in a workspace vector file for regression testing.",
+            arguments: {
+              path: loaded.file.ref,
+              circuit: selected.name,
+              vectorPath: "examples/logisim/full-adder.vec",
+              expectedProjectDigest: loaded.file.digest,
+            },
+          },
+        ],
+      });
+    } catch (error) {
+      return errorResult(error, { context: operationContext });
+    }
+  },
+);
+envelopeTools.set("logisim_truth_table", {
+  inputSchema: LogisimTruthTableInputSchema,
+  outputSchema: LogisimTruthTableOutputSchema,
+  registeredTool: logisimTruthTableTool,
+  context: makeLogisimContext,
+});
+
+const LogisimTestVectorOutputSchema = envelopeSchema(
+  LogisimTestVectorDataSchema,
+);
+const logisimTestVectorTool = server.registerTool(
+  "logisim_run_test_vector",
+  {
+    title: "Run a Logisim test vector",
+    description:
+      "Invokes the separately installed JAR, after it self-reports Logisim-evolution 4.1.0, with staged snapshots of a workspace-contained project and .vec/.txt file. Assertion failures return ok=true with data.valid=false.",
+    inputSchema: LogisimTestVectorInputSchema,
+    outputSchema: LogisimTestVectorOutputSchema,
+    annotations: {
+      readOnlyHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({
+    path,
+    expectedProjectDigest,
+    circuit,
+    vectorPath,
+    expectedVectorDigest,
+    maxFailures,
+    timeoutMs,
+  }) => {
+    let operationContext = makeLogisimContext();
+    try {
+      const loaded = await loadLogisimProject(
+        { path, expectedProjectDigest },
+        (context) => {
+          operationContext = context;
+        },
+      );
+      requireSafeLogisimRuntimeProject(loaded.project);
+      const selected = selectLogisimCircuit(loaded.project, circuit);
+      const vector = await readLogisimVectorFile(vectorPath);
+      requireExpectedVectorDigest(expectedVectorDigest, vector.digest);
+      void vector.text;
+      const configuredRuntime = resolveLogisimRuntimeConfig();
+      const execution = await withStagedLogisimArtifacts(
+        {
+          projectBytes: loaded.file.bytes,
+          vectorBytes: vector.bytes,
+          runtimeJarPath: configuredRuntime.jarPath,
+        },
+        async ({ projectPath, vectorPath, runtimeJarPath }) => {
+          if (vectorPath === undefined || runtimeJarPath === undefined) {
+            throw new Error(
+              "The staged test vector or isolated runtime is missing",
+            );
+          }
+          return runLogisimTestVectorWithRuntime(
+            projectPath,
+            selected.name,
+            vectorPath,
+            {
+              maxFailures,
+              timeoutMs,
+              runtime: {
+                ...configuredRuntime,
+                jarPath: runtimeJarPath,
+              },
+            },
+          );
+        },
+      );
+      const probe = execution.runtime;
+      const testResult = execution.result;
+      const failures = testResult.failures.map((failure) => {
+        const mismatches = boundCollection(
+          failure.mismatches,
+          MAX_LOGISIM_TEST_MISMATCHES_RETURNED,
+        );
+        return {
+          vectorIndex: failure.vectorIndex,
+          mismatches: mismatches.items,
+          mismatchBounds: mismatches.bounds,
+        };
+      });
+      return logisimSuccessResult({
+        summary: testResult.passed
+          ? `Logisim passed all ${testResult.passedVectors} vector(s).`
+          : `Logisim passed ${testResult.passedVectors} and failed ${testResult.failedVectors} vector(s).`,
+        data: {
+          testVectorVersion: "logisim.test-vector/0.1" as const,
+          project: loaded.artifact,
+          vector: {
+            ref: vector.ref,
+            bytes: vector.size,
+            digest: vector.digest,
+          },
+          circuitName: selected.name,
+          runtime: logisimRuntimeEvidence(probe),
+          valid: testResult.passed,
+          passedVectors: testResult.passedVectors,
+          failedVectors: testResult.failedVectors,
+          totalVectors: testResult.totalVectors,
+          declaredVectors: testResult.declaredVectors,
+          failures,
+          failureBounds: {
+            total: testResult.failureRowsObserved,
+            returned: failures.length,
+            limit: maxFailures,
+            truncated: testResult.failuresTruncated,
+          },
+          evidence: {
+            kind: "logisim-noninteractive-simulation" as const,
+            proves: [
+              "The configured JAR self-reported Logisim-evolution 4.1.0 and executed the staged project/vector snapshots.",
+              "Pass/fail counts come from Logisim's final summary, not its process exit code.",
+            ],
+            doesNotProve: [
+              "Only vectors present in the supplied file were tested.",
+              "No live GUI session, analog behavior, or performance timing is claimed.",
+              "Version text does not authenticate the configured JAR binary; official-asset SHA-256 is verified only by this repository's CI fixture run.",
+            ],
+          },
+        },
+        diagnostics: testResult.passed
+          ? []
+          : [
+              {
+                severity: "error",
+                code: "test-vector-failed",
+                path: "failures",
+                message:
+                  `${testResult.failedVectors} of ${testResult.totalVectors} vectors failed.`,
+              },
+            ],
+        context: operationContext,
+        nextActions: testResult.passed
+          ? []
+          : [
+              {
+                tool: "logisim_truth_table",
+                reason:
+                  "Inspect bounded combinational output around the failed cases when the circuit is suitable.",
+                arguments: {
+                  path: loaded.file.ref,
+                  circuit: selected.name,
+                  expectedProjectDigest: loaded.file.digest,
+                },
+              },
+            ],
+      });
+    } catch (error) {
+      return errorResult(error, {
+        context: operationContext,
+        vectorConflict: {
+          projectPath: path,
+          vectorPath,
+          ...(circuit === undefined ? {} : { circuit }),
+        },
+      });
+    }
+  },
+);
+envelopeTools.set("logisim_run_test_vector", {
+  inputSchema: LogisimTestVectorInputSchema,
+  outputSchema: LogisimTestVectorOutputSchema,
+  registeredTool: logisimTestVectorTool,
+  context: makeLogisimContext,
+});
+
 /**
  * Validates arguments against the published input schema, invokes the
  * registered handler, and enforces both the MCP result shape and the tool's
@@ -2645,6 +4147,48 @@ export function listRegisteredToolNames(): string[] {
   return [...envelopeTools.keys()];
 }
 
+export async function runServerDoctor() {
+  const toolCount = listRegisteredToolNames().length;
+  const jarConfigured =
+    (process.env.CIRCUITARIUM_LOGISIM_JAR?.trim().length ?? 0) > 0 ||
+    (process.env.LOGISIM_JAR?.trim().length ?? 0) > 0;
+  const lines = [
+    `${SERVER_NAME} doctor`,
+    `Server version: ${SERVER_VERSION}`,
+    `Node runtime: ${process.version}`,
+    `Registered tools: ${toolCount}`,
+    "CRUMBLE static adapter: ready",
+    "Logisim static adapter: ready",
+  ];
+  if (!jarConfigured) {
+    lines.push(
+      "Logisim JAR runtime: optional, not configured",
+      "Set CIRCUITARIUM_LOGISIM_JAR and install Java 21 to enable stats, truth tables, and vectors.",
+    );
+    return { exitCode: 0, text: `${lines.join("\n")}\n` };
+  }
+  try {
+    const probe = await probeLogisimRuntime();
+    if (probe.logisimVersion !== LOGISIM_RUNTIME_VERSION) {
+      lines.push(
+        `Logisim JAR runtime: version mismatch (${probe.logisimVersion}; expected ${LOGISIM_RUNTIME_VERSION})`,
+      );
+      return { exitCode: 1, text: `${lines.join("\n")}\n` };
+    }
+    lines.push(
+      `Logisim JAR runtime: ready (${probe.displayName})`,
+      `Java runtime: ${probe.javaRuntime} (${probe.javaVendor})`,
+    );
+    return { exitCode: 0, text: `${lines.join("\n")}\n` };
+  } catch {
+    lines.push(
+      "Logisim JAR runtime: configured but unavailable",
+      "Check the JAR path, CIRCUITARIUM_JAVA, and Java 21 installation.",
+    );
+    return { exitCode: 1, text: `${lines.join("\n")}\n` };
+  }
+}
+
 export async function startStdioServer(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -2708,6 +4252,7 @@ if (invokedAsMainModule()) {
       return listRegisteredToolNames().length;
     },
     processCommandIo(),
+    runServerDoctor,
   );
   process.exitCode = exitCode;
 }

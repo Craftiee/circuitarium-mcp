@@ -1,13 +1,15 @@
 # Circuitarium MCP
 
-Run the published local MCP server with one command:
+Run the latest published local MCP server with one command:
 
 ```text
 npx -y circuitarium-mcp@0.2.1
 ```
 
-The first run can pause while npm downloads and extracts the package. Once the
-server starts in a real terminal, it explains why it remains open:
+Version `0.2.1` is the prior 14-tool CRUMBLE release; it does not contain the
+Logisim adapter under development in this source tree. The first run can pause
+while npm downloads and extracts the package. Once the published server starts
+in a real terminal, it explains why it remains open:
 
 ```text
 +--------------------------------------------------------------------+
@@ -43,11 +45,15 @@ choose a narrow circuit workspace, then ask the model to call
 
 Give Claude, ChatGPT/Codex, or a local MCP-capable model a safe, typed
 electronics workbench instead of asking it to guess at opaque circuit files.
-Circuitarium MCP currently provides 14 bounded tools for Unity-era CRUMB
-`.cru` saves, including controlled-save comparison, netlist export, and
-evidence-scoped electrical checks.
-Project analysis is read-only; the sole file-writing tool emits only one of
-five fixed synthetic fixtures. The longer-term neutral layer is designed to
+The **Unreleased 0.3.0 source tree** provides 20 bounded tools: Unity-era CRUMB
+`.cru` analysis plus version-pinned Logisim-evolution `.circ` analysis, partial
+neutral IR, and optional configured-JAR truth tables and test vectors. Until
+0.3.0 is actually published, use a source checkout to test those six Logisim
+tools; `npx ...@0.2.1` continues to install the prior 14-tool release.
+Project analysis never modifies an input circuit; the sole Circuitarium
+artifact-writing tool emits only one of five fixed synthetic fixtures.
+JAR-backed Logisim execution may update Logisim's per-user Java preferences
+and therefore advertises `readOnlyHint: false`. The longer-term neutral layer is designed to
 support additional simulators without making CRUMB the universal data model.
 
 ![Circuitarium MCP checks a synthetic LED fixture, builds its BOM, and exports its netlist](https://raw.githubusercontent.com/Craftiee/circuitarium-mcp/main/docs/assets/circuitarium-terminal-demo.gif)
@@ -55,17 +61,19 @@ support additional simulators without making CRUMB the universal data model.
 Claude Desktop users can download `circuitarium-mcp-0.2.1.mcpb` from the
 matching [GitHub Release](https://github.com/Craftiee/circuitarium-mcp/releases)
 and open it for a one-click local installation. The bundle prompts for the
-circuit workspace and contains the production Node.js dependencies. The
-current boundary is still file analysis: no live CRUMB control, arbitrary
-editing, or circuit simulation is claimed.
+circuit workspace, contains the production Node.js dependencies, and exposes
+the same 14 CRUMBLE tools as npm version 0.2.1. The Unreleased 0.3.0 source
+manifest adds optional Logisim JAR and Java selectors, but no 0.3.0 MCPB is a
+published download yet.
 
 > [!IMPORTANT]
-> Circuitarium MCP and its CRUMBLE integration are independent, unofficial
+> Circuitarium MCP, CRUMBLE, and the Logisim-evolution adapter are independent,
+> unofficial
 > community interoperability work. They are not affiliated with, endorsed by,
-> or sponsored by CRUMB or its developer. CRUMB and related names, marks, and
-> assets belong to their respective owners. This repository contains no CRUMB
-> game code, binaries, extracted assets, logos, or bundled third-party circuit
-> designs.
+> or sponsored by CRUMB, Logisim-evolution, or their developers. Product names,
+> marks, and assets belong to their respective owners. This repository contains
+> no simulator code, binaries, extracted assets, logos, or bundled third-party
+> circuit designs.
 
 [Circuitarium MCP](https://github.com/Craftiee/circuitarium-mcp) is an
 experimental, model-neutral electronics tool server with
@@ -83,13 +91,14 @@ The separation is deliberate:
 - **Circuitarium MCP** is the simulator-neutral umbrella and gives compatible
   hosts one typed electronics contract.
 - **CRUMBLE** is the unofficial CRUMB-specific ruleset and integration family.
-- A **backend** understands a file format or simulator. Only the local
-  CRUMBLE `crumb.file` backend is callable through this server today.
+- A **backend** understands a file format or simulator. The local
+  `crumb.file` and `logisim.evolution` backends are callable through this
+  server.
 - The portable `electronics_*` namespace is where simulator-neutral circuit
   concepts can grow without making CRUMB the universal data model.
 
 Start with `electronics_capabilities` when a model is unfamiliar with the
-server. It returns the callable backend, truthful limitations, vocabulary, and
+server. It returns the callable backends, truthful limitations, vocabulary, and
 recommended workflows in machine-readable form.
 
 The public names do not replace established protocol identifiers.
@@ -105,8 +114,10 @@ automation. See the [CRUMBLE integration guide](docs/crumble.md).
 |---|---|---|
 | Neutral experiment validation | Callable | Independently authored schema and validator |
 | CRUMBLE profile `crumb.unity/1.3.5` | Experimental support | Controlled saves, synthetic fixtures, and version-pinned CRUMB observations |
+| Logisim profile `logisim-evolution/4.1.0` | Experimental support | Hardened `.circ` reader plus configured-JAR project-load, truth-table, and vector checks; CI separately verifies the official v4.1.0 asset SHA-256 |
 | Future CRUMBLE Godot profile | Not supported yet | Requires separate controlled saves, mapping, and reopen testing |
 | Live CRUMB simulation control | Not implemented | Requires a documented or developer-supported bridge |
+| Live Logisim GUI control | Not implemented | Current JAR calls are bounded one-shot subprocesses; Linux test vectors use host-provided X11 or Xvfb without GUI automation |
 
 Support is an interoperability claim about the tested file format, not a claim
 of affiliation or behavioral equivalence. See [PROVENANCE.md](PROVENANCE.md)
@@ -182,6 +193,23 @@ for the evidence categories used by the project.
   round-trip core, including unknown nested payloads and original XML lexical
   forms. This is the safety foundation for future mutation tools, not a claim
   that arbitrary editing is exposed today.
+- Discover and parse Logisim-evolution `.circ` projects with strict UTF-8,
+  DTD/entity rejection, XML work limits, raw-byte digests, and explicit
+  unknown-construct samples.
+- Convert Logisim circuits to `circuitarium.project-ir/0.1` and a deliberately
+  partial coordinate-endpoint netlist. Every missing port-geometry or behavior
+  assumption remains a machine-readable loss marker.
+- Invoke a configured, user-supplied JAR that self-reports Logisim-evolution
+  4.1.0 through shell-free, timeout- and output-bounded subprocesses for
+  project-load statistics, combinational truth tables, and test vectors. The
+  self-report is not binary or publisher authentication.
+- Distinguish static file evidence, JAR project-load evidence, and actual
+  non-interactive truth-table/test-vector evidence in every result. Logisim
+  4.1.0 test-vector mode requires an X11 display on Linux; use Xvfb on a
+  display-less host. See the
+  [Logisim-evolution adapter guide](docs/logisim.md).
+- Ship an independently authored one-bit full-adder `.circ` project and an
+  8/8 passing vector as a reproducible first-run example.
 
 All five generated fixtures were manually opened in the tested CRUMB 1.3.5
 build and produced the intended visible components. That controlled observation
@@ -189,10 +217,11 @@ and the inferred board topology apply only to the observed **CRUMB 1.3.5
 Unity-era format**. It is not behavioral simulation evidence and does not
 establish compatibility with a Godot-based release.
 
-This server does **not** control a running CRUMB process, edit arbitrary
-circuits, or simulate circuit behavior. CRUMB has no integration contract used
-by this project for run, pause, step, stimulus, or signal reads. The honest
-boundary today is the save file.
+This server does **not** control a running CRUMB process or edit arbitrary
+circuits. CRUMB has no integration contract used by this project for run,
+pause, step, stimulus, or signal reads; its honest boundary remains the save
+file. Logisim behavior is available only through bounded, one-shot documented
+CLI modes. No persistent or live GUI session is controlled.
 
 ## Non-redistributed compatibility observations
 
@@ -213,21 +242,28 @@ simulated or validated as electrically correct.
 
 ## Quick start
 
-Requirements: a supported Node.js release listed in `package.json`.
+Requirements: a supported Node.js release listed in `package.json`. The
+published 0.2.1 package needs no Logisim installation because it contains only
+the 14-tool CRUMBLE surface. In the Unreleased 0.3.0 source tree, the three
+Logisim runtime tools additionally need Java 21 and a trusted, user-supplied
+JAR that self-reports 4.1.0; the three static Logisim tools do not. The
+recommended download is the upstream official v4.1.0 all-JAR.
 
-For a published-package setup, use the pinned `npx` command shown at the top
-of this README in one of the
+For the published 14-tool 0.2.1 setup, use the pinned `npx` command shown at the
+top of this README in one of the
 [copyable client configurations](examples/client-configs/README.md). Set
 `CIRCUITARIUM_MCP_ROOT` to the smallest directory that should contain the
 circuits available to the model.
 
-To develop or verify the server from source:
+To develop or verify the Unreleased 0.3.0 server and its 20-tool Logisim
+surface from source:
 
 ```powershell
 git clone https://github.com/Craftiee/circuitarium-mcp.git
 cd circuitarium-mcp
 npm ci
 npm run check
+node dist/src/bin.js doctor
 node dist/src/bin.js
 ```
 
@@ -252,6 +288,12 @@ npm run cli -- ic 74HC138
 npm run cli -- validate fixtures/crumb/breadboard-and-rail.cru
 npm run cli -- generate breadboard my-design.cru
 npm run cli -- validate-experiment examples/experiments/four-bit-counter.json
+npm run cli -- logisim-list examples/logisim
+npm run cli -- logisim-analyze examples/logisim/full-adder.circ
+npm run cli -- logisim-netlist examples/logisim/full-adder.circ Main
+npm run cli -- logisim-stats examples/logisim/full-adder.circ Main
+npm run cli -- logisim-table examples/logisim/full-adder.circ Main 8
+npm run cli -- logisim-test examples/logisim/full-adder.circ examples/logisim/full-adder.vec Main
 ```
 
 Read commands invoke the same registered MCP tools as the stdio server and
@@ -261,14 +303,25 @@ surface never does).
 
 The server confines file operations to its working directory by default. Set
 `CIRCUITARIUM_MCP_ROOT` to a different absolute directory if the MCP client
-should work with `.cru` files elsewhere. `ELECTRONICS_MCP_ROOT` remains a
+should work with `.cru`, `.circ`, or vector files elsewhere.
+`ELECTRONICS_MCP_ROOT` remains a
 compatibility fallback for existing installations; prefer the Circuitarium
 name in new configurations.
+
+For the Unreleased 0.3.0 source server, set `CIRCUITARIUM_LOGISIM_JAR` to a
+trusted Logisim-evolution JAR that self-reports 4.1.0 to enable the three
+runtime tools. The upstream official v4.1.0 all-JAR is recommended. The runtime
+does not authenticate the configured JAR by publisher or digest. Set
+`CIRCUITARIUM_JAVA` only when Java 21 is not available as `java` on `PATH`.
 
 For a concise model-host footing, use the
 [minimal system prompt](examples/model-host/minimal-system-prompt.txt).
 
 ## MCP tools
+
+The table below describes the 20 tools in the Unreleased 0.3.0 source tree.
+The published 0.2.1 package contains the first 14 entries only and ends with
+`crumb_generate_fixture`.
 
 | Tool | Purpose | Side effect |
 |---|---|---|
@@ -286,12 +339,18 @@ For a concise model-host footing, use the
 | `crumb_inspect_design` | Return a format-level `.cru` inventory | Reads one file |
 | `crumb_validate_design` | Check `.cru` structure and known invariants | Reads one file |
 | `crumb_generate_fixture` | Write one synthetic, compatibility-tested fixture and return its artifact identity | Optional new file; never overwrites |
+| `logisim_list_projects` | Discover workspace `.circ` projects with stable raw-byte digests | Reads listed files |
+| `logisim_analyze_design` | Summarize project structure, circuits, Pins, Clocks, component types, and conversion losses | Reads one file |
+| `logisim_export_netlist` | Export bounded, explicitly partial coordinate-endpoint neutral nets | Reads one file |
+| `logisim_component_stats` | Ask the configured JAR that self-reports 4.1.0 to load and inventory one circuit | Reads one file; stages its exact bytes privately; launches Java, which may update Logisim preferences |
+| `logisim_truth_table` | Run bounded CSV/binary combinational evaluation in the configured JAR that self-reports 4.1.0 | Reads one file; stages its exact bytes privately; launches Java, which may update Logisim preferences |
+| `logisim_run_test_vector` | Run a workspace `.vec`/`.txt` file and return structured pass/fail evidence | Reads two files; stages their exact bytes privately; launches Java, which may update Logisim preferences; requires X11 or Xvfb on Linux |
 
 All tools have input and output schemas. Successful tool execution and valid
 domain data are separate states: a validator can return `ok: true` with
 `data.valid: false`. See [the v0.2 tool contract](docs/contract.md).
 
-File tools reject non-`.cru` paths, malformed UTF-8, byte snapshots over
+CRUMB file tools reject non-`.cru` paths, malformed UTF-8, byte snapshots over
 64 MiB, paths outside the root selected by `CIRCUITARIUM_MCP_ROOT` (or the
 legacy fallback), and overwrite attempts. Semantic XML decoding has a separate
 3,145,728-character document bound, and a comparison pair is additionally
@@ -305,6 +364,24 @@ The Unity decoder accepts XML 1.0 represented as UTF-8, enforces namespace
 well-formedness and strict typed scalar forms, and caps each parsed XML text
 node at 1 MiB. See the [format notes](docs/crumb-format.md) for the exact
 declaration, numeric, base64, namespace, and structural-limit rules.
+
+Logisim project tools similarly cap `.circ` snapshots at 64 MiB, reject
+malformed UTF-8, DTDs/entities, hostile XML depth/breadth/text, and paths that
+traverse symlinks or reparse points. Vector files are limited to 4 MiB.
+Before any runtime call, a full-stream safety preflight defaults to denial for
+external file/JAR libraries, VHDL, unsafe or path-bearing runtime features, and
+unknown or malformed constructs. Accepted project and vector byte snapshots
+are staged exactly in a private temporary directory with fixed internal names
+and removed after success or failure. Test-vector calls also copy the
+configured JAR into that private directory before probing and execution, so
+Logisim cannot auto-load a sibling `logisim-defaults` directory. Runtime
+subprocesses use argument arrays with no shell, an allowlisted environment,
+and separate time and stdout/stderr byte limits. Public Logisim strings are
+limited to 4,096 characters, and the
+aggregate serialized result envelope is limited to 2 MiB. These controls
+reduce project-driven risk; they are not an operating-system sandbox or a
+security boundary against a malicious configured JAR. See
+[docs/logisim.md](docs/logisim.md).
 
 The file backend runs locally, but its capability reports
 `dataLeavesMachine: "depends"` because a cloud-backed MCP client or model host
@@ -328,14 +405,21 @@ Models can still collaborate safely through the same workspace:
    analysis is known to match the handed-off bytes.
 
 See the [cross-model handoff example](examples/cross-model/handoff.md).
+The same `projectRef`/`projectDigest` handoff applies to Logisim `.circ`
+projects; test-vector calls can additionally guard `expectedVectorDigest`.
 
 ## Project map
 
 - `src/domain/experiment.ts` — neutral experiment schema and semantic validation
 - `src/domain/contract.ts` — model-neutral v0.2 result and error envelope
 - `src/domain/capabilities.ts` — callable backend registry and model workflows
+- `src/domain/project-ir.ts` — small simulator-neutral project/netlist IR and
+  explicit conversion-loss vocabulary
 - `src/adapters/crumb/` — `.cru` decoding, catalog, analysis, fixtures, and
   bounded file I/O
+- `src/adapters/logisim/` — hardened `.circ` parsing, contained file I/O,
+  neutral IR conversion, default-deny runtime preflight, exact-byte private
+  staging, bounded JAR execution, and output parsers
 - `src/adapters/crumb/compatibility.ts` — the exact Unity-era interpretation
   profile and tested-build metadata
 - `src/adapters/crumb/compare.ts` — digest-guarded controlled-save comparison
@@ -348,6 +432,8 @@ See the [cross-model handoff example](examples/cross-model/handoff.md).
 - `PROVENANCE.md` — evidence classes, compatibility scope, and clean-room rules
 - `docs/contract.md` — tool semantics and cross-model rules
 - `docs/crumble.md` — CRUMBLE scope, evidence profiles, and stable identifiers
+- `docs/logisim.md` — Logisim-evolution setup, tools, evidence boundaries, and
+  subprocess safety
 - `docs/crumb-format.md` — observed, version-pinned CRUMB schema notes
 - `docs/wokwi-audit.md` — official Wokwi CLI/MCP audit
 - `docs/architecture.md` — current boundary and scalable simulator roadmap
@@ -358,17 +444,20 @@ See the [cross-model handoff example](examples/cross-model/handoff.md).
 - `ROADMAP.md` — adapter, portable project, simulation, and live-bridge stages
 - `CHANGELOG.md` — public interface and release history
 - `examples/client-configs/` — copyable setup for five MCP hosts
+- `examples/logisim/` — independently authored 1-bit full-adder project and
+  8/8 passing vector
 - `examples/model-host/minimal-system-prompt.txt` — compact, vendor-neutral
   operating rules for a model host
 - `mcpb/` — one-click local bundle manifest and packaging notes
 
 ## Status
 
-This is an experimental file adapter built from independently authored code,
-controlled CRUMB 1.3.5 saves, non-redistributed third-party compatibility
-examples, and observations of a lawfully installed version. Keep original
-designs backed up, do not infer electrical behavior from unknown payloads, and
-revalidate the format after every CRUMB update.
+This is experimental interoperability code built from independently authored
+parsers and fixtures, controlled CRUMB 1.3.5 saves, official Logisim-evolution
+documentation/CLI behavior, non-redistributed third-party compatibility
+examples, and observations of lawfully installed software. Keep original
+designs backed up, do not infer electrical behavior from static or unknown
+payloads, and revalidate every pinned profile after simulator updates.
 
 Contributions are welcome under the evidence and licensing rules in
 [CONTRIBUTING.md](CONTRIBUTING.md). Report security issues using

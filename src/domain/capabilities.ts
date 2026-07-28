@@ -58,6 +58,24 @@ export interface BackendDescriptor {
     stimulateInputs: boolean;
   };
   limitations: string[];
+  runtime?: {
+    status:
+      | "available"
+      | "unconfigured"
+      | "unavailable"
+      | "version-mismatch";
+    requiredForTools: string[];
+    configuration: {
+      jarEnvironment: string;
+      javaEnvironment: string;
+      javaRequirement: string;
+    };
+    detected?: {
+      simulatorVersion: string;
+      javaRuntime?: string;
+      javaVendor?: string;
+    };
+  };
   integrationFamily?: IntegrationFamilyDescriptor;
   compatibilityProfiles?: CompatibilityProfileDescriptor[];
 }
@@ -134,9 +152,26 @@ export const ADAPTER_CAPABILITIES: AdapterCapability[] = [
   {
     id: "logisim-evolution",
     label: "Logisim-evolution",
-    status: "planned",
-    operations: ["planned circuit import/export adapter", "planned headless test bridge"],
-    limitations: ["not implemented in this proof of concept"],
+    status: "experimental",
+    operations: [
+      "discover and statically parse .circ projects",
+      "export an explicitly partial simulator-neutral coordinate netlist",
+      "load projects and count components through a configured JAR that self-reports 4.1.0",
+      "run bounded truth tables through a configured JAR that self-reports 4.1.0",
+      "run workspace-contained test vectors through a configured JAR that self-reports 4.1.0",
+    ],
+    limitations: [
+      "Circuitarium does not bundle Logisim-evolution or Java",
+      "runtime tools require Java 21 and a trusted user-supplied JAR that self-reports 4.1.0",
+      "the configured JAR is not authenticated by publisher or digest; its version response is self-reported",
+      "JAR-backed project execution may update Logisim's per-user Java preferences and is not annotated read-only",
+      "runtime safety preflight defaults to denial for external libraries, VHDL, unsafe paths/features, and unknown or malformed constructs",
+      "accepted runtime inputs use exact-byte private temporary staging with cleanup after success or failure",
+      "public Logisim strings are limited to 4,096 characters and the aggregate serialized result envelope to 2 MiB",
+      "the runtime controls reduce project-driven risk but are not an operating-system sandbox or malicious-JAR boundary",
+      "static XML recognition is not behavioral simulation evidence",
+      "no live GUI session or arbitrary editing is implemented",
+    ],
   },
 ];
 
@@ -185,6 +220,69 @@ export const CALLABLE_BACKENDS: CallableBackendDescriptor[] = [
       },
     ],
   },
+  {
+    backendId: "logisim.evolution",
+    label: "Logisim-evolution file and configured-JAR adapter",
+    availability: "callable",
+    locality: "local",
+    sessionScope: "process",
+    dataLeavesMachine: "depends",
+    formats: [".circ", ".vec", ".txt"],
+    operations: {
+      inspect: true,
+      validate: true,
+      build: false,
+      convert: true,
+      liveSessions: false,
+      observeSignals: true,
+      stimulateInputs: true,
+    },
+    limitations: [
+      "Static .circ parsing and coordinate netlists are partial and are never labeled as simulation.",
+      "Truth tables and test vectors launch a configured user-supplied JAR that self-reports Logisim-evolution 4.1.0 as a bounded local subprocess.",
+      "A JAR version response is self-reported and does not authenticate the configured file by publisher or digest.",
+      "Runtime preflight defaults to denial for external libraries, VHDL, unsafe paths/features, and unknown or malformed constructs.",
+      "Accepted runtime inputs use exact-byte private temporary staging and cleanup.",
+      "Public Logisim strings are limited to 4,096 characters and the aggregate serialized result envelope to 2 MiB.",
+      "The runtime controls are not an operating-system sandbox or a security boundary against a malicious configured JAR.",
+      "Runtime tools return BACKEND_UNAVAILABLE until CIRCUITARIUM_LOGISIM_JAR and Java 21 are available.",
+      "On Linux, Logisim 4.1.0 test-vector execution additionally requires a trusted X11 DISPLAY; Xvfb is sufficient on a display-less host.",
+      "The JAR is not bundled, downloaded, linked, or redistributed by Circuitarium MCP.",
+      "No persistent or live Logisim GUI session is controlled.",
+      "The backend runs locally, but returned data may leave the machine through the MCP client or model host.",
+    ],
+    integrationFamily: {
+      id: "logisim-evolution",
+      label: "Logisim-evolution adapter",
+      expansion: "Circuitarium Logisim-evolution interoperability adapter",
+      targetProduct: "Logisim-evolution",
+      scope:
+        "Version-pinned .circ structure, neutral IR conversion, and bounded configured-JAR non-interactive execution.",
+      status: "experimental",
+    },
+    compatibilityProfiles: [
+      {
+        compatibilityProfile: "logisim-evolution/4.1.0",
+        status: "tested",
+        product: "Logisim-evolution",
+        productVersion: "4.1.0",
+        distribution: {
+          channel: "official GitHub release",
+          buildId: "main/499134ec",
+        },
+        engine: {
+          family: "Java",
+          version: "21+",
+        },
+        evidence: {
+          basis: "official-documentation",
+          automaticFileFormatDetection: false,
+          limitation:
+            "The adapter checks declared source metadata and a self-reported configured-JAR version, but neither authenticates file authorship, the runtime publisher, or behavioral equivalence; only CI verifies the official v4.1.0 release asset SHA-256.",
+        },
+      },
+    ],
+  },
 ];
 
 export const ROADMAP_BACKENDS: BackendDescriptor[] = [
@@ -209,25 +307,6 @@ export const ROADMAP_BACKENDS: BackendDescriptor[] = [
       "Not callable through this server yet.",
       "Requires WOKWI_CLI_TOKEN and uploads project data to Wokwi.",
     ],
-  },
-  {
-    backendId: "logisim.evolution",
-    label: "Logisim-evolution",
-    availability: "planned",
-    locality: "local",
-    sessionScope: "none",
-    dataLeavesMachine: "depends",
-    formats: [".circ"],
-    operations: {
-      inspect: false,
-      validate: false,
-      build: false,
-      convert: false,
-      liveSessions: false,
-      observeSignals: false,
-      stimulateInputs: false,
-    },
-    limitations: ["Adapter is not implemented; do not attempt to call it."],
   },
   {
     backendId: "digital.event",
@@ -379,6 +458,69 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
     ],
   },
   {
+    id: "understand-logisim-design",
+    goal:
+      "Recognize a Logisim-evolution project without confusing static XML evidence with simulation.",
+    steps: [
+      {
+        tool: "logisim_list_projects",
+        reason: "Discover workspace .circ projects and raw-byte digests.",
+        exampleArguments: { dir: "examples/logisim" },
+      },
+      {
+        tool: "logisim_analyze_design",
+        reason:
+          "Read circuit, component, pin, and explicit conversion-loss summaries.",
+        exampleArguments: {
+          path: "examples/logisim/full-adder.circ",
+        },
+      },
+      {
+        tool: "logisim_export_netlist",
+        reason:
+          "Export the deliberately partial coordinate netlist with loss markers.",
+        exampleArguments: {
+          path: "examples/logisim/full-adder.circ",
+          circuit: "Main",
+        },
+      },
+    ],
+  },
+  {
+    id: "simulate-logisim-design",
+    goal:
+      "Obtain bounded behavioral evidence from a configured user-supplied JAR that self-reports Logisim-evolution 4.1.0.",
+    steps: [
+      {
+        tool: "logisim_component_stats",
+        reason:
+          "Confirm the configured JAR can load and inventory the project without treating its self-reported version as authentication.",
+        exampleArguments: {
+          path: "examples/logisim/full-adder.circ",
+          circuit: "Main",
+        },
+      },
+      {
+        tool: "logisim_truth_table",
+        reason: "Run bounded combinational truth-table evaluation.",
+        exampleArguments: {
+          path: "examples/logisim/full-adder.circ",
+          circuit: "Main",
+          maxInputBits: 8,
+        },
+      },
+      {
+        tool: "logisim_run_test_vector",
+        reason: "Execute explicit regression vectors and return structured failures.",
+        exampleArguments: {
+          path: "examples/logisim/full-adder.circ",
+          circuit: "Main",
+          vectorPath: "examples/logisim/full-adder.vec",
+        },
+      },
+    ],
+  },
+  {
     id: "validate-portable-experiment",
     goal: "Validate the simulator-neutral experiment schema.",
     steps: [
@@ -428,5 +570,15 @@ export const VOCABULARY = [
     term: "net",
     meaning:
       "A jumper-collapsed electrical node built from connection groups; a static file inference, never simulation output.",
+  },
+  {
+    term: "project-load evidence",
+    meaning:
+      "The configured simulator accepted and inventoried an artifact; this is stronger than static parsing but does not prove circuit outputs.",
+  },
+  {
+    term: "non-interactive simulation evidence",
+    meaning:
+      "Bounded truth-table or test-vector output produced without a user-controlled GUI session for one exact project digest; Logisim 4.1.0 test-vector mode still needs X11 or Xvfb on Linux.",
   },
 ] as const;

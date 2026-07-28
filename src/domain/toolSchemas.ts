@@ -91,6 +91,28 @@ export const IntegrationFamilyDescriptorSchema = z.object({
   status: z.enum(["available", "experimental", "planned"]),
 });
 
+export const BackendRuntimeDescriptorSchema = z.object({
+  status: z.enum([
+    "available",
+    "unconfigured",
+    "unavailable",
+    "version-mismatch",
+  ]),
+  requiredForTools: z.array(z.string()),
+  configuration: z.object({
+    jarEnvironment: z.string(),
+    javaEnvironment: z.string(),
+    javaRequirement: z.string(),
+  }),
+  detected: z
+    .object({
+      simulatorVersion: z.string(),
+      javaRuntime: z.string().optional(),
+      javaVendor: z.string().optional(),
+    })
+    .optional(),
+});
+
 export const BackendDescriptorSchema = z.object({
   backendId: z.string(),
   label: z.string(),
@@ -101,6 +123,7 @@ export const BackendDescriptorSchema = z.object({
   formats: z.array(z.string()),
   operations: BackendOperationsSchema,
   limitations: z.array(z.string()),
+  runtime: BackendRuntimeDescriptorSchema.optional(),
   integrationFamily: IntegrationFamilyDescriptorSchema.optional(),
   compatibilityProfiles: z
     .array(CompatibilityProfileDescriptorSchema)
