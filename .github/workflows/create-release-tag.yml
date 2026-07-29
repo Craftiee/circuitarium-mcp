@@ -1,0 +1,51 @@
+name: Create release tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact package-version tag to create, such as v0.3.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  create:
+    name: Create package-version tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Verify and create tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_version="$(node -p "require('./package.json').version")"
+          expected_tag="v${package_version}"
+          test "$REQUESTED_TAG" = "$expected_tag"
+
+          git fetch origin main --tags
+          main_commit="$(git rev-parse origin/main)"
+          test "$(git rev-parse HEAD)" = "$main_commit"
+
+          if git rev-parse --verify --quiet "refs/tags/$REQUESTED_TAG" >/dev/null; then
+            test "$(git rev-list -n 1 "$REQUESTED_TAG")" = "$main_commit"
+            echo "$REQUESTED_TAG already identifies the current main commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate "$REQUESTED_TAG" --message "Circuitarium MCP $REQUESTED_TAG"
+          git push origin "refs/tags/$REQUESTED_TAG"
