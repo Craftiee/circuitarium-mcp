@@ -1,10 +1,11 @@
 # MCP client configurations
 
-These examples launch the published `circuitarium-mcp@0.2.1` package over
+These examples launch the published `circuitarium-mcp@0.3.0` package over
 standard input/output. Before copying one, replace
 `/absolute/path/to/circuit-workspace` with the smallest directory that should
-contain the `.cru` files the model may inspect or generate.
-That published package exposes 14 CRUMBLE tools and no Logisim tools.
+contain the `.cru` files the model may inspect or generate and the `.circ` and
+`.vec`/`.txt` files it may inspect. The package exposes 22 tools across
+CRUMBLE and Logisim-evolution.
 
 The configured directory is a security boundary, not a search hint.
 Circuitarium rejects paths outside it, but tool results can still be sent to
@@ -20,17 +21,12 @@ directory, drive root, or unrelated source tree.
 | Jan | [`jan.md`](jan.md) |
 
 Claude Desktop users can instead download
-`circuitarium-mcp-0.2.1.mcpb` from the matching GitHub Release and open it.
+`circuitarium-mcp-0.3.0.mcpb` from the matching GitHub Release and open it.
 The installer asks for the circuit workspace and bundles the server's Node.js
-dependencies. It exposes the same 14-tool CRUMBLE surface as npm version
-0.2.1.
+dependencies. It exposes the same 22-tool surface as npm version 0.3.0 and
+offers optional Logisim JAR and Java selectors.
 
 After connecting, ask the host to call `electronics_capabilities`, then
-`crumb_list_projects`. A healthy published 0.2.1 connection reports 14 tools.
-
-The Unreleased 0.3.0 source tree reports 22 tools, nine read-only knowledge
-Resources, and four workflow Prompts, and adds Logisim `.circ` and
-`.vec`/`.txt` access under the same workspace boundary. Its MCPB source
-manifest also adds optional Logisim JAR and Java selectors, but no 0.3.0
-package or bundle is published yet. Use the
-[source-checkout Logisim setup](../../docs/logisim.md) to test it.
+`crumb_list_projects`. A healthy published 0.3.0 connection reports 22 tools,
+nine read-only knowledge Resources, and four workflow Prompts. See the
+[Logisim setup](../../docs/logisim.md) to enable the optional runtime tools.

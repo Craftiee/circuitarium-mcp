@@ -1,8 +1,7 @@
 # Architecture
 
-> This document describes the Unreleased 0.3.0 source tree. The published
-> 0.2.1 npm package and MCPB remain the 14-tool CRUMBLE release without the
-> Logisim-evolution adapter.
+> This document describes the published 0.3.0 release: 22 tools across the
+> CRUMBLE and Logisim-evolution backends, nine Resources, and four Prompts.
 
 ## Decision
 
@@ -277,10 +276,9 @@ general editor or placement tool is exposed.
 ### Distribution and verification boundary
 
 A tagged source checkout and its same-version npm artifact expose the same
-stdio server and tool envelopes. The Unreleased 0.3.0 source tree intentionally
-differs from the published 14-tool 0.2.1 artifact until 0.3.0 is released. The
-npm package supports only the `circuitarium-mcp` executable; source exports
-used internally by the repository are not a JavaScript compatibility promise.
+stdio server and tool envelopes. The npm package supports only the
+`circuitarium-mcp` executable; source exports used internally by the repository
+are not a JavaScript compatibility promise.
 Packaging is allowlisted and verified from an isolated packed tarball: CI
 installs that exact artifact in a clean consumer and completes an MCP handshake
 through the packaged executable. Pull requests additionally run the supported
@@ -373,7 +371,7 @@ capabilities remain separate from the local `crumb.file` backend.
 
 ### Logisim-evolution
 
-The Unreleased 0.3.0 source tree registers six version-pinned Logisim tools:
+Version 0.3.0 registers six version-pinned Logisim tools:
 three static `.circ`/partial-IR tools and three bounded configured-JAR
 execution tools. The configured JAR must self-report 4.1.0 but is not
 authenticated as the official asset. `.circ` remains an adapter format rather

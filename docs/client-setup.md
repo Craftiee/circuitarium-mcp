@@ -4,9 +4,8 @@
 
 This MCP server does not contain or call an AI model. It exposes electronics
 tools plus optional read-only Resources and user-invoked Prompts. The diagram
-below describes the Unreleased 0.3.0 source tree; the published 0.2.1 package
-has only the `crumb.file` backend and 14 tools. The host application supplies
-the model:
+below describes the published 0.3.0 release. The host application supplies the
+model:
 
 ```text
 model access (subscription, API, or local runtime)
@@ -27,10 +26,10 @@ Circuitarium is the general-purpose umbrella. CRUMBLE — Circuit Representation
 CRUMB-specific integration family. The branding does not change the stable
 `electronics_*`, `crumb_*`, or `electronics.mcp/0.2` protocol identifiers.
 
-Launch the prior, published 14-tool CRUMBLE release with:
+Launch the published release with:
 
 ```powershell
-npx -y circuitarium-mcp@0.2.1
+npx -y circuitarium-mcp@0.3.0
 ```
 
 On a first run, npm may spend some time downloading and extracting the package
@@ -38,8 +37,8 @@ before Circuitarium starts. These commands verify the installed launcher
 without opening a long-lived server:
 
 ```powershell
-npx -y circuitarium-mcp@0.2.1 --help
-npx -y circuitarium-mcp@0.2.1 --version
+npx -y circuitarium-mcp@0.3.0 --help
+npx -y circuitarium-mcp@0.3.0 --version
 ```
 
 Running the server directly in a real terminal displays a plain-ASCII status
@@ -73,19 +72,16 @@ literally.
 ## Package versus source checkout
 
 A tagged source checkout and its same-version package launch the same stdio
-server. During Unreleased development, they intentionally differ: the command
-below installs published 0.2.1 with 14 CRUMBLE tools, while this source tree
-identifies as 0.3.0 and registers 22 tools, nine Resources, and four Prompts.
-Prefer the immutable release when you do not need to test the Unreleased
-Logisim and knowledge-surface work:
+server. Version 0.3.0 registers 22 tools, nine Resources, and four Prompts.
+Prefer the immutable package release unless you are contributing to the source:
 
 ```text
 Command: npx
-Arguments: -y circuitarium-mcp@0.2.1
+Arguments: -y circuitarium-mcp@0.3.0
 ```
 
-Use a source checkout when contributing or testing the Unreleased 0.3.0
-Logisim changes. Keep the client's working directory or
+Use a source checkout when contributing or testing changes after 0.3.0. Keep
+the client's working directory or
 `CIRCUITARIUM_MCP_ROOT` pointed at the intended circuit workspace in either
 case. An npm installation does not bundle user projects or make
 repository-relative fixture paths appear in that workspace.
@@ -97,9 +93,8 @@ fallback for existing installations; new configurations should use the
 Circuitarium name. Do not point either variable at a broad or sensitive
 directory.
 
-The six Logisim tools are present only in the Unreleased 0.3.0 source tree
-until that release is published. Its three runtime tools are optional. To
-enable them in a source-checkout host configuration, install Java 21 and add:
+The six Logisim tools are included in 0.3.0. Its three runtime tools are
+optional. To enable them in a host configuration, install Java 21 and add:
 
 ```text
 CIRCUITARIUM_LOGISIM_JAR=/absolute/path/to/logisim-evolution-4.1.0-all.jar
@@ -111,11 +106,9 @@ all-JAR. Omit `CIRCUITARIUM_JAVA` when `java` already resolves to Java 21.
 Static `.circ` discovery, analysis, and partial-IR export need neither Java nor
 the JAR. See [the Logisim adapter guide](logisim.md).
 
-## First calls by release
+## First calls
 
-Give an unfamiliar model this operating sequence. Steps 9 and 10 apply only to
-the Unreleased 0.3.0 source server; published 0.2.1 exposes the CRUMB workflow
-in the other steps:
+Give an unfamiliar model this operating sequence:
 
 1. Call `electronics_capabilities`.
 2. Treat only backends with `availability: "callable"` as usable.
@@ -159,7 +152,7 @@ For the released local stdio server, use:
 
 ```text
 Command: npx
-Arguments: -y circuitarium-mcp@0.2.1
+Arguments: -y circuitarium-mcp@0.3.0
 Environment: CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace
 ```
 
@@ -168,7 +161,7 @@ Equivalent project-scoped Codex configuration:
 ```toml
 [mcp_servers.circuitarium]
 command = "npx"
-args = ["-y", "circuitarium-mcp@0.2.1"]
+args = ["-y", "circuitarium-mcp@0.3.0"]
 env = { CIRCUITARIUM_MCP_ROOT = "C:\\absolute\\path\\to\\circuit-workspace" }
 startup_timeout_sec = 20
 tool_timeout_sec = 60
@@ -179,7 +172,7 @@ On macOS or Linux, the corresponding paths look like:
 ```toml
 [mcp_servers.circuitarium]
 command = "npx"
-args = ["-y", "circuitarium-mcp@0.2.1"]
+args = ["-y", "circuitarium-mcp@0.3.0"]
 env = { CIRCUITARIUM_MCP_ROOT = "/absolute/path/to/circuit-workspace" }
 startup_timeout_sec = 20
 tool_timeout_sec = 60
@@ -193,7 +186,7 @@ server needs no OpenAI key.
 Claude Code can register the released local stdio server:
 
 ```powershell
-claude mcp add --transport stdio --env CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace --scope local circuitarium -- npx -y circuitarium-mcp@0.2.1
+claude mcp add --transport stdio --env CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace --scope local circuitarium -- npx -y circuitarium-mcp@0.3.0
 ```
 
 On macOS or Linux:
@@ -202,21 +195,19 @@ On macOS or Linux:
 claude mcp add --transport stdio \
   --env CIRCUITARIUM_MCP_ROOT=/absolute/path/to/circuit-workspace \
   --scope local \
-  circuitarium -- npx -y circuitarium-mcp@0.2.1
+  circuitarium -- npx -y circuitarium-mcp@0.3.0
 ```
 
 Official reference:
 <https://docs.anthropic.com/en/docs/claude-code/mcp>
 
 Claude Desktop users can download
-`circuitarium-mcp-0.2.1.mcpb` from the matching
+`circuitarium-mcp-0.3.0.mcpb` from the matching
 [GitHub Release](https://github.com/Craftiee/circuitarium-mcp/releases) and
 open it. The protected release workflow builds that bundle from the same
-verified npm tarball, validates its manifest, and smoke-tests its 14-tool stdio
-server against a synthetic fixture before attaching it. That published bundle
-has a workspace selector only. The Unreleased 0.3.0 source manifest exposes 22
-tools and optional Logisim JAR/Java file selectors; no matching 0.3.0 MCPB is
-published yet.
+verified npm tarball, validates its manifest, and smoke-tests its 22-tool stdio
+server against a synthetic fixture before attaching it. The bundle has a
+workspace selector plus optional Logisim JAR/Java file selectors.
 
 The host uses the Claude access already configured there. The electronics
 server itself does not need an Anthropic API key.

@@ -3,21 +3,22 @@
 Run the latest published local MCP server with one command:
 
 ```text
-npx -y circuitarium-mcp@0.2.1
+npx -y circuitarium-mcp@0.3.0
 ```
 
-Version `0.2.1` is the prior 14-tool CRUMBLE release; it does not contain the
-Logisim adapter under development in this source tree. The first run can pause
-while npm downloads and extracts the package. Once the published server starts
-in a real terminal, it explains why it remains open:
+Version `0.3.0` provides 22 bounded electronics tools, nine read-only
+Resources, and four workflow Prompts across CRUMBLE and the version-pinned
+Logisim-evolution adapter. The first run can pause while npm downloads and
+extracts the package. Once the published server starts in a real terminal, it
+explains why it remains open:
 
 ```text
 +--------------------------------------------------------------------+
-| o---[R]---|>|---o CIRCUITARIUM MCP v0.2.1                          |
-| 14 bounded electronics tools | CRUMBLE file analysis | no live     |
-| simulation                                                         |
+| o---[R]---|>|---o  CIRCUITARIUM MCP v0.3.0                         |
+| 22 bounded electronics tools | CRUMBLE + Logisim | no live GUI     |
+| session                                                            |
 +--------------------------------------------------------------------+
-| DIRECT RUN No MCP host is connected to this process.               |
+| DIRECT RUN  No MCP host is connected to this process.              |
 |                                                                    |
 | Press Ctrl+C, then configure your MCP host to launch this command. |
 |                                                                    |
@@ -28,8 +29,8 @@ in a real terminal, it explains why it remains open:
 Check an installation without starting the server:
 
 ```text
-npx -y circuitarium-mcp@0.2.1 --help
-npx -y circuitarium-mcp@0.2.1 --version
+npx -y circuitarium-mcp@0.3.0 --help
+npx -y circuitarium-mcp@0.3.0 --version
 ```
 
 Starting the command in a separate terminal does not connect it to a host. An
@@ -45,15 +46,13 @@ choose a narrow circuit workspace, then ask the model to call
 
 Give Claude, ChatGPT/Codex, or a local MCP-capable model a bounded, typed
 electronics workbench instead of asking it to guess at opaque circuit files.
-The **Unreleased 0.3.0 source tree** provides 22 bounded tools, nine read-only
+The **published 0.3.0 release** provides 22 bounded tools, nine read-only
 knowledge resources, and four reusable workflow prompts: Unity-era CRUMB
 `.cru` analysis plus version-pinned Logisim-evolution `.circ` analysis, partial
 neutral IR, source-cited component knowledge, evidence-aware verification
 planning, deterministic CRUMB net tracing, optional configured-JAR truth
 tables and test vectors, and on-demand guidance for electrical review and
-digital-logic testing. Until
-0.3.0 is actually published, use a source checkout to test that expanded MCP
-surface; `npx ...@0.2.1` continues to install the prior 14-tool release.
+digital-logic testing.
 Project analysis never modifies an input circuit; the sole Circuitarium
 artifact-writing tool emits only one of five fixed synthetic fixtures.
 JAR-backed Logisim execution may update Logisim's per-user Java preferences
@@ -71,13 +70,12 @@ support additional simulators without making CRUMB the universal data model.
 
 ![Circuitarium MCP checks a synthetic LED fixture, builds its BOM, and exports its netlist](https://raw.githubusercontent.com/Craftiee/circuitarium-mcp/main/docs/assets/circuitarium-terminal-demo.gif)
 
-Claude Desktop users can download `circuitarium-mcp-0.2.1.mcpb` from the
+Claude Desktop users can download `circuitarium-mcp-0.3.0.mcpb` from the
 matching [GitHub Release](https://github.com/Craftiee/circuitarium-mcp/releases)
 and open it for a one-click local installation. The bundle prompts for the
-circuit workspace, contains the production Node.js dependencies, and exposes
-the same 14 CRUMBLE tools as npm version 0.2.1. The Unreleased 0.3.0 source
-manifest adds optional Logisim JAR and Java selectors, but no 0.3.0 MCPB is a
-published download yet.
+circuit workspace, contains the production Node.js dependencies, exposes the
+same 22 tools as npm version 0.3.0, and includes optional Logisim JAR and Java
+selectors.
 
 > [!IMPORTANT]
 > Circuitarium MCP, CRUMBLE, and the Logisim-evolution adapter are independent,
@@ -283,21 +281,19 @@ simulated or validated as electrically correct.
 
 ## Quick start
 
-Requirements: a supported Node.js release listed in `package.json`. The
-published 0.2.1 package needs no Logisim installation because it contains only
-the 14-tool CRUMBLE surface. In the Unreleased 0.3.0 source tree, the three
-Logisim runtime tools additionally need Java 21 and a trusted, user-supplied
-JAR that self-reports 4.1.0; the three static Logisim tools do not. The
-recommended download is the upstream official v4.1.0 all-JAR.
+Requirements: a supported Node.js release listed in `package.json`. CRUMB
+analysis and the three static Logisim tools need no simulator installation.
+The three Logisim runtime tools additionally need Java 21 and a trusted,
+user-supplied JAR that self-reports 4.1.0. The recommended download is the
+upstream official v4.1.0 all-JAR.
 
-For the published 14-tool 0.2.1 setup, use the pinned `npx` command shown at the
-top of this README in one of the
+For the published 0.3.0 setup, use the pinned `npx` command shown at the top of
+this README in one of the
 [copyable client configurations](examples/client-configs/README.md). Set
 `CIRCUITARIUM_MCP_ROOT` to the smallest directory that should contain the
 circuits available to the model.
 
-To develop or verify the Unreleased 0.3.0 server and its 22-tool Logisim
-surface from source:
+To develop or verify the 0.3.0 server from source:
 
 ```powershell
 git clone https://github.com/Craftiee/circuitarium-mcp.git
@@ -351,7 +347,7 @@ should work with `.cru`, `.circ`, or vector files elsewhere.
 compatibility fallback for existing installations; prefer the Circuitarium
 name in new configurations.
 
-For the Unreleased 0.3.0 source server, set `CIRCUITARIUM_LOGISIM_JAR` to a
+For the 0.3.0 server, set `CIRCUITARIUM_LOGISIM_JAR` to a
 trusted Logisim-evolution JAR that self-reports 4.1.0 to enable the three
 runtime tools. The upstream official v4.1.0 all-JAR is recommended. The runtime
 does not authenticate the configured JAR by publisher or digest. Set
@@ -362,10 +358,7 @@ For a concise model-host footing, use the
 
 ## MCP tools
 
-The table below describes the 22 tools in the Unreleased 0.3.0 source tree.
-The published 0.2.1 package contains the 14 CRUMBLE tools shown here, excluding
-the new `electronics_plan_verification`, `crumb_trace_net`, and all six
-`logisim_*` tools.
+The table below describes the 22 tools in the published 0.3.0 release.
 
 | Tool | Purpose | Side effect |
 |---|---|---|

@@ -10,9 +10,8 @@ semantics.
 This contract describes tool results. It does not imply a shared model session
 or a running circuit simulation.
 
-> Release scope: this document includes the six Logisim tools in the
-> Unreleased 0.3.0 source tree. The published 0.2.1 npm package and MCPB expose
-> only the prior 14-tool CRUMBLE surface.
+> Release scope: this document describes the published 0.3.0 npm package and
+> MCPB, including all 22 tools across CRUMBLE and Logisim-evolution.
 
 ## Vocabulary
 
@@ -301,7 +300,7 @@ shared GUI or simulator session.
 
 ## Knowledge resources and workflow prompts
 
-The Unreleased 0.3.0 server also publishes nine deterministic JSON Resources:
+The 0.3.0 server also publishes nine deterministic JSON Resources:
 
 - `circuitarium://capabilities`
 - `circuitarium://profiles/crumb.unity/1.3.5`

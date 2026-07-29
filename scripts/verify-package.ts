@@ -632,7 +632,7 @@ try {
   assert.deepEqual(
     installedManifest.exports,
     {},
-    "the first public package must remain executable-only",
+    "the public package must remain executable-only",
   );
   assert.equal(installedManifest.main, undefined);
   assert.equal(installedManifest.types, undefined);

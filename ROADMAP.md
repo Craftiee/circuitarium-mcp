@@ -6,12 +6,11 @@ CRUMBLE is its unofficial CRUMB-specific integration family, not the umbrella
 data model. Dates are deliberately omitted until each milestone has
 reproducible evidence.
 
-## Current source milestone: Unreleased 0.3.0
+## Current release: 0.3.0
 
-This section describes the 22-tool, nine-Resource, four-Prompt source tree.
-The published 0.2.1 npm package and MCPB remain the prior 14-tool CRUMBLE
-release and do not contain the Logisim-evolution adapter or knowledge
-surfaces.
+This section describes the published 22-tool, nine-Resource, four-Prompt
+release available from npm and as an MCPB. It includes the CRUMBLE and
+Logisim-evolution adapters plus the simulator-neutral knowledge surfaces.
 
 - Stable `electronics.mcp/0.2` result envelope and capability discovery.
 - Portable experiment validation.

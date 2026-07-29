@@ -85,9 +85,9 @@ gitleaks git .
 ## npm publication gate
 
 The npm package is an executable MCP server, not a supported JavaScript
-library API. For `0.2.x`, its only supported package surface is the
-`circuitarium-mcp` binary. Internal source exports used by the repository's CLI
-and tests are not a compatibility promise. Do not publish `main`, root
+library API. For current `0.x` releases, its only supported package surface is
+the `circuitarium-mcp` binary. Internal source exports used by the repository's
+CLI and tests are not a compatibility promise. Do not publish `main`, root
 `exports`, or type declarations until an importable API is intentionally
 designed, documented, and tested.
 

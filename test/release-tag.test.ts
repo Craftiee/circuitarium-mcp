@@ -35,7 +35,7 @@ function readyInput(
       "npx -y circuitarium-mcp@0.3.0",
       "```",
       "",
-      "Version 0.3.0 provides 20 tools.",
+      "Version 0.3.0 provides 22 tools.",
       "",
     ].join("\n"),
     ...overrides,
@@ -102,7 +102,7 @@ describe("release readiness", () => {
         "",
         "npx -y circuitarium-mcp@0.2.1",
         "",
-        "The Unreleased 0.3.0 source tree provides 20 tools.",
+        "The Unreleased 0.3.0 source tree provides 22 tools.",
         "",
       ].join("\n"),
     });

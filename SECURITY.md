@@ -2,14 +2,14 @@
 
 ## Supported versions
 
-The first supported release line is `0.2.x`. Security fixes target the latest
-`0.2.x` patch and the latest revision of `main`; older releases, older commits,
-and independently modified copies receive no support guarantee.
+Security fixes target the latest `0.3.x` patch and the latest revision of
+`main`; older releases, older commits, and independently modified copies
+receive no support guarantee.
 
 | Version | Supported |
 | --- | --- |
-| `0.2.x` | Yes |
-| `< 0.2.0` | No |
+| `0.3.x` | Yes |
+| `< 0.3.0` | No |
 
 ## Reporting a vulnerability
 
