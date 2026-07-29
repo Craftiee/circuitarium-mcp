@@ -184,18 +184,29 @@ export async function readCruFile(
     }
 
     // Windows does not expose O_NOFOLLOW through Node. Re-resolve the opened
-    // pathname and compare its current identity with the handle so a static
-    // symlink or an ordinary replacement race fails closed on every platform.
+    // pathname and compare two independently opened handle identities so a
+    // static symlink or ordinary replacement race fails closed everywhere.
+    // Avoid comparing fstat with path stat: those use different Windows APIs
+    // and can report inconsistent volume identities on virtual/profile disks.
     const currentPath = await realpath(safePath);
     requireContained(root, currentPath);
-    const currentFile = await stat(currentPath);
-    if (
-      openedFile.dev !== currentFile.dev ||
-      openedFile.ino !== currentFile.ino
-    ) {
-      throw new WorkspacePathDeniedError(
-        `Path changed while it was being opened: ${safePath}`,
-      );
+    const openedIdentity = await handle.stat({ bigint: true });
+    const currentHandle = await open(
+      currentPath,
+      constants.O_RDONLY | noFollow,
+    );
+    try {
+      const currentIdentity = await currentHandle.stat({ bigint: true });
+      if (
+        openedIdentity.dev !== currentIdentity.dev ||
+        openedIdentity.ino !== currentIdentity.ino
+      ) {
+        throw new WorkspacePathDeniedError(
+          `Path changed while it was being opened: ${safePath}`,
+        );
+      }
+    } finally {
+      await currentHandle.close();
     }
 
     const chunks: Buffer[] = [];
