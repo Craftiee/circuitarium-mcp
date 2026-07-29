@@ -15,7 +15,7 @@ body:
     attributes:
       label: Project version
       description: Include the release, commit, or branch you tested.
-      placeholder: v0.2.0
+      placeholder: v0.3.0
     validations:
       required: true
 
@@ -27,6 +27,7 @@ body:
         - Neutral electronics contract
         - CRUMB Unity adapter
         - CRUMB Godot adapter
+        - Logisim-evolution adapter
         - MCP server or client integration
         - CLI
         - Documentation
