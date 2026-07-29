@@ -1,8 +1,9 @@
 # Support
 
 Circuitarium MCP is an experimental community project. Support covers this
-repository's code and documented interfaces, including the CRUMBLE integration,
-not CRUMB itself or any other simulator.
+repository's code and documented interfaces, including the CRUMBLE and
+Logisim-evolution integrations, not CRUMB, Logisim-evolution, or any other
+simulator itself.
 
 ## Questions and feature ideas
 
@@ -22,6 +23,9 @@ Include:
 - operating system and Node.js version;
 - `contractVersion`, `backendId`, and `adapterVersion`;
 - the CRUMB version and Steam build ID when reporting `.cru` compatibility;
+- the Logisim-evolution and Java versions, selected circuit, whether the
+  optional JAR runtime was configured, and Linux display/Xvfb details when
+  reporting `.circ` or test-vector compatibility;
 - a newly created minimal synthetic save, if one is necessary and you have the
   right to share it.
 
@@ -31,13 +35,18 @@ permission. Prefer a minimal save containing one independently placed component.
 
 ## Compatibility scope
 
-The `0.2.x` CRUMBLE integration supports the observed CRUMB 1.3.5 Unity-era
+The current CRUMBLE integration supports the observed CRUMB 1.3.5 Unity-era
 file format only. CRUMB 2.x/Godot support and live simulation control are not
 currently provided. Unknown formats should be reported as compatibility gaps
 rather than silently treated as supported.
 
-For installation, billing, gameplay, or product-support questions about CRUMB,
-contact its developer through the official CRUMB support channels.
+The Logisim-evolution integration targets version 4.1.0. Static inspection is
+available without Java; runtime-backed project statistics, truth tables, and
+test vectors require a separately configured official 4.1.0 all-JAR.
+
+For installation, billing, gameplay, or product-support questions about a
+simulator, contact that simulator's maintainers through its official support
+channels.
 
 ## Security reports
 
