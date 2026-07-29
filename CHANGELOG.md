@@ -4,7 +4,7 @@ All notable changes will be recorded here. The project follows
 [Semantic Versioning](https://semver.org/) for its public interfaces while it
 remains experimental.
 
-## [Unreleased]
+## [0.3.0] - 2026-07-28
 
 ### Added
 
