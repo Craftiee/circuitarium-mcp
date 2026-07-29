@@ -26,8 +26,17 @@ interface PackageManifest {
 }
 
 interface BundleManifest {
+	$schema?: string;
+	author?: {
+		name?: string;
+		url?: string;
+	};
+	documentation?: string;
+	icon?: string;
 	manifest_version?: string;
 	name?: string;
+	privacy_policies?: string[];
+	prompts_generated?: boolean;
 	server?: {
 		entry_point?: string;
 		mcp_config?: {
@@ -37,6 +46,8 @@ interface BundleManifest {
 		};
 		type?: string;
 	};
+	support?: string;
+	tools_generated?: boolean;
 	version?: string;
 }
 
@@ -82,6 +93,12 @@ interface Envelope {
 
 const MCPB_PACKAGE = "@anthropic-ai/mcpb@2.1.2";
 const EXPECTED_TOOL_COUNT = 22;
+const PRIVACY_POLICY_URL =
+	"https://github.com/Craftiee/circuitarium-mcp/blob/main/PRIVACY.md";
+const DOCUMENTATION_URL =
+	"https://github.com/Craftiee/circuitarium-mcp#readme";
+const SUPPORT_URL =
+	"https://github.com/Craftiee/circuitarium-mcp/blob/main/SUPPORT.md";
 const BUNDLE_ENTRY_ARGUMENT = "$" + "{__dirname}/server/dist/src/server.js";
 const WORKSPACE_CONFIG_REFERENCE = "$" + "{user_config.workspace}";
 const LOGISIM_JAR_CONFIG_REFERENCE = "$" + "{user_config.logisim_jar}";
@@ -186,6 +203,23 @@ function assertSemVerValidationCases(): void {
 	}
 }
 
+function assertValidPngIcon(content: Uint8Array): void {
+	const bytes = Buffer.from(content);
+	assert.ok(bytes.length > 24, "MCPB icon must contain a PNG header");
+	assert.equal(
+		bytes.subarray(0, 8).toString("hex"),
+		"89504e470d0a1a0a",
+		"MCPB icon must use PNG format",
+	);
+	const width = bytes.readUInt32BE(16);
+	const height = bytes.readUInt32BE(20);
+	assert.equal(width, height, "MCPB icon must be square");
+	assert.ok(
+		width >= 256,
+		`MCPB icon is ${width}x${height}; minimum supported size is 256x256`,
+	);
+}
+
 function normalizedEnvironment(
 	additions: Record<string, string>,
 ): Record<string, string> {
@@ -281,9 +315,14 @@ try {
 		"mcpb",
 		"manifest.json",
 	);
+	const sourceBundleIconPath = resolve(repositoryRoot, "mcpb", "icon.png");
 	const sourceBundleManifest = JSON.parse(
 		await readFile(sourceBundleManifestPath, "utf8"),
 	) as BundleManifest;
+	assert.equal(
+		sourceBundleManifest.$schema,
+		"https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.3.schema.json",
+	);
 	assert.equal(sourceBundleManifest.manifest_version, "0.3");
 	assert.equal(sourceBundleManifest.name, packageManifest.name);
 	assert.equal(sourceBundleManifest.version, packageManifest.version);
@@ -291,6 +330,34 @@ try {
 		sourceBundleManifest.version ?? "",
 		"MCPB manifest version",
 	);
+	assert.deepEqual(sourceBundleManifest.author, {
+		name: "Craftiee",
+		url: "https://github.com/Craftiee",
+	});
+	assert.equal(sourceBundleManifest.documentation, DOCUMENTATION_URL);
+	assert.equal(sourceBundleManifest.support, SUPPORT_URL);
+	assert.equal(sourceBundleManifest.icon, "icon.png");
+	assert.deepEqual(sourceBundleManifest.privacy_policies, [PRIVACY_POLICY_URL]);
+	assert.equal(sourceBundleManifest.tools_generated, true);
+	assert.equal(sourceBundleManifest.prompts_generated, true);
+	assertValidPngIcon(await readFile(sourceBundleIconPath));
+	const privacyPolicy = await readFile(
+		resolve(repositoryRoot, "PRIVACY.md"),
+		"utf8",
+	);
+	for (const requiredSection of [
+		"Data Circuitarium accesses",
+		"Use and storage",
+		"Sharing and third parties",
+		"Retention and deletion",
+		"Contact",
+	]) {
+		assert.match(
+			privacyPolicy,
+			new RegExp(`^## ${requiredSection}$`, "mu"),
+			`privacy policy omits ${requiredSection}`,
+		);
+	}
 	assert.equal(sourceBundleManifest.server?.type, "node");
 	assert.equal(
 		sourceBundleManifest.server?.entry_point,
@@ -347,6 +414,9 @@ try {
 	await cp(sourceBundleManifestPath, resolve(stagingRoot, "manifest.json"), {
 		recursive: false,
 	});
+	await cp(sourceBundleIconPath, resolve(stagingRoot, "icon.png"), {
+		recursive: false,
+	});
 	await cp(installedRoot, resolve(stagingRoot, "server"), {
 		recursive: true,
 	});
@@ -381,6 +451,13 @@ try {
 		"server.js",
 	);
 	assert.equal((await stat(unpackedServer)).isFile(), true);
+	assertValidPngIcon(await readFile(resolve(unpackDirectory, "icon.png")));
+	assert.equal(
+		(
+			await stat(resolve(unpackDirectory, "server", "PRIVACY.md"))
+		).isFile(),
+		true,
+	);
 	const unpackedLogisimProject = resolve(
 		unpackDirectory,
 		"server",
@@ -463,6 +540,22 @@ try {
 			"MCPB tools/list",
 		);
 		assert.equal(tools.tools.length, EXPECTED_TOOL_COUNT);
+		for (const tool of tools.tools) {
+			assert.ok(tool.name.length <= 64, `${tool.name} exceeds 64 characters`);
+			assert.ok(tool.title?.trim(), `${tool.name} omits a title`);
+			assert.equal(
+				typeof tool.annotations?.readOnlyHint,
+				"boolean",
+				`${tool.name} omits readOnlyHint`,
+			);
+			if (tool.annotations?.readOnlyHint === false) {
+				assert.equal(
+					typeof tool.annotations.destructiveHint,
+					"boolean",
+					`${tool.name} omits destructiveHint`,
+				);
+			}
+		}
 		assert.ok(
 			tools.tools.some((tool) => tool.name === "electronics_capabilities"),
 		);

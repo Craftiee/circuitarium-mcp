@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing package-version tag to publish, such as v0.3.0
+        description: Existing package-version tag to publish, such as v0.3.1
         required: true
         type: string
 
@@ -99,6 +99,14 @@ jobs:
           CIRCUITARIUM_LOGISIM_JAR: ${{ runner.temp }}/logisim-evolution-4.1.0-all.jar
         run: xvfb-run -a npm run logisim:e2e
 
+      - name: Exercise all 22 tools through official MCP Inspector
+        env:
+          CIRCUITARIUM_LOGISIM_JAR: ${{ runner.temp }}/logisim-evolution-4.1.0-all.jar
+        run: >-
+          xvfb-run -a npm run inspector:verify --
+          --require-runtime
+          --output "${{ runner.temp }}/inspector-tool-evidence.json"
+
       - name: Build and smoke-test package
         id: package
         env:
@@ -127,6 +135,14 @@ jobs:
         with:
           name: mcpb-bundle-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           path: ${{ steps.mcpb.outputs.bundle }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Retain Inspector tool evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: inspector-evidence-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          path: ${{ runner.temp }}/inspector-tool-evidence.json
           if-no-files-found: error
           retention-days: 30
 
@@ -336,6 +352,12 @@ jobs:
           name: mcpb-bundle-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           path: release-artifacts/mcpb
 
+      - name: Download Inspector tool evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: inspector-evidence-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          path: release-artifacts/evidence
+
       - name: Create release from verified artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -346,8 +368,18 @@ jobs:
           set -euo pipefail
           mapfile -t tarballs < <(find release-artifacts/npm -maxdepth 1 -type f -name '*.tgz')
           mapfile -t bundles < <(find release-artifacts/mcpb -maxdepth 1 -type f -name '*.mcpb')
+          mapfile -t evidence < <(find release-artifacts/evidence -maxdepth 1 -type f -name '*.json')
           test "${#tarballs[@]}" -eq 1
           test "${#bundles[@]}" -eq 1
+          test "${#evidence[@]}" -eq 1
+
+          checksums="release-artifacts/SHA256SUMS.txt"
+          : > "$checksums"
+          for artifact in "${tarballs[0]}" "${bundles[0]}" "${evidence[0]}"; do
+            digest="$(sha256sum "$artifact" | cut -d' ' -f1)"
+            printf '%s  %s\n' "$digest" "$(basename "$artifact")" >> "$checksums"
+          done
+          test "$(wc -l < "$checksums")" -eq 3
 
           release_version="${RELEASE_TAG#v}"
           release_heading="## [${release_version}]"
@@ -374,6 +406,8 @@ jobs:
               "$RELEASE_TAG" \
               "${tarballs[0]}" \
               "${bundles[0]}" \
+              "${evidence[0]}" \
+              "$checksums" \
               --clobber
           else
             release_flags=(
@@ -388,5 +422,7 @@ jobs:
               "$RELEASE_TAG" \
               "${tarballs[0]}" \
               "${bundles[0]}" \
+              "${evidence[0]}" \
+              "$checksums" \
               "${release_flags[@]}"
           fi

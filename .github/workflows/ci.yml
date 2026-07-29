@@ -100,10 +100,47 @@ jobs:
           CIRCUITARIUM_PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
         run: npm run mcpb:check
 
+  package-platform-smoke:
+    name: Package smoke on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify installed package and native launcher
+        id: package
+        env:
+          CIRCUITARIUM_KEEP_PACKAGE: "1"
+        run: npm run package:check
+
+      - name: Verify one-click MCPB bundle
+        env:
+          CIRCUITARIUM_PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
+        run: npm run mcpb:check
+
   logisim-e2e:
     name: Official Logisim-evolution 4.1.0 JAR
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - name: Check out repository
@@ -139,6 +176,17 @@ jobs:
         env:
           CIRCUITARIUM_LOGISIM_JAR: ${{ runner.temp }}/logisim-evolution-4.1.0-all.jar
         run: xvfb-run -a npm run logisim:e2e
+
+      - name: Build the stdio server for Inspector
+        run: npm run build
+
+      - name: Exercise all 22 tools through official MCP Inspector
+        env:
+          CIRCUITARIUM_LOGISIM_JAR: ${{ runner.temp }}/logisim-evolution-4.1.0-all.jar
+        run: >-
+          xvfb-run -a npm run inspector:verify --
+          --require-runtime
+          --output "${{ runner.temp }}/inspector-tool-evidence.json"
 
       - name: Verify installable package with the official JAR
         id: package

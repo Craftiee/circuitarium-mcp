@@ -1,0 +1,126 @@
+name: Simulator interoperability evidence
+description: Contribute a controlled, reproducible format or compatibility observation for any simulator.
+title: "[Interop evidence]: "
+labels:
+  - "type:format-evidence"
+  - "status:needs-verification"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for simulator-neutral interoperability evidence. For a
+        CRUMB Unity `.cru` observation, use the dedicated CRUMB format-evidence
+        form instead.
+
+        Test one question at a time with a circuit you created yourself. Do
+        not upload simulator binaries, extracted assets, decompiled code,
+        third-party designs, private firmware, credentials, personal paths, or
+        artifacts you cannot redistribute.
+
+  - type: input
+    id: simulator
+    attributes:
+      label: Simulator or format
+      description: Name the application, interchange format, or adapter being observed.
+      placeholder: Logisim-evolution
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Exact version and build
+      description: Include the displayed version, build, and source revision when available.
+      placeholder: 4.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: adapter
+    attributes:
+      label: Circuitarium backend or proposed adapter
+      description: Use a stable backend ID when one exists, or say that this is for a proposed adapter.
+      placeholder: logisim.evolution
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Interoperability question
+      description: State the single mapping, construct, or behavior this observation tests.
+      placeholder: Determine how an inverted one-bit input Pin is represented in a saved project.
+    validations:
+      required: true
+
+  - type: textarea
+    id: procedure
+    attributes:
+      label: Minimal controlled procedure
+      description: Describe the baseline and the one change or operation being observed.
+      placeholder: |
+        1. Create a blank project and place one input Pin.
+        2. Save the baseline.
+        3. Change only the Pin's inverted property and save a second artifact.
+    validations:
+      required: true
+
+  - type: textarea
+    id: identities
+    attributes:
+      label: Artifact identities
+      description: Provide workspace-relative filenames, byte lengths, and SHA-256 digests. Do not include absolute paths.
+      render: text
+      placeholder: |
+        baseline.circ  bytes=...  sha256=...
+        changed.circ   bytes=...  sha256=...
+    validations:
+      required: true
+
+  - type: textarea
+    id: observation
+    attributes:
+      label: Minimal observed result
+      description: Describe the bounded difference, tool output, or reopen behavior without pasting unrelated file content.
+    validations:
+      required: true
+
+  - type: textarea
+    id: boundary
+    attributes:
+      label: What this does not establish
+      description: Record uncertainty, alternate explanations, and any static-analysis versus runtime boundary.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Independent reproduction notes
+      description: Link a minimal synthetic artifact or list the exact steps another contributor can repeat.
+
+  - type: checkboxes
+    id: provenance
+    attributes:
+      label: Provenance and redistribution checks
+      options:
+        - label: I created the test circuit and performed this controlled observation myself.
+          required: true
+        - label: Any attached artifact is minimal, synthetic, and mine to share.
+          required: true
+        - label: I excluded simulator binaries, extracted assets, decompiled code, third-party designs, private firmware, credentials, and personal paths.
+          required: true
+        - label: I understand that this observation is version-scoped and may require independent reproduction.
+          required: true

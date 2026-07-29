@@ -62,7 +62,7 @@ gitleaks git .
       proposals.
 - [x] Add repository topics without implying unsupported Godot or live-simulator
       compatibility.
-- [ ] Require both the `Package and coverage` and
+- [x] Require both the `Package and coverage` and
       `Official Logisim-evolution 4.1.0 JAR` status checks in `main` branch
       protection, in addition to the supported Node/OS test matrix. Reconfirm
       the exact check names after changing either workflow.
@@ -99,22 +99,25 @@ designed, documented, and tested.
       `npm run mcpb:check`, `npm run registry:check`, and
       `npm audit --omit=dev`.
 - [ ] Inspect the `npm run package:audit` report. The release tarball must stay
-      at or below 5 MiB compressed, 20 MiB unpacked, and 4,000 files.
+      at or below 1 MiB compressed, 4 MiB unpacked, and 250 files. The complete
+      installed production tree must stay at or below 25 MiB and 5,000 files.
       Installed-package MCP initialization and `tools/list` each retain a
       10-second safety timeout; their measured times are reported for trend
       review rather than used as a flaky performance gate.
 - [ ] Confirm the installed binary accepts `--help` and `--version`, rejects
-      unknown arguments, exposes the expected tool count, and writes no stderr
-      when an MCP client launches it with pipes.
+      unknown arguments, passes `doctor --smoke --json`, exposes the expected
+      tool count, and writes no stderr when an MCP client launches it with
+      pipes.
 - [ ] Inspect the package allowlist. It must include the compiled server,
       license/notices, linked public documentation and examples, and
       `npm-shrinkwrap.json`; it must exclude repository source, tests, fixtures,
       GitHub internals, third-party designs, and `.cru` files.
-- [ ] Keep the MCP SDK's bundled, shrinkwrapped runtime while it requests the
-      vulnerable `@hono/node-server` 1.x range. npm consumers ignore dependency
-      overrides declared by installed packages, so bundling carries the audited
-      2.0.11 override into the executable package. Remove the bundle only after
-      an upstream SDK release provides a compatible patched dependency range.
+- [ ] Confirm the MCP SDK version accepts the audited
+      `@hono/node-server` 2.x range and the root shrinkwrap pins the exact
+      reviewed version. Since SDK 1.30.0 accepts `^1.19.9 || ^2.0.5`, the
+      package installs its normal shrinkwrapped production tree with
+      `@hono/node-server` 2.0.12; do not reintroduce an embedded dependency
+      bundle unless a future upstream constraint makes that necessary.
 - [ ] Confirm the `npm` GitHub environment requires an intentional maintainer
       approval.
 - [ ] Push only a version tag whose commit is already contained in `main`.
@@ -132,8 +135,31 @@ designed, documented, and tested.
       and pass `npm run logisim:e2e` before npm publication.
 - [ ] Test `npx -y circuitarium-mcp` from an empty temporary workspace and call
       `electronics_capabilities` from an MCP client.
+- [ ] Run the native-Windows Claude Code command through
+      `cmd /d /s /c`, parse every checked-in client configuration, and pass the
+      installed-package smoke on Windows and macOS.
 - [ ] Run the binary directly in a TTY and confirm its status panel appears on
       stderr without writing decorative text to MCP stdout.
+
+## MCP host and directory-submission evidence
+
+- [ ] Use the official MCP Inspector version pinned by the repository to
+      connect over stdio and exercise every registered tool against the
+      independently authored starter workspace.
+- [ ] Repeat the full tool exercise with the verified official
+      Logisim-evolution 4.1.0 all-JAR so the three runtime tools return genuine
+      version-pinned runtime evidence instead of an expected capability error.
+- [ ] Record a sanitized real-host demonstration without user paths, auth
+      tokens, private artifacts, proprietary imagery, or session identifiers.
+- [ ] Confirm every tool has a human-readable title and explicit
+      `readOnlyHint`; every non-read-only tool must also declare
+      `destructiveHint`.
+- [ ] Confirm the MCPB manifest includes a square icon, support URL, HTTPS
+      privacy-policy URL, generated-tool and generated-prompt declarations,
+      compatible platforms, and all user-config selectors.
+- [ ] Validate the MCPB on Windows, macOS, and Linux before submitting it to a
+      host directory. Directory approval is an external review and is not
+      implied by a passing local bundle check.
 
 ## MCP Registry and GitHub Release gate
 
@@ -148,7 +174,7 @@ Therefore the tag workflow must preserve this order:
 4. Authenticate the official `mcp-publisher` with GitHub OIDC and publish the
    matching `server.json` to the MCP Registry.
 5. Create the GitHub Release from the same tagged commit and attach the
-   verified npm tarball and MCPB bundle.
+   verified npm tarball, MCPB bundle, and sanitized 22-tool Inspector evidence.
 
 If npm publication or Registry submission fails, do not create the GitHub
 Release and never move the tag. A workflow rerun may continue from an npm
@@ -169,7 +195,8 @@ bytes, stop and follow npm's version rules when choosing a recovery version.
       `npm run mcpb:check`, then attach the exact verified bundle retained by
       the tag workflow.
 - [ ] Confirm the GitHub Release links to npm and the Registry record and uses
-      release notes from `CHANGELOG.md`.
+      release notes from `CHANGELOG.md`; its attached Inspector report must
+      match the report produced before publication.
 
 ### Trusted publishing
 

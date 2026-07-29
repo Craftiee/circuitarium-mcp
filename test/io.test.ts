@@ -10,6 +10,7 @@ import {
   listCruFiles,
   readCruFile,
   resolveCircuitariumMcpRoot,
+  workspaceRef,
   WorkspacePathDeniedError,
 } from "../src/adapters/crumb/io.js";
 
@@ -79,6 +80,26 @@ test("file snapshots preserve a UTF-8 BOM and reject malformed UTF-8", async () 
     assert.throws(
       () => invalid.xml,
       /valid UTF-8 text/,
+    );
+  } finally {
+    await rm(directory, { recursive: true });
+  }
+});
+
+test("freshly written CRUMB files reopen without a false path denial", async () => {
+  const directory = await mkdtemp(
+    join(CIRCUITARIUM_MCP_ROOT, ".circuitarium-fresh-read-test-"),
+  );
+  const path = join(directory, "fresh.cru");
+  const xml = '<SaveData xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" />';
+  try {
+    await writeFile(path, xml, "utf8");
+    const snapshot = await readCruFile(path);
+    assert.equal(snapshot.xml, xml);
+    assert.deepEqual(snapshot.bytes, Buffer.from(xml, "utf8"));
+    assert.match(
+      workspaceRef(snapshot.path),
+      /\.circuitarium-fresh-read-test-[^/]+\/fresh\.cru$/u,
     );
   } finally {
     await rm(directory, { recursive: true });

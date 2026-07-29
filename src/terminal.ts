@@ -10,7 +10,7 @@ const PANEL_DEFAULT_COLUMNS = 78;
 const PANEL_BOX_MIN_COLUMNS = 48;
 
 export type ServerCommandAction =
-  | { kind: "doctor" }
+  | { kind: "doctor"; options: DoctorCommandOptions }
   | { kind: "help" }
   | { kind: "serve" }
   | { kind: "version" }
@@ -33,6 +33,11 @@ export interface DoctorCommandResult {
   text: string;
 }
 
+export interface DoctorCommandOptions {
+  json: boolean;
+  smoke: boolean;
+}
+
 export function parseServerCommand(
   arguments_: readonly string[],
 ): ServerCommandAction {
@@ -52,8 +57,26 @@ export function parseServerCommand(
         return { kind: "version" };
       case "doctor":
       case "--doctor":
-        return { kind: "doctor" };
+        return {
+          kind: "doctor",
+          options: { json: false, smoke: false },
+        };
     }
+  }
+  if (
+    (arguments_[0] === "doctor" || arguments_[0] === "--doctor") &&
+    arguments_
+      .slice(1)
+      .every((argument) => argument === "--json" || argument === "--smoke") &&
+    new Set(arguments_.slice(1)).size === arguments_.length - 1
+  ) {
+    return {
+      kind: "doctor",
+      options: {
+        json: arguments_.includes("--json"),
+        smoke: arguments_.includes("--smoke"),
+      },
+    };
   }
   return { arguments: [...arguments_], kind: "invalid" };
 }
@@ -165,6 +188,9 @@ Options:
   -h, --help           Show this help
   -v, -V, --version    Print the installed version
   doctor, --doctor     Check package and optional Logisim runtime readiness
+    --smoke            Start stdio in an isolated synthetic workspace, then
+                       verify tool listing, CRUMB analysis, and static ERC
+    --json             Emit a versioned machine-readable doctor report
 
 Environment:
   CIRCUITARIUM_MCP_ROOT
@@ -179,7 +205,8 @@ Environment:
       Optional Java 21 executable. Defaults to "java".
 
 Try it with MCP Inspector:
-  npx -y @modelcontextprotocol/inspector npx -y ${SERVER_NAME}@${SERVER_VERSION}
+  First set CIRCUITARIUM_MCP_ROOT to the smallest circuit workspace, then run:
+  npx -y @modelcontextprotocol/inspector@2.0.0 npx -y ${SERVER_NAME}@${SERVER_VERSION}
 
 Setup guide:
   ${SETUP_URL}
@@ -208,7 +235,9 @@ export async function executeServerCommand(
   arguments_: readonly string[],
   startServer: () => Promise<number>,
   io: ServerCommandIo,
-  runDoctor: () => Promise<DoctorCommandResult> = async () => ({
+  runDoctor: (
+    options: DoctorCommandOptions,
+  ) => Promise<DoctorCommandResult> = async () => ({
     exitCode: 0,
     text: "Doctor checks are unavailable from this entrypoint.\n",
   }),
@@ -222,7 +251,7 @@ export async function executeServerCommand(
       io.writeStdout(`${SERVER_NAME} ${SERVER_VERSION}\n`);
       return 0;
     case "doctor": {
-      const report = await runDoctor();
+      const report = await runDoctor(action.options);
       io.writeStdout(report.text);
       return report.exitCode;
     }

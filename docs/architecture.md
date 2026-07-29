@@ -1,6 +1,6 @@
 # Architecture
 
-> This document describes the published 0.3.0 release: 22 tools across the
+> This document describes the published 0.3.1 release: 22 tools across the
 > CRUMBLE and Logisim-evolution backends, nine Resources, and four Prompts.
 
 ## Decision
@@ -371,7 +371,7 @@ capabilities remain separate from the local `crumb.file` backend.
 
 ### Logisim-evolution
 
-Version 0.3.0 registers six version-pinned Logisim tools:
+Version 0.3.1 registers six version-pinned Logisim tools:
 three static `.circ`/partial-IR tools and three bounded configured-JAR
 execution tools. The configured JAR must self-report 4.1.0 but is not
 authenticated as the official asset. `.circ` remains an adapter format rather

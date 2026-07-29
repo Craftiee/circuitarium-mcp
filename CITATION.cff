@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use Circuitarium MCP in research, teaching, or published work, please cite this software."
+title: "Circuitarium MCP"
+type: software
+version: 0.3.1
+date-released: "2026-07-28"
+authors:
+  - name: "Craftiee"
+abstract: >-
+  A local, model-neutral Model Context Protocol server for evidence-aware
+  analysis of Unity-era CRUMB artifacts and Logisim-evolution projects.
+repository-code: "https://github.com/Craftiee/circuitarium-mcp"
+url: "https://www.npmjs.com/package/circuitarium-mcp"
+license: "Apache-2.0"
+keywords:
+  - "Model Context Protocol"
+  - "electronics"
+  - "circuit analysis"
+  - "CRUMB"
+  - "Logisim-evolution"

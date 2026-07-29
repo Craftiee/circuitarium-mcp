@@ -1,2 +1,5 @@
 blank_issues_enabled: false
-contact_links: []
+contact_links:
+  - name: Questions, setup help, and early design ideas
+    url: https://github.com/Craftiee/circuitarium-mcp/discussions
+    about: Ask for help or discuss an idea before it is ready for a scoped issue.

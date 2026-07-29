@@ -7,7 +7,7 @@ Open **Settings → MCP Servers → Add MCP Server** and enter:
 | Name | `circuitarium` |
 | Transport | `STDIO` |
 | Command | `npx` |
-| Args | `-y`, `circuitarium-mcp@0.3.0` |
+| Args | `-y`, `circuitarium-mcp@0.3.1` |
 | Env | `CIRCUITARIUM_MCP_ROOT=/absolute/path/to/circuit-workspace` |
 
 Replace the workspace placeholder, enable the server, and select a model with

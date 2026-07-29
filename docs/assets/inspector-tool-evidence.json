@@ -1,0 +1,199 @@
+{
+  "schemaVersion": "circuitarium.inspector-evidence/0.1",
+  "inspector": {
+    "package": "@modelcontextprotocol/inspector",
+    "version": "2.0.0",
+    "mode": "cli",
+    "transport": "stdio"
+  },
+  "fixtures": {
+    "provenance": "repository-synthetic-and-independently-authored",
+    "temporaryWorkspace": true,
+    "privateArtifactsRead": false
+  },
+  "boundaries": {
+    "crumb": "Static Unity-era CRUMB 1.3.5 save-file evidence; no live game control or simulation.",
+    "logisimStatic": "Static .circ structure and explicitly partial neutral-IR evidence.",
+    "logisimRuntime": "One-shot configured-JAR project-load, truth-table, and vector evidence; no persistent GUI session.",
+    "jarRedistributedByCircuitarium": false
+  },
+  "runtime": {
+    "logisimJarConfigured": true,
+    "releaseRuntimeRequired": true,
+    "expectedSelfReportedVersion": "4.1.0",
+    "selfReportedVersionCheckedForRuntimeTools": true
+  },
+  "surface": {
+    "expectedTools": 22,
+    "listedTools": 22,
+    "exactNameAndOrderMatch": true,
+    "titlesAndAnnotationsChecked": true
+  },
+  "totals": {
+    "called": 22,
+    "passed": 22,
+    "skipped": 0,
+    "failed": 0
+  },
+  "tools": [
+    {
+      "name": "electronics_capabilities",
+      "layer": "neutral",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "electronics_validate_experiment",
+      "layer": "neutral",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true,
+      "dataValid": true
+    },
+    {
+      "name": "electronics_plan_verification",
+      "layer": "neutral",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_component_catalog",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_analyze_design",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_compare_designs",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_inspect_design",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_validate_design",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true,
+      "dataValid": true
+    },
+    {
+      "name": "crumb_generate_fixture",
+      "layer": "crumb-synthetic-write",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true,
+      "dataValid": true
+    },
+    {
+      "name": "crumb_list_projects",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_get_component",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_bom",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_ic_reference",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_export_netlist",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_trace_net",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "crumb_check_design",
+      "layer": "crumb-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true,
+      "dataValid": true
+    },
+    {
+      "name": "logisim_list_projects",
+      "layer": "logisim-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "logisim_analyze_design",
+      "layer": "logisim-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "logisim_export_netlist",
+      "layer": "logisim-static",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "logisim_component_stats",
+      "layer": "logisim-runtime",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "logisim_truth_table",
+      "layer": "logisim-runtime",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true
+    },
+    {
+      "name": "logisim_run_test_vector",
+      "layer": "logisim-runtime",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true,
+      "dataValid": true
+    }
+  ]
+}

@@ -5,14 +5,23 @@ repository's code and documented interfaces, including the CRUMBLE and
 Logisim-evolution integrations, not CRUMB, Logisim-evolution, or any other
 simulator itself.
 
-## Questions and feature ideas
+## Choose the right public channel
 
 Use [GitHub Discussions](https://github.com/Craftiee/circuitarium-mcp/discussions)
-for questions, setup help, and design proposals. For actionable bugs and
-features,
-[open an issue](https://github.com/Craftiee/circuitarium-mcp/issues/new/choose)
-and describe the user goal, model host, operating system, Node.js version,
-backend, and adapter version.
+for questions, setup help, early design exploration, and results that are not
+yet reproducible. Include the user goal, model host, operating system, Node.js
+version, backend, and adapter version when those details apply.
+
+Use the [issue chooser](https://github.com/Craftiee/circuitarium-mcp/issues/new/choose)
+only when the report is ready for action:
+
+- a reproducible behavior that does not match the documented contract;
+- a scoped feature request with a concrete use case;
+- a controlled CRUMB format observation; or
+- simulator-neutral interoperability evidence.
+
+This separation keeps support conversations open-ended while making every
+issue specific enough to verify or implement.
 
 ## Bug reports
 

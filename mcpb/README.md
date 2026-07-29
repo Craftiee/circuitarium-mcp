@@ -5,7 +5,7 @@ attached to each GitHub Release. The bundle contains the compiled server and
 all production Node.js dependencies; it does not contain CRUMB,
 Logisim-evolution, Java, simulator assets, or user circuit files.
 
-The current source manifest identifies the published 0.3.0 bundle and its
+The current source manifest identifies the published 0.3.1 bundle and its
 22-tool, nine-Resource, four-Prompt Logisim-capable server.
 
 Build and verify it with:
@@ -29,7 +29,7 @@ unpacked bundle and requires runtime evidence marked
 `self-reported-unverified` at version `4.1.0`. The no-JAR path remains the
 ordinary bundle audit.
 
-The 0.3.0 installer always asks for a circuit workspace. Its
+The 0.3.1 installer always asks for a circuit workspace. Its
 Logisim-evolution 4.1.0 all-JAR and Java 21 selectors are optional; they only
 enable the three JAR-backed runtime tools.
 

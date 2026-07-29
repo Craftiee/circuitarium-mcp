@@ -10,9 +10,9 @@ const exitCode = await executeServerCommand(
     return server.listRegisteredToolNames().length;
   },
   processCommandIo(),
-  async () => {
+  async (options) => {
     const server = await import("./server.js");
-    return server.runServerDoctor();
+    return server.runServerDoctor(options);
   },
 );
 

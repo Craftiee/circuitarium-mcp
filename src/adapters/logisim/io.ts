@@ -246,18 +246,29 @@ async function readRawWorkspaceFile(
 			);
 		}
 
-		// Compare the opened handle with the pathname identity. O_NOFOLLOW covers
-		// POSIX; this identity check also fails closed on Windows replacement races.
+		// Compare two independently opened handle identities. O_NOFOLLOW covers
+		// POSIX; this check also fails closed on Windows replacement races. Avoid
+		// path stat because it uses a different Windows API that can disagree with
+		// fstat about volume identity on virtual/profile disks.
 		const currentPath = await realpath(safe.target);
 		requireContained(safe.root, currentPath);
-		const currentFile = await stat(currentPath);
-		if (
-			openedFile.dev !== currentFile.dev ||
-			openedFile.ino !== currentFile.ino
-		) {
-			throw new LogisimWorkspacePathDeniedError(
-				`Logisim path changed while it was being opened: ${safe.target}`,
-			);
+		const openedIdentity = await handle.stat({ bigint: true });
+		const currentHandle = await open(
+			currentPath,
+			constants.O_RDONLY | noFollow,
+		);
+		try {
+			const currentIdentity = await currentHandle.stat({ bigint: true });
+			if (
+				openedIdentity.dev !== currentIdentity.dev ||
+				openedIdentity.ino !== currentIdentity.ino
+			) {
+				throw new LogisimWorkspacePathDeniedError(
+					`Logisim path changed while it was being opened: ${safe.target}`,
+				);
+			}
+		} finally {
+			await currentHandle.close();
 		}
 
 		const chunks: Buffer[] = [];
