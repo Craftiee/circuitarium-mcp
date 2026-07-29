@@ -4,9 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing package-version tag to publish, such as v0.3.0
+        required: true
+        type: string
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -30,6 +36,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -61,7 +68,7 @@ jobs:
       - name: Verify release identity
         id: release_identity
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: npm run release:check
 
       - name: Run release checks
@@ -110,7 +117,7 @@ jobs:
       - name: Retain verified npm package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: npm-package-${{ github.ref_name }}
+          name: npm-package-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           path: ${{ steps.package.outputs.tarball }}
           if-no-files-found: error
           retention-days: 30
@@ -118,7 +125,7 @@ jobs:
       - name: Retain verified MCPB bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mcpb-bundle-${{ github.ref_name }}
+          name: mcpb-bundle-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           path: ${{ steps.mcpb.outputs.bundle }}
           if-no-files-found: error
           retention-days: 30
@@ -223,6 +230,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: Install pinned MCP publisher
         shell: bash
@@ -314,23 +322,25 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: Download verified npm package
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: npm-package-${{ github.ref_name }}
+          name: npm-package-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           path: release-artifacts/npm
 
       - name: Download verified MCPB bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: mcpb-bundle-${{ github.ref_name }}
+          name: mcpb-bundle-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           path: release-artifacts/mcpb
 
       - name: Create release from verified artifacts
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_IS_PRERELEASE: ${{ needs.publish.outputs.prerelease }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -339,7 +349,7 @@ jobs:
           test "${#tarballs[@]}" -eq 1
           test "${#bundles[@]}" -eq 1
 
-          release_version="${GITHUB_REF_NAME#v}"
+          release_version="${RELEASE_TAG#v}"
           release_heading="## [${release_version}]"
           awk -v heading="$release_heading" '
             index($0, heading) == 1 {
@@ -355,13 +365,13 @@ jobs:
           [[ "$(head -n 1 release-notes.md)" == "$release_heading"* ]]
           grep -Eq '[^[:space:]]' release-notes.md
 
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release edit \
-              "$GITHUB_REF_NAME" \
-              --title "Circuitarium MCP $GITHUB_REF_NAME" \
+              "$RELEASE_TAG" \
+              --title "Circuitarium MCP $RELEASE_TAG" \
               --notes-file release-notes.md
             gh release upload \
-              "$GITHUB_REF_NAME" \
+              "$RELEASE_TAG" \
               "${tarballs[0]}" \
               "${bundles[0]}" \
               --clobber
@@ -369,13 +379,13 @@ jobs:
             release_flags=(
               --verify-tag
               --notes-file release-notes.md
-              --title "Circuitarium MCP $GITHUB_REF_NAME"
+              --title "Circuitarium MCP $RELEASE_TAG"
             )
             if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
               release_flags+=(--prerelease)
             fi
             gh release create \
-              "$GITHUB_REF_NAME" \
+              "$RELEASE_TAG" \
               "${tarballs[0]}" \
               "${bundles[0]}" \
               "${release_flags[@]}"
