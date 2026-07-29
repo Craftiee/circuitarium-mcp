@@ -9,6 +9,7 @@ on:
         type: string
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
@@ -40,12 +41,24 @@ jobs:
           test "$(git rev-parse HEAD)" = "$main_commit"
 
           if git rev-parse --verify --quiet "refs/tags/$REQUESTED_TAG" >/dev/null; then
-            test "$(git rev-list -n 1 "$REQUESTED_TAG")" = "$main_commit"
-            echo "$REQUESTED_TAG already identifies the current main commit."
-            exit 0
+            tag_commit="$(git rev-list -n 1 "$REQUESTED_TAG")"
+            git merge-base --is-ancestor "$tag_commit" "$main_commit"
+            tag_package_version="$(
+              git show "$REQUESTED_TAG:package.json" |
+                node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).version"
+            )"
+            test "$tag_package_version" = "$package_version"
+            echo "$REQUESTED_TAG already identifies a release commit contained in main."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag --annotate "$REQUESTED_TAG" --message "Circuitarium MCP $REQUESTED_TAG"
+            git push origin "refs/tags/$REQUESTED_TAG"
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag --annotate "$REQUESTED_TAG" --message "Circuitarium MCP $REQUESTED_TAG"
-          git push origin "refs/tags/$REQUESTED_TAG"
+      - name: Start protected publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: gh workflow run publish.yml --ref main --field tag="$REQUESTED_TAG"
