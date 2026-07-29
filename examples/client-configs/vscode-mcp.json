@@ -3,7 +3,7 @@
     "circuitarium": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "circuitarium-mcp@0.2.1"],
+      "args": ["-y", "circuitarium-mcp@0.3.0"],
       "env": {
         "CIRCUITARIUM_MCP_ROOT": "${workspaceFolder}"
       }
