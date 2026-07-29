@@ -116,6 +116,10 @@ interface Envelope {
     };
     traceVersion?: string;
   };
+  error?: {
+    code?: unknown;
+    message?: unknown;
+  };
   ok?: boolean;
 }
 
@@ -179,6 +183,38 @@ const stagedFiles = [
 const keepTarball = process.env.CIRCUITARIUM_KEEP_PACKAGE === "1";
 let packageTarball: string | undefined;
 let packageDirectory: string | undefined;
+
+function boundedDiagnostic(
+  value: unknown,
+  maxLength: number,
+  controlReplacement: string,
+): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  let output = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    output +=
+      codePoint !== undefined && (codePoint < 32 || codePoint === 127)
+        ? controlReplacement
+        : character;
+    if (output.length >= maxLength) {
+      return output.slice(0, maxLength);
+    }
+  }
+  return output;
+}
+
+function toolFailureSummary(value: unknown): string {
+  const envelope = envelopeOf(value);
+  const code =
+    boundedDiagnostic(envelope.error?.code, 64, "") ?? "UNKNOWN";
+  const message =
+    boundedDiagnostic(envelope.error?.message, 240, " ") ??
+    "The MCP tool returned an error envelope.";
+  return `packaged MCP tool failed (${code}): ${message}`;
+}
 let packageVerified = false;
 let consumerDirectory: string | undefined;
 let stagingDirectory: string | undefined;
@@ -955,7 +991,11 @@ try {
       STARTUP_TIMEOUT_MS,
       "packaged MCP crumb_trace_net",
     );
-    assert.equal(traceResult.isError ?? false, false);
+    assert.equal(
+      traceResult.isError ?? false,
+      false,
+      toolFailureSummary(traceResult),
+    );
     const traceEnvelope = envelopeOf(traceResult);
     assert.equal(traceEnvelope.data?.traceVersion, "crumb.net-trace/0.1");
     assert.equal(

@@ -174,6 +174,8 @@ function inspectorArguments(
 ): string[] {
 	const configuredJar = process.env.CIRCUITARIUM_LOGISIM_JAR?.trim();
 	const configuredJava = process.env.CIRCUITARIUM_JAVA?.trim();
+	const configuredDisplay = process.env.DISPLAY?.trim();
+	const configuredXAuthority = process.env.XAUTHORITY?.trim();
 	return [
 		...npxPrefixArguments,
 		"-y",
@@ -189,6 +191,13 @@ function inspectorArguments(
 		...(configuredJava === undefined || configuredJava.length === 0
 			? []
 			: ["-e", `CIRCUITARIUM_JAVA=${configuredJava}`]),
+		...(configuredDisplay === undefined || configuredDisplay.length === 0
+			? []
+			: ["-e", `DISPLAY=${configuredDisplay}`]),
+		...(configuredXAuthority === undefined ||
+		configuredXAuthority.length === 0
+			? []
+			: ["-e", `XAUTHORITY=${configuredXAuthority}`]),
 		"--method",
 		method,
 		...(tool === undefined
@@ -574,6 +583,7 @@ function sanitizeMessage(
 		workspaceRoot,
 		process.env.CIRCUITARIUM_LOGISIM_JAR,
 		process.env.CIRCUITARIUM_JAVA,
+		process.env.XAUTHORITY,
 	].filter((value): value is string => value !== undefined && value.length > 0);
 	return replacements.reduce(
 		(sanitized, value) => sanitized.split(value).join("<local-path>"),

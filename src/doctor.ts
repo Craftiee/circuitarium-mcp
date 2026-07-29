@@ -56,6 +56,10 @@ interface ContractEnvelope {
     projectDigest?: unknown;
   };
   data?: Record<string, unknown>;
+  error?: {
+    code?: unknown;
+    message?: unknown;
+  };
   ok?: unknown;
 }
 
@@ -107,13 +111,40 @@ function envelopeOf(value: unknown): ContractEnvelope {
   return structuredContent as ContractEnvelope;
 }
 
+function boundedDiagnostic(
+  value: unknown,
+  maxLength: number,
+  controlReplacement: string,
+): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  let output = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    output +=
+      codePoint !== undefined && (codePoint < 32 || codePoint === 127)
+        ? controlReplacement
+        : character;
+    if (output.length >= maxLength) {
+      return output.slice(0, maxLength);
+    }
+  }
+  return output;
+}
+
 function requireSuccessfulEnvelope(
   value: unknown,
   expectedDigest: string,
 ): Record<string, unknown> {
   const envelope = envelopeOf(value);
   if (envelope.ok !== true) {
-    throw new Error("The MCP tool returned an error envelope");
+    const code =
+      boundedDiagnostic(envelope.error?.code, 64, "") ?? "UNKNOWN";
+    const message =
+      boundedDiagnostic(envelope.error?.message, 240, " ") ??
+      "The MCP tool returned an error envelope.";
+    throw new Error(`MCP tool failed (${code}): ${message}`);
   }
   if (envelope.context?.projectDigest !== expectedDigest) {
     throw new Error("The MCP tool did not bind results to the smoke artifact");
