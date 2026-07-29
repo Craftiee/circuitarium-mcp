@@ -68,17 +68,52 @@ function requireCruExtension(path: string): void {
   }
 }
 
-function requireContained(root: string, target: string): void {
+function relativeIfContained(root: string, target: string): string | undefined {
   const relativePath = relative(root, target);
   if (
     relativePath === ".." ||
     relativePath.startsWith(`..${sep}`) ||
     isAbsolute(relativePath)
   ) {
+    return undefined;
+  }
+  return relativePath;
+}
+
+function requireContained(root: string, target: string): string {
+  const relativePath = relativeIfContained(root, target);
+  if (relativePath === undefined) {
     throw new WorkspacePathDeniedError(
       `Path is outside CIRCUITARIUM_MCP_ROOT (${CIRCUITARIUM_MCP_ROOT}): ${target}`,
     );
   }
+  return relativePath;
+}
+
+/**
+ * Accepts either the configured spelling of the root or the spelling returned
+ * by realpath. Windows can expand an 8.3/profile path before returning a child,
+ * while macOS commonly canonicalizes /var to /private/var.
+ */
+function requireContainedRootAlias(
+  configuredRoot: string,
+  canonicalRoot: string,
+  target: string,
+): string {
+  const relativePath =
+    relativeIfContained(configuredRoot, target) ??
+    relativeIfContained(canonicalRoot, target);
+  if (relativePath === undefined) {
+    throw new WorkspacePathDeniedError(
+      `Path is outside CIRCUITARIUM_MCP_ROOT (${configuredRoot}): ${target}`,
+    );
+  }
+  return relativePath;
+}
+
+function normalizedRelative(path: string): string {
+  const normalized = path.split(sep).join("/");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 async function requireReadablePath(absolutePath: string): Promise<string> {
@@ -388,10 +423,21 @@ export async function listCruFiles(
 }
 
 export function workspaceRef(path: string): string {
+  const configuredRoot = resolve(CIRCUITARIUM_MCP_ROOT);
+  const canonicalRoot = realpathSync.native(configuredRoot);
   const absolutePath = absoluteWorkspacePath(path);
-  const root = realpathSync(CIRCUITARIUM_MCP_ROOT);
-  const target = realpathSync(absolutePath);
-  requireContained(root, target);
-  const reference = relative(root, target);
+  const lexicalRelative = normalizedRelative(
+    requireContainedRootAlias(configuredRoot, canonicalRoot, absolutePath),
+  );
+  const target = realpathSync.native(absolutePath);
+  const canonicalRelative = normalizedRelative(
+    requireContained(canonicalRoot, target),
+  );
+  if (lexicalRelative !== canonicalRelative) {
+    throw new WorkspacePathDeniedError(
+      `Refusing a path that traverses a symbolic link or reparse point: ${absolutePath}`,
+    );
+  }
+  const reference = relative(canonicalRoot, target);
   return reference.length === 0 ? "." : reference.split(sep).join("/");
 }

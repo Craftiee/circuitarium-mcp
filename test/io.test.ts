@@ -10,6 +10,7 @@ import {
   listCruFiles,
   readCruFile,
   resolveCircuitariumMcpRoot,
+  workspaceRef,
   WorkspacePathDeniedError,
 } from "../src/adapters/crumb/io.js";
 
@@ -96,6 +97,10 @@ test("freshly written CRUMB files reopen without a false path denial", async () 
     const snapshot = await readCruFile(path);
     assert.equal(snapshot.xml, xml);
     assert.deepEqual(snapshot.bytes, Buffer.from(xml, "utf8"));
+    assert.match(
+      workspaceRef(snapshot.path),
+      /\.circuitarium-fresh-read-test-[^/]+\/fresh\.cru$/u,
+    );
   } finally {
     await rm(directory, { recursive: true });
   }
