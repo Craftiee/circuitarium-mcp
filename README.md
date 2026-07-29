@@ -31,6 +31,16 @@ You need:
 Windows, macOS, and Linux are covered by CI. CRUMB analysis and the static
 Logisim tools need neither simulator nor Java.
 
+To install and start the local stdio server from a terminal:
+
+```bash
+npx -y circuitarium-mcp@0.3.1
+```
+
+In an interactive terminal this prints a short status panel. In normal use,
+your MCP client runs the same command and keeps the server connected over
+stdio.
+
 ### 1. Add Circuitarium to your MCP client
 
 Most clients ask for the same command, arguments, and environment variable:

@@ -23,6 +23,17 @@ export interface ReleaseReadiness {
   version: string;
 }
 
+export function resolveReleaseTag(
+  environment: NodeJS.ProcessEnv,
+  positionalTag: string | undefined,
+): string | undefined {
+  const githubTag =
+    environment.GITHUB_REF_TYPE === "tag"
+      ? environment.GITHUB_REF_NAME
+      : undefined;
+  return environment.RELEASE_TAG ?? githubTag ?? positionalTag;
+}
+
 function escapeRegularExpression(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -131,8 +142,7 @@ async function main(): Promise<void> {
     readFile(resolve(repositoryRoot, "README.md"), "utf8"),
   ]);
   const manifest = JSON.parse(manifestText) as PackageManifest;
-  const releaseTag =
-    process.env.RELEASE_TAG ?? process.env.GITHUB_REF_NAME ?? process.argv[2];
+  const releaseTag = resolveReleaseTag(process.env, process.argv[2]);
   const readiness = verifyReleaseReadiness({
     manifest,
     serverVersion: SERVER_VERSION,

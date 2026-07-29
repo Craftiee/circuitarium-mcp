@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   type ReleaseReadinessInput,
+  resolveReleaseTag,
   verifyReleaseReadiness,
 } from "../scripts/verify-release-tag.js";
 
@@ -43,6 +44,40 @@ function readyInput(
 }
 
 describe("release readiness", () => {
+  it("uses GitHub ref names only when the workflow is running on a tag", () => {
+    assert.equal(
+      resolveReleaseTag(
+        {
+          GITHUB_REF_NAME: "26/merge",
+          GITHUB_REF_TYPE: "branch",
+        },
+        undefined,
+      ),
+      undefined,
+    );
+    assert.equal(
+      resolveReleaseTag(
+        {
+          GITHUB_REF_NAME: "v0.3.1",
+          GITHUB_REF_TYPE: "tag",
+        },
+        undefined,
+      ),
+      "v0.3.1",
+    );
+    assert.equal(
+      resolveReleaseTag(
+        {
+          GITHUB_REF_NAME: "v0.3.0",
+          GITHUB_REF_TYPE: "tag",
+          RELEASE_TAG: "v0.3.1",
+        },
+        undefined,
+      ),
+      "v0.3.1",
+    );
+  });
+
   it("accepts one dated changelog section and a matching front-door install", () => {
     assert.deepEqual(verifyReleaseReadiness(readyInput()), {
       npmTag: "latest",
