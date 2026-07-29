@@ -5,11 +5,8 @@ Logisim-evolution 4.1.0. It combines a clean-room `.circ` reader with bounded
 subprocess calls to a separately installed, user-supplied Logisim-evolution
 JAR.
 
-> **Release status:** this adapter is part of the Unreleased 0.3.0 source tree.
-> The published `circuitarium-mcp@0.2.1` package and
-> `circuitarium-mcp-0.2.1.mcpb` contain 14 CRUMBLE tools and no Logisim tools.
-> Use a built source checkout for the instructions below until 0.3.0 is
-> actually published.
+> **Release status:** this adapter is included in the published
+> `circuitarium-mcp@0.3.0` package and `circuitarium-mcp-0.3.0.mcpb`.
 
 Circuitarium does **not** bundle, download at runtime, link against, or
 redistribute Logisim-evolution. Circuitarium remains Apache-2.0; the user
@@ -27,8 +24,8 @@ supplies Logisim-evolution under its own GPL-3.0 license.
 5. Set `CIRCUITARIUM_MCP_ROOT` to the smallest directory containing the
    `.circ` and `.vec`/`.txt` files the model may access.
 
-Build the Unreleased source tree with `npm ci` and `npm run build`, then point
-the MCP host at its production entrypoint:
+For a source checkout, build with `npm ci` and `npm run build`, then point the
+MCP host at its production entrypoint:
 
 ```json
 {
@@ -42,9 +39,8 @@ the MCP host at its production entrypoint:
 }
 ```
 
-After version 0.3.0 is published, the equivalent immutable package command will
-be `npx -y circuitarium-mcp@0.3.0`; it is documented here as forthcoming, not
-as a currently downloadable release.
+The equivalent immutable package command is
+`npx -y circuitarium-mcp@0.3.0`.
 
 `LOGISIM_JAR` remains a compatibility fallback, but new configurations should
 use `CIRCUITARIUM_LOGISIM_JAR`.
