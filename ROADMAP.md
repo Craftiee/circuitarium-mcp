@@ -6,7 +6,7 @@ CRUMBLE is its unofficial CRUMB-specific integration family, not the umbrella
 data model. Dates are deliberately omitted until each milestone has
 reproducible evidence.
 
-## Current release: 0.3.0
+## Current release: 0.3.1
 
 This section describes the published 22-tool, nine-Resource, four-Prompt
 release available from npm and as an MCPB. It includes the CRUMBLE and
@@ -37,6 +37,10 @@ Logisim-evolution adapters plus the simulator-neutral knowledge surfaces.
 - Version-pinned Logisim-evolution 4.1.0 project discovery, strict `.circ`
   structure, explicitly partial neutral IR/netlist export, official-JAR
   project-load statistics, bounded truth tables, and test vectors.
+- Deterministic `doctor --smoke` validation, executable client-configuration
+  tests, cross-platform installed-package smoke checks, a compact dependency
+  install, and reproducible official MCP Inspector evidence for the full tool
+  surface.
 
 The current server does not provide a live simulator session, arbitrary circuit
 editing, or CRUMB 2.x/Godot compatibility. Logisim runtime calls are bounded

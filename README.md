@@ -5,6 +5,7 @@ save files and Logisim-evolution projects.
 
 [![CI](https://github.com/Craftiee/circuitarium-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Craftiee/circuitarium-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/circuitarium-mcp.svg)](https://www.npmjs.com/package/circuitarium-mcp)
+[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.Craftiee%2Fcircuitarium-5c4ee5.svg)](https://registry.modelcontextprotocol.io/?q=io.github.Craftiee%2Fcircuitarium)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Circuitarium lets an MCP host inspect circuit files without pretending that
@@ -12,7 +13,7 @@ static analysis is a running simulator. It can trace CRUMB nets, build BOMs,
 run electrical rule checks, analyze Logisim projects, and optionally ask
 Logisim-evolution to produce truth tables or run test vectors.
 
-Release `0.3.0` includes 22 tools, nine read-only Resources, and four workflow
+Release `0.3.1` includes 22 tools, nine read-only Resources, and four workflow
 Prompts. The server is model-neutral: Codex, Claude Code/Desktop, VS Code,
 LM Studio, Jan, or another local MCP host supplies the model and launches
 Circuitarium over stdio. Circuitarium itself needs no OpenAI, Anthropic, or
@@ -36,7 +37,7 @@ Most clients ask for the same command, arguments, and environment variable:
 
 ```text
 Command: npx
-Arguments: -y circuitarium-mcp@0.3.0
+Arguments: -y circuitarium-mcp@0.3.1
 Environment:
   CIRCUITARIUM_MCP_ROOT=/absolute/path/to/circuit-workspace
 ```
@@ -57,13 +58,18 @@ Copyable configurations are available for:
 - [Jan](examples/client-configs/jan.md)
 
 See the [client setup guide](docs/client-setup.md) for platform-specific
-examples and local-model guidance. Restart or reload the client after adding
-the server.
+examples and local-model guidance. The
+[starter workspace recipe](examples/starter-workspace/README.md) copies one
+synthetic CRUMB fixture plus the full-adder Logisim project into an isolated
+folder, so a first test does not require access to the rest of a source
+checkout. Restart or reload the client after adding the server.
 
 Claude Desktop users can instead download
-[`circuitarium-mcp-0.3.0.mcpb`](https://github.com/Craftiee/circuitarium-mcp/releases/tag/v0.3.0)
-and open it as a local bundle. The installer asks for a circuit workspace and
-offers optional Logisim JAR and Java settings.
+[`circuitarium-mcp-0.3.1.mcpb`](https://github.com/Craftiee/circuitarium-mcp/releases/download/v0.3.1/circuitarium-mcp-0.3.1.mcpb)
+directly and open it as a local bundle. The installer asks for a circuit
+workspace and offers optional Logisim JAR and Java settings. The
+[release page](https://github.com/Craftiee/circuitarium-mcp/releases/tag/v0.3.1)
+also includes checksums and the matching npm tarball.
 
 ### 2. Try a circuit with no simulator installed
 
@@ -87,18 +93,24 @@ independently authored and safe to redistribute; it is not a CRUMB asset.
 These commands verify the published launcher without opening a server session:
 
 ```text
-npx -y circuitarium-mcp@0.3.0 --help
-npx -y circuitarium-mcp@0.3.0 --version
-npx -y circuitarium-mcp@0.3.0 doctor
+npx -y circuitarium-mcp@0.3.1 --help
+npx -y circuitarium-mcp@0.3.1 --version
+npx -y circuitarium-mcp@0.3.1 doctor --smoke
 ```
 
-If the bare `npx -y circuitarium-mcp@0.3.0` command appears to wait, the server
+If the bare `npx -y circuitarium-mcp@0.3.1` command appears to wait, the server
 is working as designed: it is waiting for an MCP host on stdin. Press Ctrl+C
 and let the host launch the command itself.
 
-[Watch the terminal demo](https://github.com/Craftiee/circuitarium-mcp/blob/v0.3.0/docs/assets/circuitarium-terminal-demo.gif)
-to see the published CLI inspect a synthetic fixture, build its BOM, and
-export its netlist.
+[Watch the terminal demo](https://github.com/Craftiee/circuitarium-mcp/blob/v0.3.1/docs/assets/circuitarium-terminal-demo.gif)
+to see the source-checkout command runner inspect a synthetic fixture, build
+its BOM, and export its netlist. The public package exposes the MCP server,
+help, version, and doctor commands shown above.
+
+[Watch the MCP Inspector demo](https://github.com/Craftiee/circuitarium-mcp/blob/v0.3.1/docs/assets/circuitarium-inspector-demo.gif)
+to see the server running in an independent MCP client, or read the
+[reproducible 22-tool host verification](https://github.com/Craftiee/circuitarium-mcp/blob/v0.3.1/docs/host-demo.md)
+and its sanitized evidence report.
 
 ## What you can do
 
@@ -117,6 +129,16 @@ adapters.
 The current surface breaks down into three neutral `electronics_*` tools,
 thirteen `crumb_*` tools, and six `logisim_*` tools. All tool results use the
 `electronics.mcp/0.2` result contract, independent of the package version.
+
+### Static analysis versus runtime execution
+
+| Operation | Simulator or Java required? | What it establishes |
+|---|---|---|
+| All `crumb_*` tools | No | Facts inferred from a saved Unity-era `.cru` file; never live CRUMB behavior |
+| `logisim_list_projects`, `logisim_analyze_design`, `logisim_export_netlist` | No | Saved `.circ` structure and an explicitly partial neutral representation |
+| `logisim_component_stats` | Java 21 and a user-supplied Logisim 4.1.0 all-JAR | The selected project and circuit loaded in one bounded subprocess |
+| `logisim_truth_table`, `logisim_run_test_vector` | Java 21 and a user-supplied Logisim 4.1.0 all-JAR | Bounded behavioral evidence for the exact project digest; not a live GUI session |
+| Resources and Prompts | No | Guidance and workflow templates only; they do not read a project or execute a simulator |
 
 ## Compatibility and honest limits
 
@@ -285,7 +307,8 @@ Before changing an adapter or public contract, read the
 [architecture](docs/architecture.md), and
 [provenance policy](PROVENANCE.md). Questions and early design ideas belong in
 [Discussions](https://github.com/Craftiee/circuitarium-mcp/discussions);
-reproducible bugs and scoped feature requests belong in the
+reproducible bugs, scoped feature requests, and controlled interoperability
+evidence belong in the
 [issue tracker](https://github.com/Craftiee/circuitarium-mcp/issues/new/choose).
 
 ```text
@@ -321,17 +344,28 @@ All contributors must follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 | [Roadmap](ROADMAP.md) | Shipped milestones and planned work |
 | [Changelog](CHANGELOG.md) | Release history |
 
+## Privacy Policy
+
+Circuitarium runs locally over stdio, has no telemetry, and does not send
+circuit files to a maintainer-controlled service. The MCP host and model
+provider you choose may still process tool arguments and results under their
+own terms. Read the complete [Privacy Policy](PRIVACY.md) before granting a
+host access to a workspace.
+
 ## Project status and license
 
 Circuitarium MCP is experimental community software released under the
-[Apache License 2.0](LICENSE). Version `0.3.0` is available on
-[npm](https://www.npmjs.com/package/circuitarium-mcp/v/0.3.0) and as a
-[GitHub release](https://github.com/Craftiee/circuitarium-mcp/releases/tag/v0.3.0).
-For help, see [SUPPORT.md](SUPPORT.md).
+[Apache License 2.0](LICENSE). Version `0.3.1` is available on
+[npm](https://www.npmjs.com/package/circuitarium-mcp/v/0.3.1) and as a
+[GitHub release](https://github.com/Craftiee/circuitarium-mcp/releases/tag/v0.3.1),
+and its metadata is listed in the
+[official MCP Registry](https://registry.modelcontextprotocol.io/?q=io.github.Craftiee%2Fcircuitarium).
+For help, see [SUPPORT.md](SUPPORT.md). Research and teaching users can cite
+the project with [CITATION.cff](CITATION.cff).
 
 Circuitarium MCP, CRUMBLE, and the Logisim-evolution adapter are independent,
 unofficial interoperability work. They are not affiliated with, endorsed by,
 or sponsored by CRUMB, Logisim-evolution, or their developers. This repository
-contains no simulator code, binaries, extracted assets, logos, or bundled
-third-party circuit designs. Product names and marks belong to their
-respective owners.
+contains no CRUMB or Logisim-evolution simulator code, binaries, extracted
+assets, logos, or bundled third-party circuit designs. Product names and marks
+belong to their respective owners.

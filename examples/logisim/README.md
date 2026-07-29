@@ -22,3 +22,5 @@ circuit: Main
 
 In a source checkout whose repository root is intentionally the configured
 workspace, the existing `examples/logisim/...` refs already satisfy that rule.
+For a narrower first-run setup containing both CRUMB and Logisim examples, use
+the [starter workspace recipe](../starter-workspace/README.md).

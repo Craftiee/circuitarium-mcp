@@ -4,7 +4,7 @@
 
 This MCP server does not contain or call an AI model. It exposes electronics
 tools plus optional read-only Resources and user-invoked Prompts. The diagram
-below describes the published 0.3.0 release. The host application supplies the
+below describes the published 0.3.1 release. The host application supplies the
 model:
 
 ```text
@@ -29,7 +29,7 @@ CRUMB-specific integration family. The branding does not change the stable
 Launch the published release with:
 
 ```powershell
-npx -y circuitarium-mcp@0.3.0
+npx -y circuitarium-mcp@0.3.1
 ```
 
 On a first run, npm may spend some time downloading and extracting the package
@@ -37,8 +37,8 @@ before Circuitarium starts. These commands verify the installed launcher
 without opening a long-lived server:
 
 ```powershell
-npx -y circuitarium-mcp@0.3.0 --help
-npx -y circuitarium-mcp@0.3.0 --version
+npx -y circuitarium-mcp@0.3.1 --help
+npx -y circuitarium-mcp@0.3.1 --version
 ```
 
 Running the server directly in a real terminal displays a plain-ASCII status
@@ -50,7 +50,10 @@ automatically suppressed and stdout stays reserved for MCP JSON-RPC.
 Set `CIRCUITARIUM_MCP_ROOT` in the host configuration to the narrowest
 directory containing the circuit files that host may access. Copyable
 configurations for Codex, Claude Code, VS Code, LM Studio, and Jan are in
-[the client-config examples](../examples/client-configs/README.md).
+[the client-config examples](../examples/client-configs/README.md). For a
+reproducible first test, follow the
+[starter workspace recipe](../examples/starter-workspace/README.md) instead of
+granting the host access to an existing project tree.
 
 For a source checkout, build first:
 
@@ -72,15 +75,15 @@ literally.
 ## Package versus source checkout
 
 A tagged source checkout and its same-version package launch the same stdio
-server. Version 0.3.0 registers 22 tools, nine Resources, and four Prompts.
+server. Version 0.3.1 registers 22 tools, nine Resources, and four Prompts.
 Prefer the immutable package release unless you are contributing to the source:
 
 ```text
 Command: npx
-Arguments: -y circuitarium-mcp@0.3.0
+Arguments: -y circuitarium-mcp@0.3.1
 ```
 
-Use a source checkout when contributing or testing changes after 0.3.0. Keep
+Use a source checkout when contributing or testing changes after 0.3.1. Keep
 the client's working directory or
 `CIRCUITARIUM_MCP_ROOT` pointed at the intended circuit workspace in either
 case. An npm installation does not bundle user projects or make
@@ -93,7 +96,7 @@ fallback for existing installations; new configurations should use the
 Circuitarium name. Do not point either variable at a broad or sensitive
 directory.
 
-The six Logisim tools are included in 0.3.0. Its three runtime tools are
+The six Logisim tools are included in 0.3.1. Its three runtime tools are
 optional. To enable them in a host configuration, install Java 21 and add:
 
 ```text
@@ -105,6 +108,20 @@ The first value must identify the separately downloaded official 4.1.0
 all-JAR. Omit `CIRCUITARIUM_JAVA` when `java` already resolves to Java 21.
 Static `.circ` discovery, analysis, and partial-IR export need neither Java nor
 the JAR. See [the Logisim adapter guide](logisim.md).
+
+## Static and runtime boundaries
+
+- Every `crumb_*` tool reads a saved Unity-era `.cru` artifact or creates one
+  of five fixed synthetic fixtures. No CRUMB tool launches, controls, or
+  simulates CRUMB.
+- `logisim_list_projects`, `logisim_analyze_design`, and
+  `logisim_export_netlist` parse saved files locally without Java.
+- Only `logisim_component_stats`, `logisim_truth_table`, and
+  `logisim_run_test_vector` launch the configured Logisim 4.1.0 all-JAR. Each
+  call is an isolated, bounded subprocess for one exact project snapshot, not
+  a persistent simulator or live GUI connection.
+- MCP Resources and Prompts provide knowledge and workflow instructions. They
+  do not read workspace files or run either backend.
 
 ## First calls
 
@@ -152,7 +169,7 @@ For the released local stdio server, use:
 
 ```text
 Command: npx
-Arguments: -y circuitarium-mcp@0.3.0
+Arguments: -y circuitarium-mcp@0.3.1
 Environment: CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace
 ```
 
@@ -161,7 +178,7 @@ Equivalent project-scoped Codex configuration:
 ```toml
 [mcp_servers.circuitarium]
 command = "npx"
-args = ["-y", "circuitarium-mcp@0.3.0"]
+args = ["-y", "circuitarium-mcp@0.3.1"]
 env = { CIRCUITARIUM_MCP_ROOT = "C:\\absolute\\path\\to\\circuit-workspace" }
 startup_timeout_sec = 20
 tool_timeout_sec = 60
@@ -172,7 +189,7 @@ On macOS or Linux, the corresponding paths look like:
 ```toml
 [mcp_servers.circuitarium]
 command = "npx"
-args = ["-y", "circuitarium-mcp@0.3.0"]
+args = ["-y", "circuitarium-mcp@0.3.1"]
 env = { CIRCUITARIUM_MCP_ROOT = "/absolute/path/to/circuit-workspace" }
 startup_timeout_sec = 20
 tool_timeout_sec = 60
@@ -186,28 +203,32 @@ server needs no OpenAI key.
 Claude Code can register the released local stdio server:
 
 ```powershell
-claude mcp add --transport stdio --env CIRCUITARIUM_MCP_ROOT=C:\absolute\path\to\circuit-workspace --scope local circuitarium -- npx -y circuitarium-mcp@0.3.0
+claude mcp add --transport stdio --env "CIRCUITARIUM_MCP_ROOT=C:\circuitarium-workspace" --scope local circuitarium -- cmd /d /s /c "npx -y circuitarium-mcp@0.3.1"
 ```
 
-On macOS or Linux:
+On native Windows, `cmd /d /s /c` resolves npm's `npx.cmd` launcher when
+Claude Code starts the server without an interactive shell. Keep the quoted
+command as one argument. The direct `npx` command below is correct on macOS
+and Linux:
 
 ```bash
 claude mcp add --transport stdio \
   --env CIRCUITARIUM_MCP_ROOT=/absolute/path/to/circuit-workspace \
   --scope local \
-  circuitarium -- npx -y circuitarium-mcp@0.3.0
+  circuitarium -- npx -y circuitarium-mcp@0.3.1
 ```
 
 Official reference:
 <https://docs.anthropic.com/en/docs/claude-code/mcp>
 
-Claude Desktop users can download
-`circuitarium-mcp-0.3.0.mcpb` from the matching
-[GitHub Release](https://github.com/Craftiee/circuitarium-mcp/releases) and
-open it. The protected release workflow builds that bundle from the same
-verified npm tarball, validates its manifest, and smoke-tests its 22-tool stdio
-server against a synthetic fixture before attaching it. The bundle has a
-workspace selector plus optional Logisim JAR/Java file selectors.
+Claude Desktop users can download the
+[`circuitarium-mcp-0.3.1.mcpb`](https://github.com/Craftiee/circuitarium-mcp/releases/download/v0.3.1/circuitarium-mcp-0.3.1.mcpb)
+bundle directly and open it. The protected release workflow builds that
+bundle from the same verified npm tarball, validates its manifest, and
+smoke-tests its 22-tool stdio server against a synthetic fixture before
+attaching it. The bundle has a workspace selector plus optional Logisim
+JAR/Java file selectors; it does not include CRUMB, Java, or
+Logisim-evolution.
 
 The host uses the Claude access already configured there. The electronics
 server itself does not need an Anthropic API key.

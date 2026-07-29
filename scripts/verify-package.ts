@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   appendFile,
   cp,
@@ -9,7 +8,6 @@ import {
   readdir,
   rm,
   stat,
-  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
@@ -46,7 +44,13 @@ interface PackResult {
 }
 
 interface PackageManifest {
+  author?: {
+    name?: string;
+    url?: string;
+  };
   bin?: Record<string, string>;
+  bundleDependencies?: string[];
+  dependencies?: Record<string, string>;
   exports?: Record<string, unknown>;
   main?: unknown;
   mcpName?: unknown;
@@ -60,18 +64,14 @@ interface DependencyTree {
   version?: string;
 }
 
-interface SdkManifest {
-  dependencies?: Record<string, string>;
-  name?: string;
-  version?: string;
-}
-
 interface ShrinkwrapManifest {
   name?: unknown;
   packages?: Record<
     string,
     {
       bin?: Record<string, string>;
+      bundleDependencies?: unknown;
+      dependencies?: Record<string, string>;
       name?: unknown;
       version?: unknown;
     }
@@ -119,13 +119,26 @@ interface Envelope {
   ok?: boolean;
 }
 
-const SDK_VERSION = "1.29.0";
-const UPSTREAM_HONO_RANGE = "^1.19.9";
-const AUDITED_HONO_VERSION = "2.0.11";
+interface DoctorReport {
+  checks?: Array<{
+    id?: string;
+    status?: string;
+  }>;
+  ok?: boolean;
+  schemaVersion?: string;
+  smoke?: {
+    cleaned?: boolean;
+  };
+}
+
+const SDK_VERSION = "1.30.0";
+const AUDITED_HONO_VERSION = "2.0.12";
 const EXPECTED_TOOL_COUNT = 22;
-const MAX_TARBALL_BYTES = 5 * 1024 * 1024;
-const MAX_UNPACKED_BYTES = 20 * 1024 * 1024;
-const MAX_PACKAGE_FILES = 4_000;
+const MAX_TARBALL_BYTES = 1024 * 1024;
+const MAX_UNPACKED_BYTES = 4 * 1024 * 1024;
+const MAX_PACKAGE_FILES = 250;
+const MAX_INSTALLED_BYTES = 25 * 1024 * 1024;
+const MAX_INSTALLED_FILES = 5_000;
 const STARTUP_TIMEOUT_MS = 10_000;
 const LOGISIM_SMOKE_TIMEOUT_MS = 30_000;
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -137,13 +150,6 @@ const configuredLogisimJar =
   configuredLogisimJarSetting.length === 0
     ? undefined
     : resolve(repositoryRoot, configuredLogisimJarSetting);
-const sourceSdkManifestPath = resolve(
-  repositoryRoot,
-  "node_modules",
-  "@modelcontextprotocol",
-  "sdk",
-  "package.json",
-);
 const stagedDirectories = [
   "docs",
   "examples",
@@ -154,10 +160,12 @@ const stagedDirectories = [
 ] as const;
 const stagedFiles = [
   "CHANGELOG.md",
+  "CITATION.cff",
   "CODE_OF_CONDUCT.md",
   "CONTRIBUTING.md",
   "LICENSE",
   "NOTICE",
+  "PRIVACY.md",
   "PROVENANCE.md",
   "README.md",
   "ROADMAP.md",
@@ -255,33 +263,12 @@ async function withTimeout<T>(
   }
 }
 
-function sha256(content: Uint8Array): string {
-  return createHash("sha256").update(content).digest("hex");
-}
-
 function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MiB (${bytes} bytes)`;
 }
 
 function formatMilliseconds(milliseconds: number): string {
   return `${Math.round(milliseconds)} ms`;
-}
-
-function parseSdkManifest(
-  content: Uint8Array,
-  expectedHonoRange: string,
-): SdkManifest {
-  const manifest = JSON.parse(
-    Buffer.from(content).toString("utf8"),
-  ) as SdkManifest;
-  assert.equal(manifest.name, "@modelcontextprotocol/sdk");
-  assert.equal(manifest.version, SDK_VERSION);
-  assert.equal(
-    manifest.dependencies?.["@hono/node-server"],
-    expectedHonoRange,
-    "unexpected MCP SDK @hono/node-server dependency range",
-  );
-  return manifest;
 }
 
 function combineErrors(
@@ -298,69 +285,36 @@ async function packFromIsolatedStaging(
   stagingRoot: string,
   packDestination: string,
 ): Promise<string> {
-  const sourceManifest = await readFile(sourceSdkManifestPath);
-  parseSdkManifest(sourceManifest, UPSTREAM_HONO_RANGE);
-  try {
-    for (const directory of stagedDirectories) {
-      await cp(
-        resolve(repositoryRoot, directory),
-        resolve(stagingRoot, directory),
-        {
-          errorOnExist: true,
-          force: false,
-          recursive: true,
-        },
-      );
-    }
-    for (const file of stagedFiles) {
-      await cp(resolve(repositoryRoot, file), resolve(stagingRoot, file), {
+  for (const directory of stagedDirectories) {
+    await cp(
+      resolve(repositoryRoot, directory),
+      resolve(stagingRoot, directory),
+      {
         errorOnExist: true,
         force: false,
-      });
-    }
-
-    runNpm(["run", "build"], stagingRoot);
-    const stagedSdkManifestPath = resolve(
-      stagingRoot,
-      "node_modules",
-      "@modelcontextprotocol",
-      "sdk",
-      "package.json",
-    );
-    const manifest = parseSdkManifest(
-      await readFile(stagedSdkManifestPath),
-      UPSTREAM_HONO_RANGE,
-    );
-    assert.ok(manifest.dependencies);
-    manifest.dependencies["@hono/node-server"] = AUDITED_HONO_VERSION;
-    await writeFile(
-      stagedSdkManifestPath,
-      `${JSON.stringify(manifest, null, 2)}\n`,
-      "utf8",
-    );
-    parseSdkManifest(
-      await readFile(stagedSdkManifestPath),
-      AUDITED_HONO_VERSION,
-    );
-    return runNpm(
-      [
-        "pack",
-        "--ignore-scripts",
-        "--json",
-        "--silent",
-        "--pack-destination",
-        packDestination,
-      ],
-      stagingRoot,
-    );
-  } finally {
-    const unchangedSourceManifest = await readFile(sourceSdkManifestPath);
-    assert.equal(
-      sha256(unchangedSourceManifest),
-      sha256(sourceManifest),
-      "isolated packaging changed the source MCP SDK manifest",
+        recursive: true,
+      },
     );
   }
+  for (const file of stagedFiles) {
+    await cp(resolve(repositoryRoot, file), resolve(stagingRoot, file), {
+      errorOnExist: true,
+      force: false,
+    });
+  }
+
+  runNpm(["run", "build"], stagingRoot);
+  return runNpm(
+    [
+      "pack",
+      "--ignore-scripts",
+      "--json",
+      "--silent",
+      "--pack-destination",
+      packDestination,
+    ],
+    stagingRoot,
+  );
 }
 
 function assertSafeTarballPath(filename: string, directory: string): string {
@@ -387,6 +341,32 @@ function collectDependencyVersions(
     }
     collectDependencyVersions(dependency, dependencyName, versions);
   }
+}
+
+function countDependencyNodes(node: DependencyTree): number {
+  return Object.values(node.dependencies ?? {}).reduce(
+    (count, dependency) => count + 1 + countDependencyNodes(dependency),
+    0,
+  );
+}
+
+async function measureFileTree(
+  directory: string,
+): Promise<{ bytes: number; files: number }> {
+  let bytes = 0;
+  let files = 0;
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      const nested = await measureFileTree(path);
+      bytes += nested.bytes;
+      files += nested.files;
+    } else if (entry.isFile()) {
+      bytes += (await stat(path)).size;
+      files += 1;
+    }
+  }
+  return { bytes, files };
 }
 
 async function collectMarkdownFiles(
@@ -484,7 +464,11 @@ function envelopeOf(result: unknown): Envelope {
   return record.structuredContent as Envelope;
 }
 
-function runInstalledPackageBin(arguments_: string[], cwd: string) {
+function runInstalledPackageBin(
+  arguments_: string[],
+  cwd: string,
+  timeout = STARTUP_TIMEOUT_MS,
+) {
   const npmEntrypoint = process.env.npm_execpath;
   if (!npmEntrypoint) {
     throw new Error("installed binary verification must run through npm");
@@ -511,7 +495,7 @@ function runInstalledPackageBin(arguments_: string[], cwd: string) {
         npm_config_loglevel: "error",
       },
       maxBuffer: 16 * 1024 * 1024,
-      timeout: STARTUP_TIMEOUT_MS,
+      timeout,
       windowsHide: true,
     },
   );
@@ -564,6 +548,8 @@ try {
     "README.md",
     "LICENSE",
     "NOTICE",
+    "PRIVACY.md",
+    "CITATION.cff",
     "CHANGELOG.md",
     "npm-shrinkwrap.json",
     "CONTRIBUTING.md",
@@ -590,13 +576,18 @@ try {
     );
     assert.doesNotMatch(
       path,
-      /^node_modules\/(?:@biomejs|@types|tsx|typescript)(?:\/|$)/i,
-      `package includes development dependency ${path}`,
+      /^node_modules(?:\/|$)/i,
+      `package embeds dependency file ${path}; npm must install the shrinkwrapped production tree instead`,
     );
     assert.doesNotMatch(
       path,
       /^docs\/assets(?:\/|$)/i,
       `package includes repository-only media ${path}`,
+    );
+    assert.doesNotMatch(
+      path,
+      /\.d\.ts(?:\.map)?$/i,
+      `binary-only package exposes a declaration artifact ${path}`,
     );
   }
 
@@ -628,7 +619,16 @@ try {
   ) as PackageManifest;
   assert.equal(installedManifest.name, result.name);
   assert.equal(installedManifest.version, result.version);
+  assert.deepEqual(installedManifest.author, {
+    name: "Craftiee",
+    url: "https://github.com/Craftiee",
+  });
   assert.equal(installedManifest.bin?.["circuitarium-mcp"], "dist/src/bin.js");
+  assert.equal(installedManifest.bundleDependencies, undefined);
+  assert.equal(
+    installedManifest.dependencies?.["@modelcontextprotocol/sdk"],
+    SDK_VERSION,
+  );
   assert.deepEqual(
     installedManifest.exports,
     {},
@@ -655,15 +655,39 @@ try {
     installedManifest.bin?.["circuitarium-mcp"],
     "shrinkwrap root bin must match the package manifest",
   );
+  assert.equal(
+    installedShrinkwrap.packages?.[""]?.bundleDependencies,
+    undefined,
+    "shrinkwrap must not reintroduce embedded dependencies",
+  );
+  assert.equal(
+    installedShrinkwrap.packages?.[""]?.dependencies?.[
+      "@modelcontextprotocol/sdk"
+    ],
+    SDK_VERSION,
+  );
   assertPackageImportsBlocked(consumerDirectory);
   await assertMarkdownLinksResolve(installedRoot);
-  runNpm(["ls", "--omit=dev", "--all"], consumerDirectory);
-  const dependencyTree = JSON.parse(
-    runNpm(["ls", "@hono/node-server", "--all", "--json"], consumerDirectory),
+  const productionDependencyTree = JSON.parse(
+    runNpm(["ls", "--omit=dev", "--all", "--json"], consumerDirectory),
   ) as DependencyTree;
+  const productionDependencyNodes = countDependencyNodes(
+    productionDependencyTree,
+  );
+  const installedFootprint = await measureFileTree(
+    resolve(consumerDirectory, "node_modules"),
+  );
+  assert.ok(
+    installedFootprint.bytes <= MAX_INSTALLED_BYTES,
+    `installed production tree ${installedFootprint.bytes} bytes exceeds ${MAX_INSTALLED_BYTES}-byte budget`,
+  );
+  assert.ok(
+    installedFootprint.files <= MAX_INSTALLED_FILES,
+    `installed production tree has ${installedFootprint.files} files; budget is ${MAX_INSTALLED_FILES}`,
+  );
   const honoNodeServerVersions = new Set<string>();
   collectDependencyVersions(
-    dependencyTree,
+    productionDependencyTree,
     "@hono/node-server",
     honoNodeServerVersions,
   );
@@ -713,14 +737,6 @@ try {
   assert.equal(versionResult.status, 0);
   assert.equal(versionResult.stdout, `circuitarium-mcp ${result.version}\n`);
   assert.equal(versionResult.stderr, "");
-  const doctorResult = runInstalledPackageBin(["doctor"], consumerDirectory);
-  assert.equal(doctorResult.status, 0);
-  assert.match(
-    doctorResult.stdout,
-    new RegExp(`Registered tools: ${EXPECTED_TOOL_COUNT}`, "u"),
-  );
-  assert.match(doctorResult.stdout, /optional, not configured/u);
-  assert.equal(doctorResult.stderr, "");
   const invalidResult = runInstalledPackageBin(
     ["--unknown"],
     consumerDirectory,
@@ -751,6 +767,7 @@ try {
     version: "1.0.0",
   });
   let initializeMilliseconds = 0;
+  let warmInitializeMilliseconds = 0;
   let toolsListMilliseconds = 0;
   let toolCount = 0;
   let resourceCount = 0;
@@ -1006,6 +1023,88 @@ try {
     `piped MCP launch wrote unexpected stderr: ${serverStderr}`,
   );
 
+  const warmTransport = new StdioClientTransport({
+    command: bin.command,
+    args: bin.args,
+    cwd: consumerDirectory,
+    env: normalizedEnvironment({
+      CIRCUITARIUM_MCP_ROOT: installedRoot,
+      CIRCUITARIUM_LOGISIM_JAR: "",
+      LOGISIM_JAR: "",
+    }),
+    stderr: "pipe",
+  });
+  let warmServerStderr = "";
+  warmTransport.stderr?.on("data", (chunk: unknown) => {
+    warmServerStderr += Buffer.isBuffer(chunk)
+      ? chunk.toString("utf8")
+      : String(chunk);
+  });
+  const warmClient = new Client({
+    name: "circuitarium-package-warm-startup",
+    version: "1.0.0",
+  });
+  try {
+    const warmInitializeStartedAt = performance.now();
+    await withTimeout(
+      warmClient.connect(warmTransport),
+      STARTUP_TIMEOUT_MS,
+      "warm MCP initialize",
+    );
+    warmInitializeMilliseconds =
+      performance.now() - warmInitializeStartedAt;
+    const warmTools = await withTimeout(
+      warmClient.listTools(),
+      STARTUP_TIMEOUT_MS,
+      "warm MCP tools/list",
+    );
+    assert.equal(warmTools.tools.length, EXPECTED_TOOL_COUNT);
+  } finally {
+    await warmClient.close();
+  }
+  assert.equal(
+    warmServerStderr,
+    "",
+    `warm piped MCP launch wrote unexpected stderr: ${warmServerStderr}`,
+  );
+
+  const doctorResult = runInstalledPackageBin(["doctor"], consumerDirectory);
+  assert.equal(doctorResult.status, 0);
+  assert.match(
+    doctorResult.stdout,
+    new RegExp(`Registered tools: ${EXPECTED_TOOL_COUNT}`, "u"),
+  );
+  assert.match(doctorResult.stdout, /optional, not configured/u);
+  assert.equal(doctorResult.stderr, "");
+
+  const smokeDoctorResult = runInstalledPackageBin(
+    ["doctor", "--smoke", "--json"],
+    consumerDirectory,
+    30_000,
+  );
+  assert.equal(smokeDoctorResult.status, 0);
+  assert.equal(smokeDoctorResult.stderr, "");
+  const doctorReport = JSON.parse(smokeDoctorResult.stdout) as DoctorReport;
+  assert.equal(doctorReport.schemaVersion, "circuitarium.doctor/0.1");
+  assert.equal(doctorReport.ok, true);
+  assert.equal(doctorReport.smoke?.cleaned, true);
+  const doctorCheckStatus = new Map(
+    (doctorReport.checks ?? []).map((check) => [check.id, check.status]),
+  );
+  for (const checkId of [
+    "stdio-startup",
+    "tools-list",
+    "crumb-analyze",
+    "crumb-erc",
+    "smoke-cleanup",
+  ]) {
+    assert.equal(
+      doctorCheckStatus.get(checkId),
+      "pass",
+      `packaged doctor check ${checkId} must pass`,
+    );
+  }
+
   if (keepTarball && process.env.GITHUB_OUTPUT) {
     assert.equal(isAbsolute(packageTarball), true);
     assert.equal((await stat(packageTarball)).isFile(), true);
@@ -1016,7 +1115,11 @@ try {
         `tarball_bytes=${result.size}`,
         `unpacked_bytes=${result.unpackedSize}`,
         `file_count=${result.files.length}`,
+        `installed_bytes=${installedFootprint.bytes}`,
+        `installed_file_count=${installedFootprint.files}`,
+        `production_dependency_nodes=${productionDependencyNodes}`,
         `initialize_ms=${Math.round(initializeMilliseconds)}`,
+        `warm_initialize_ms=${Math.round(warmInitializeMilliseconds)}`,
         `tools_list_ms=${Math.round(toolsListMilliseconds)}`,
         "",
       ].join("\n"),
@@ -1030,7 +1133,10 @@ try {
       `  Tarball:       ${formatBytes(result.size)} / ${formatBytes(MAX_TARBALL_BYTES)}`,
       `  Unpacked:      ${formatBytes(result.unpackedSize)} / ${formatBytes(MAX_UNPACKED_BYTES)}`,
       `  Files:         ${result.files.length} / ${MAX_PACKAGE_FILES}`,
-      `  MCP initialize ${formatMilliseconds(initializeMilliseconds)} / ${STARTUP_TIMEOUT_MS} ms timeout`,
+      `  Installed:     ${formatBytes(installedFootprint.bytes)} in ${installedFootprint.files} file(s)`,
+      `  Prod deps:     ${productionDependencyNodes} installed dependency node(s)`,
+      `  MCP cold init: ${formatMilliseconds(initializeMilliseconds)} / ${STARTUP_TIMEOUT_MS} ms timeout`,
+      `  MCP warm init: ${formatMilliseconds(warmInitializeMilliseconds)} / ${STARTUP_TIMEOUT_MS} ms timeout`,
       `  MCP tools/list ${formatMilliseconds(toolsListMilliseconds)} / ${STARTUP_TIMEOUT_MS} ms timeout`,
       `  Tools:         ${toolCount} / ${EXPECTED_TOOL_COUNT}`,
       `  Resources:     ${resourceCount} / ${KNOWLEDGE_RESOURCE_URIS.length}`,

@@ -6,7 +6,7 @@ subprocess calls to a separately installed, user-supplied Logisim-evolution
 JAR.
 
 > **Release status:** this adapter is included in the published
-> `circuitarium-mcp@0.3.0` package and `circuitarium-mcp-0.3.0.mcpb`.
+> `circuitarium-mcp@0.3.1` package and `circuitarium-mcp-0.3.1.mcpb`.
 
 Circuitarium does **not** bundle, download at runtime, link against, or
 redistribute Logisim-evolution. Circuitarium remains Apache-2.0; the user
@@ -40,7 +40,7 @@ MCP host at its production entrypoint:
 ```
 
 The equivalent immutable package command is
-`npx -y circuitarium-mcp@0.3.0`.
+`npx -y circuitarium-mcp@0.3.1`.
 
 `LOGISIM_JAR` remains a compatibility fallback, but new configurations should
 use `CIRCUITARIUM_LOGISIM_JAR`.

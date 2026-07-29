@@ -4,6 +4,52 @@ All notable changes will be recorded here. The project follows
 [Semantic Versioning](https://semver.org/) for its public interfaces while it
 remains experimental.
 
+## [0.3.1] - 2026-07-28
+
+### Added
+
+- Added `doctor --json` and `doctor --smoke`. The smoke mode creates one
+  deterministic synthetic CRUMB fixture in an isolated operating-system
+  temporary directory, starts a fresh stdio server, verifies all 22 tool
+  registrations plus analysis and ERC results, and confirms cleanup without
+  touching the caller's configured workspace.
+- Added executable configuration tests for the documented MCP hosts, including
+  a native-Windows `cmd /d /s /c` launch, and installed-package smoke jobs on
+  Windows and macOS.
+- Added public author metadata, `CITATION.cff`, a local-data privacy policy, an
+  original application icon, and complete MCPB support, privacy, prompt, and
+  tool-annotation metadata.
+- Added an official MCP Inspector 2.0.0 release-evidence path that exercises
+  every registered tool against independently authored synthetic artifacts,
+  with optional version-pinned Logisim 4.1.0 runtime evidence.
+- Added a narrow starter-workspace recipe, direct MCPB download links, clearer
+  support routing, and a simulator-neutral interoperability evidence form.
+
+### Changed
+
+- Upgraded the Model Context Protocol SDK from 1.29.0 to 1.30.0 and pinned
+  `@hono/node-server` 2.0.12. The SDK now accepts the patched Hono 2.x line, so
+  the npm artifact installs its shrinkwrapped production dependencies normally
+  instead of embedding the SDK dependency tree.
+- Tightened package budgets and now report both tarball and installed-tree
+  footprint, cold and warm initialization, dependency-node count, and
+  deterministic installed-package doctor results.
+- Corrected native-Windows Claude Code setup to resolve npm's `npx.cmd`
+  launcher through `cmd`, while retaining direct `npx` launch instructions for
+  macOS and Linux.
+- Clarified throughout the public documentation that CRUMB support is static
+  saved-artifact analysis and that Logisim behavioral evidence comes only from
+  bounded one-shot subprocess calls to a separately supplied official JAR.
+
+### Security
+
+- Declared non-destructive behavior explicitly for every Logisim runtime tool
+  while retaining `readOnlyHint: false` because Logisim may update local Java
+  preferences.
+- Added privacy and support disclosures to the installable npm package and
+  MCPB, and kept both packages free of proprietary simulator binaries, private
+  fixtures, source screenshots, credentials, and broad filesystem roots.
+
 ## [0.3.0] - 2026-07-28
 
 ### Added

@@ -179,8 +179,13 @@ import {
   VerificationPlanInputSchema,
   planVerification,
 } from "./domain/verification.js";
+import { runDoctor } from "./doctor.js";
 import { SERVER_NAME } from "./identity.js";
-import { executeServerCommand, processCommandIo } from "./terminal.js";
+import {
+  executeServerCommand,
+  processCommandIo,
+  type DoctorCommandOptions,
+} from "./terminal.js";
 
 const CRUMB_BACKEND_ID = "crumb.file";
 const CRUMB_ADAPTER_VERSION = "crumb.file/0.2";
@@ -3997,6 +4002,7 @@ const logisimComponentStatsTool = server.registerTool(
     outputSchema: LogisimComponentStatsOutputSchema,
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     },
@@ -4092,6 +4098,7 @@ const logisimTruthTableTool = server.registerTool(
     outputSchema: LogisimTruthTableOutputSchema,
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     },
@@ -4283,6 +4290,7 @@ const logisimTestVectorTool = server.registerTool(
     outputSchema: LogisimTestVectorOutputSchema,
     annotations: {
       readOnlyHint: false,
+      destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     },
@@ -4525,46 +4533,10 @@ export function listRegisteredToolNames(): string[] {
   return [...envelopeTools.keys()];
 }
 
-export async function runServerDoctor() {
-  const toolCount = listRegisteredToolNames().length;
-  const jarConfigured =
-    (process.env.CIRCUITARIUM_LOGISIM_JAR?.trim().length ?? 0) > 0 ||
-    (process.env.LOGISIM_JAR?.trim().length ?? 0) > 0;
-  const lines = [
-    `${SERVER_NAME} doctor`,
-    `Server version: ${SERVER_VERSION}`,
-    `Node runtime: ${process.version}`,
-    `Registered tools: ${toolCount}`,
-    "CRUMBLE static adapter: ready",
-    "Logisim static adapter: ready",
-  ];
-  if (!jarConfigured) {
-    lines.push(
-      "Logisim JAR runtime: optional, not configured",
-      "Set CIRCUITARIUM_LOGISIM_JAR and install Java 21 to enable stats, truth tables, and vectors.",
-    );
-    return { exitCode: 0, text: `${lines.join("\n")}\n` };
-  }
-  try {
-    const probe = await probeLogisimRuntime();
-    if (probe.logisimVersion !== LOGISIM_RUNTIME_VERSION) {
-      lines.push(
-        `Logisim JAR runtime: version mismatch (${probe.logisimVersion}; expected ${LOGISIM_RUNTIME_VERSION})`,
-      );
-      return { exitCode: 1, text: `${lines.join("\n")}\n` };
-    }
-    lines.push(
-      `Logisim JAR runtime: ready (${probe.displayName})`,
-      `Java runtime: ${probe.javaRuntime} (${probe.javaVendor})`,
-    );
-    return { exitCode: 0, text: `${lines.join("\n")}\n` };
-  } catch {
-    lines.push(
-      "Logisim JAR runtime: configured but unavailable",
-      "Check the JAR path, CIRCUITARIUM_JAVA, and Java 21 installation.",
-    );
-    return { exitCode: 1, text: `${lines.join("\n")}\n` };
-  }
+export async function runServerDoctor(
+  options: DoctorCommandOptions = { json: false, smoke: false },
+) {
+  return runDoctor(options, listRegisteredToolNames());
 }
 
 export async function startStdioServer(): Promise<void> {

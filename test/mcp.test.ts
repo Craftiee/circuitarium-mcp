@@ -185,6 +185,19 @@ test("tools/list exposes every envelope tool with input and output schemas", asy
   assert.deepEqual(toolNames, EXPECTED_TOOL_NAMES);
   assert.ok(listed.tools.every((tool) => tool.outputSchema !== undefined));
   for (const tool of listed.tools) {
+    assert.ok(tool.title?.trim(), `${tool.name} has a human-readable title`);
+    assert.equal(
+      typeof tool.annotations?.readOnlyHint,
+      "boolean",
+      `${tool.name} explicitly declares readOnlyHint`,
+    );
+    if (tool.annotations?.readOnlyHint === false) {
+      assert.equal(
+        typeof tool.annotations.destructiveHint,
+        "boolean",
+        `${tool.name} explicitly declares destructiveHint`,
+      );
+    }
     const schema = tool.outputSchema as {
       properties?: Record<string, unknown>;
     };

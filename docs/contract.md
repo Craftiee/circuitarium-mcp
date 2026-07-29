@@ -10,7 +10,7 @@ semantics.
 This contract describes tool results. It does not imply a shared model session
 or a running circuit simulation.
 
-> Release scope: this document describes the published 0.3.0 npm package and
+> Release scope: this document describes the published 0.3.1 npm package and
 > MCPB, including all 22 tools across CRUMBLE and Logisim-evolution.
 
 ## Vocabulary
@@ -300,7 +300,7 @@ shared GUI or simulator session.
 
 ## Knowledge resources and workflow prompts
 
-The 0.3.0 server also publishes nine deterministic JSON Resources:
+The 0.3.1 server also publishes nine deterministic JSON Resources:
 
 - `circuitarium://capabilities`
 - `circuitarium://profiles/crumb.unity/1.3.5`
