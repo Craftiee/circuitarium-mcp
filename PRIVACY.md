@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: July 28, 2026
+Last updated: July 29, 2026
 
 Circuitarium MCP is a local, open-source MCP server. It runs on your computer
 over standard input/output and does not operate a Circuitarium-hosted service.
@@ -14,6 +14,8 @@ tool you request:
   `.txt` circuit artifacts;
 - an optional Logisim-evolution JAR and Java executable that you configure;
 - tool arguments supplied by your MCP host; and
+- run-record JSON supplied directly by the host or read by the source CLI from
+  a path the user selects; and
 - private temporary copies made for bounded Logisim execution or the optional
   `doctor --smoke` check.
 
@@ -43,6 +45,20 @@ Circuitarium does not maintain a user database, remote logs, or a
 maintainer-controlled copy of tool inputs or results. Files that you create in
 your workspace remain there until you remove them.
 
+`electronics_validate_run_record` does not write a record. It returns a
+normalized sealed copy to the MCP host. The neutral v0.1 core has no dedicated
+fields for raw command strings, environment values, absolute paths, or raw
+payloads. Its `disclosure` values are caller assertions, not a secret scanner:
+bounded user-authored text and `extensions[].payload` can still contain paths,
+commands, environment data, credentials, or other information you supplied.
+Review the complete record before sending it to a cloud model or sharing it
+publicly.
+
+The seal contains SHA-256 identities. Hashing does not anonymize predictable or
+sensitive content and does not authenticate the author. Do not place tokens,
+credentials, private firmware, customer data, proprietary PDK content, or
+foundry-confidential material in a run record.
+
 ## Sharing and third parties
 
 Circuitarium does not send circuit files or tool results to Craftiee or another
@@ -54,6 +70,10 @@ its own privacy policy. npm, GitHub, your Java distribution, and
 Logisim-evolution also apply their own policies when you obtain those
 independent products. Circuitarium neither controls those products nor
 receives data from them.
+
+If you save or publish a returned run record, that copy is retained wherever
+you place it. Circuitarium does not delete user-saved records or records stored
+by an MCP host.
 
 ## Retention and deletion
 

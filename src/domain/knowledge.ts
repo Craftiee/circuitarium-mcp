@@ -21,6 +21,10 @@ import {
   logisimStandardLibraryCatalogResource,
 } from "./componentProfiles.js";
 import { CONTRACT_VERSION } from "./contract.js";
+import {
+  RUN_RECORD_RESOURCE_URI,
+  runRecordSchemaResource,
+} from "./runRecord.js";
 
 export const KNOWLEDGE_RESOURCE_URIS = [
   "circuitarium://capabilities",
@@ -32,6 +36,7 @@ export const KNOWLEDGE_RESOURCE_URIS = [
   "circuitarium://knowledge/digital-logic-testing/0.1",
   "circuitarium://schemas/component-profile/0.1",
   "circuitarium://catalogs/logisim-evolution/4.1.0/standard-library",
+  RUN_RECORD_RESOURCE_URI,
 ] as const;
 
 export const KNOWLEDGE_PROMPT_NAMES = [
@@ -349,6 +354,14 @@ function knowledgeResources(): KnowledgeResource[] {
         "Commit-pinned inventory of all 14 built-in libraries and 169 project component identities, with runtime-policy and semantic-coverage boundaries.",
       payload: logisimStandardLibraryCatalogResource(),
     },
+    {
+      name: "universal-run-record-schema",
+      uri: KNOWLEDGE_RESOURCE_URIS[9],
+      title: "Universal electronics run-record schema",
+      description:
+        "Strict simulator-neutral run snapshot, canonicalization, evidence boundaries, bounds, and namespaced adapter-extension rules.",
+      payload: runRecordSchemaResource(),
+    },
   ];
   return resources;
 }
@@ -589,7 +602,7 @@ function registerPrompts(server: McpServer): void {
     {
       title: "Create a cross-model circuit handoff",
       description:
-        "Prepare a model-neutral handoff with immutable artifact identity and evidence limits.",
+        "Prepare an artifact-only model-neutral handoff with immutable project identity and evidence limits; use the run-record Tool separately for multi-stage process state.",
       argsSchema: {
         backend: z
           .enum(["crumb.file", "logisim.evolution"])
@@ -607,7 +620,8 @@ function registerPrompts(server: McpServer): void {
           ? "crumb.unity/1.3.5"
           : "logisim-evolution/4.1.0";
       return {
-        description: "Create a digest-guarded Circuitarium handoff",
+        description:
+          "Create a digest-guarded artifact-only Circuitarium handoff",
         messages: [
           {
             role: "user" as const,
@@ -627,6 +641,7 @@ function registerPrompts(server: McpServer): void {
                 "Include: backend id, compatibility profile, project ref, raw-byte digest, selected circuit or topology mode, tools already called, confirmed findings, data.valid verdicts where returned, unresolved losses/unknowns, evidence class, and next intended operation.",
                 'Include only evidence present in prior tool results. For every missing tool call, verdict, or evidence class, write "not run" or "unknown" instead of inventing a result.',
                 "Tell the receiving model to pass the digest as expectedProjectDigest on its first read and to stop on PROJECT_STATE_CONFLICT.",
+                "This Prompt is artifact-only. For multi-stage process state, separately validate a serialized electronics.run-record/0.1 record; expected run-record digests are meaningful only when obtained through a separately trusted channel.",
                 "Do not imply shared in-memory state between MCP processes. Do not upgrade static evidence into simulation evidence.",
               ].join("\n"),
             },

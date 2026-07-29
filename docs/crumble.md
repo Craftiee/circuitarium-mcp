@@ -41,6 +41,15 @@ The callable `crumb.file` backend can:
 It cannot control a running CRUMB process, simulate circuit behavior, edit an
 arbitrary design, or convert a general Circuitarium project to CRUMB.
 
+The unreleased universal run record can preserve CRUMBLE work without putting
+CRUMB-specific fields in its core. Use the
+`io.github.craftiee.circuitarium/crumb-unity/0.1` extension to bind the exact
+project artifact, `crumb.file` adapter version, `crumb.unity/1.3.5`
+compatibility profile, topology mode, and whether persisted switch states were
+applied. Static analysis, inferred topology, net tracing, and ERC remain
+static evidence kinds; the record does not upgrade them to simulation. See
+[run-record.md](run-record.md).
+
 `crumb_trace_net` is deliberately a connectivity witness rather than a
 current-flow or signal-path tool. Its `net-N` label is valid only for the exact
 project digest and selected topology/switch options. The result does not cross

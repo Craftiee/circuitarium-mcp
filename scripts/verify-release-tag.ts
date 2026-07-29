@@ -113,11 +113,13 @@ export function verifyReleaseReadiness(
     );
   }
 
-  validateReleaseDocumentation(
-    input.manifest.version,
-    input.changelog,
-    input.readme,
-  );
+  if (input.releaseTag !== undefined) {
+    validateReleaseDocumentation(
+      input.manifest.version,
+      input.changelog,
+      input.readme,
+    );
+  }
 
   const versionWithoutBuildMetadata =
     input.manifest.version.split("+", 1)[0] ?? input.manifest.version;
@@ -151,8 +153,10 @@ async function main(): Promise<void> {
     readme,
   });
 
+  const readinessKind =
+    releaseTag === undefined ? "Development metadata" : "Release metadata";
   process.stdout.write(
-    `Release metadata and documentation are coherent: ${manifest.name}@${readiness.version} (npm tag ${readiness.npmTag}).\n`,
+    `${readinessKind} and documentation are coherent: ${manifest.name}@${readiness.version} (npm tag ${readiness.npmTag}).\n`,
   );
   const githubOutput = process.env.GITHUB_OUTPUT;
   if (githubOutput !== undefined && githubOutput.length > 0) {

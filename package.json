@@ -1,9 +1,9 @@
 {
   "name": "circuitarium-mcp",
-  "version": "0.3.1",
+  "version": "0.4.0-dev.0",
   "mcpName": "io.github.Craftiee/circuitarium",
   "type": "module",
-  "description": "Model-neutral MCP tools for CRUMB artifacts and version-pinned Logisim-evolution file analysis and non-interactive simulation.",
+  "description": "Model-neutral MCP tools for engineering run records, CRUMB artifacts, and version-pinned Logisim-evolution analysis and non-interactive simulation.",
   "license": "Apache-2.0",
   "author": {
     "name": "Craftiee",
@@ -31,6 +31,7 @@
     "CODE_OF_CONDUCT.md",
     "ROADMAP.md",
     "docs/**/*.md",
+    "docs/assets/inspector-tool-evidence.json",
     "examples"
   ],
   "repository": {

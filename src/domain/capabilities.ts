@@ -582,6 +582,52 @@ export const WORKFLOWS: WorkflowDescriptor[] = [
       },
     ],
   },
+  {
+    id: "validate-universal-run-record",
+    goal: "Validate and integrity-seal a portable engineering process snapshot without implying that its recorded work was executed or authenticated.",
+    steps: [
+      {
+        tool: "electronics_validate_run_record",
+        reason:
+          "Normalize the neutral core, check semantic references and evidence authority, and compute separate evidence and whole-record digests.",
+        exampleArguments: {
+          record: {
+            schemaVersion: "electronics.run-record/0.1",
+            recordId: "minimal-run",
+            recordType: "run",
+            recordStatus: "open",
+            content: {
+              intent: {
+                title: "Minimal engineering run",
+                summary:
+                  "Capture design intent before any implementation is attempted.",
+              },
+              stages: [
+                {
+                  id: "intent",
+                  sequence: 1,
+                  kind: "intent-architecture",
+                  title: "Define intent",
+                  status: "planned",
+                },
+              ],
+              disclosure: {
+                rawCommandsIncluded: false,
+                environmentValuesIncluded: false,
+                absolutePathsIncluded: false,
+                rawPayloadsIncluded: false,
+                userAuthoredTextMayContainSensitiveData: true,
+              },
+              completeness: {
+                status: "partial",
+                reasons: ["No execution evidence has been recorded yet."],
+              },
+            },
+          },
+        },
+      },
+    ],
+  },
 ];
 
 export const VOCABULARY = [
@@ -599,6 +645,11 @@ export const VOCABULARY = [
     term: "project digest",
     meaning:
       "An immutable SHA-256 identity used for cross-model handoff and race protection.",
+  },
+  {
+    term: "run record",
+    meaning:
+      "A bounded, simulator-neutral snapshot of intent, stages, immutable artifacts, activities, claims, evidence, unresolved risks, and scoped signoffs. Its hashes provide portable identity, not authorship or certification.",
   },
   {
     term: "attachment",

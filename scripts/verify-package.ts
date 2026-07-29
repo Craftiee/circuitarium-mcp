@@ -85,9 +85,12 @@ interface Envelope {
   };
   contractVersion?: string;
   data?: {
+    authenticity?: string;
     circuitName?: string;
+    evidenceDigest?: string;
     kind?: string;
     planVersion?: string;
+    recordDigest?: string;
     project?: {
       ref?: string;
     };
@@ -115,6 +118,7 @@ interface Envelope {
       uniqueCount?: number;
     };
     traceVersion?: string;
+    valid?: boolean;
   };
   error?: {
     code?: unknown;
@@ -137,7 +141,7 @@ interface DoctorReport {
 
 const SDK_VERSION = "1.30.0";
 const AUDITED_HONO_VERSION = "2.0.12";
-const EXPECTED_TOOL_COUNT = 22;
+const EXPECTED_TOOL_COUNT = 23;
 const MAX_TARBALL_BYTES = 1024 * 1024;
 const MAX_UNPACKED_BYTES = 4 * 1024 * 1024;
 const MAX_PACKAGE_FILES = 250;
@@ -595,6 +599,7 @@ try {
     "SECURITY.md",
     "SUPPORT.md",
     "docs/client-setup.md",
+    "docs/assets/inspector-tool-evidence.json",
     "examples/model-host/minimal-system-prompt.txt",
     "examples/logisim/full-adder.circ",
     "examples/logisim/full-adder.vec",
@@ -615,11 +620,13 @@ try {
       /^node_modules(?:\/|$)/i,
       `package embeds dependency file ${path}; npm must install the shrinkwrapped production tree instead`,
     );
-    assert.doesNotMatch(
-      path,
-      /^docs\/assets(?:\/|$)/i,
-      `package includes repository-only media ${path}`,
-    );
+    if (/^docs\/assets(?:\/|$)/iu.test(path)) {
+      assert.equal(
+        path,
+        "docs/assets/inspector-tool-evidence.json",
+        `package includes repository-only media ${path}`,
+      );
+    }
     assert.doesNotMatch(
       path,
       /\.d\.ts(?:\.map)?$/i,
@@ -834,6 +841,69 @@ try {
       EXPECTED_TOOL_COUNT,
       "installed server exposes an unexpected tool count",
     );
+    const packagedInspectorEvidence = JSON.parse(
+      await readFile(
+        resolve(
+          installedRoot,
+          "docs",
+          "assets",
+          "inspector-tool-evidence.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      schemaVersion?: string;
+      runtime?: {
+        logisimJarConfigured?: boolean;
+        releaseRuntimeRequired?: boolean;
+        selfReportedVersionCheckedForRuntimeTools?: boolean;
+      };
+      surface?: {
+        exactNameAndOrderMatch?: boolean;
+        expectedTools?: number;
+        listedTools?: number;
+      };
+      tools?: Array<{ name?: string; outcome?: string }>;
+      totals?: {
+        called?: number;
+        failed?: number;
+        passed?: number;
+        skipped?: number;
+      };
+    };
+    assert.equal(
+      packagedInspectorEvidence.schemaVersion,
+      "circuitarium.inspector-evidence/0.1",
+    );
+    assert.deepEqual(packagedInspectorEvidence.surface, {
+      expectedTools: EXPECTED_TOOL_COUNT,
+      listedTools: EXPECTED_TOOL_COUNT,
+      exactNameAndOrderMatch: true,
+      titlesAndAnnotationsChecked: true,
+    });
+    assert.deepEqual(packagedInspectorEvidence.totals, {
+      called: EXPECTED_TOOL_COUNT,
+      passed: EXPECTED_TOOL_COUNT,
+      skipped: 0,
+      failed: 0,
+    });
+    assert.deepEqual(
+      packagedInspectorEvidence.tools?.map((item) => item.name),
+      tools.tools.map((item) => item.name),
+      "packaged Inspector evidence must match the installed tool order",
+    );
+    assert.ok(
+      packagedInspectorEvidence.tools?.every(
+        (item) => item.outcome === "passed",
+      ),
+      "packaged Inspector evidence must contain only passing tool calls",
+    );
+    assert.deepEqual(packagedInspectorEvidence.runtime, {
+      logisimJarConfigured: true,
+      releaseRuntimeRequired: true,
+      expectedSelfReportedVersion: "4.1.0",
+      selfReportedVersionCheckedForRuntimeTools: true,
+    });
     const resources = await withTimeout(
       client.listResources(),
       STARTUP_TIMEOUT_MS,
@@ -912,6 +982,33 @@ try {
       componentProfileSchemaPayload.validationBoundary ?? "",
       /also enforce semanticConstraints/u,
     );
+    const runRecordSchema = await withTimeout(
+      client.readResource({
+        uri: "circuitarium://schemas/run-record/0.1",
+      }),
+      STARTUP_TIMEOUT_MS,
+      "MCP run-record schema resource read",
+    );
+    const runRecordSchemaContent = runRecordSchema.contents[0];
+    assert.ok(
+      runRecordSchemaContent !== undefined &&
+        "text" in runRecordSchemaContent,
+      "run-record schema resource must contain JSON text",
+    );
+    const runRecordSchemaPayload = JSON.parse(
+      runRecordSchemaContent.text,
+    ) as {
+      recordVersion?: string;
+      trustBoundary?: string;
+    };
+    assert.equal(
+      runRecordSchemaPayload.recordVersion,
+      "electronics.run-record/0.1",
+    );
+    assert.match(
+      runRecordSchemaPayload.trustBoundary ?? "",
+      /unsigned-unverified/u,
+    );
     const reviewPrompt = await withTimeout(
       client.getPrompt({
         name: "review-circuit-design",
@@ -958,6 +1055,92 @@ try {
       planEnvelope.data?.planVersion,
       "electronics.verification-plan/0.1",
     );
+
+    const runRecordResult = await withTimeout(
+      client.callTool({
+        name: "electronics_validate_run_record",
+        arguments: {
+          record: {
+            schemaVersion: "electronics.run-record/0.1",
+            recordId: "package-minimal-run",
+            recordType: "run",
+            recordStatus: "open",
+            content: {
+              intent: {
+                title: "Packaged MCP engineering run",
+                summary: "Capture intent before any execution occurs.",
+              },
+              stages: [
+                {
+                  id: "intent",
+                  sequence: 1,
+                  kind: "intent-architecture",
+                  title: "Define intent",
+                  status: "planned",
+                },
+              ],
+              disclosure: {
+                rawCommandsIncluded: false,
+                environmentValuesIncluded: false,
+                absolutePathsIncluded: false,
+                rawPayloadsIncluded: false,
+                userAuthoredTextMayContainSensitiveData: true,
+              },
+              completeness: {
+                status: "partial",
+                reasons: ["No execution evidence has been recorded yet."],
+              },
+            },
+          },
+        },
+      }),
+      STARTUP_TIMEOUT_MS,
+      "packaged MCP electronics_validate_run_record",
+    );
+    const runRecordEnvelope = envelopeOf(runRecordResult);
+    assert.equal(runRecordResult.isError ?? false, false);
+    assert.equal(runRecordEnvelope.data?.valid, true);
+    assert.equal(
+      runRecordEnvelope.data?.authenticity,
+      "unsigned-unverified",
+    );
+    assert.match(
+      String(runRecordEnvelope.data?.recordDigest ?? ""),
+      /^sha256:[0-9a-f]{64}$/u,
+    );
+    for (const examplePath of [
+      "examples/run-records/logisim-full-adder-plan.json",
+      "examples/run-records/asic-flow-template.json",
+      "examples/run-records/logisim-full-adder-reported-failure.json",
+    ]) {
+      const serializedRecord = await readFile(
+        resolve(installedRoot, ...examplePath.split("/")),
+        "utf8",
+      );
+      const exampleResult = await withTimeout(
+        client.callTool({
+          name: "electronics_validate_run_record",
+          arguments: { serializedRecord },
+        }),
+        STARTUP_TIMEOUT_MS,
+        `packaged MCP serialized run-record example ${examplePath}`,
+      );
+      const exampleEnvelope = envelopeOf(exampleResult);
+      assert.equal(exampleResult.isError ?? false, false);
+      assert.equal(
+        exampleEnvelope.data?.valid,
+        true,
+        `${examplePath} must validate from packaged raw JSON`,
+      );
+      assert.match(
+        String(exampleEnvelope.data?.recordDigest ?? ""),
+        /^sha256:[0-9a-f]{64}$/u,
+      );
+      assert.match(
+        String(exampleEnvelope.data?.evidenceDigest ?? ""),
+        /^sha256:[0-9a-f]{64}$/u,
+      );
+    }
 
     const generatedCrumbRef = "release-audit/synthetic-led.cru";
     const generationResult = await withTimeout(

@@ -71,8 +71,10 @@ gitleaks git .
 
 - [x] `v0.2.0` was the first real release and established the npm `latest`
       package.
-- [ ] Keep `package.json`, `SERVER_VERSION`, `server.json`, MCPB metadata,
-      `CHANGELOG.md`, and the target version tag identical.
+- [ ] Keep `package.json`, `npm-shrinkwrap.json`, `SERVER_VERSION`,
+      `server.json`, MCPB metadata, `CITATION.cff`, `CHANGELOG.md`, and the
+      target version tag identical. Development source must use a distinct
+      prerelease identity rather than reusing an immutable published version.
 - [ ] Verify private vulnerability reporting remains enabled or publish another
       stable private route.
 - [ ] Confirm the compatibility matrix and roadmap are current.
@@ -127,6 +129,25 @@ designed, documented, and tested.
       artifact, and published those exact bytes.
 - [ ] Confirm the tag workflow ran the same coverage thresholds required on
       `main`; a passing build alone is not a release test.
+- [ ] Validate every packaged run-record example through `serializedRecord`.
+      Reject duplicate keys (including escaped equivalents), a BOM, appended
+      JSON, unsafe integers, excessive depth, and each collection limit plus
+      one.
+- [ ] Confirm non-planned artifacts cannot name nonterminal producers;
+      activity/evidence result digests match; and known Logisim vector,
+      runtime, and toolchain identities cannot contradict one another.
+- [ ] Confirm the schema Resource publishes the exact authority maps and all
+      public Circuitarium operation names are covered. Reserved operation
+      prefixes must reject unknown names and noncanonical casing.
+- [ ] Confirm canonicalization golden tests pass on Windows, macOS, and Linux;
+      volatile metadata changes only `recordDigest`, while any normalized
+      engineering-content change also changes `evidenceDigest`.
+- [ ] Seed synthetic absolute-path, environment, token, JAR/Java path, and
+      temporary-directory sentinels and confirm no sealed run record or
+      diagnostic returns them outside explicitly caller-authored bounded text.
+- [ ] Reconfirm no documentation calls an unsigned SHA-256 run-record seal
+      authentic, tamper-proof, proof of execution/origin, safety approval, or
+      fabrication certification.
 - [ ] Confirm the tag commit reached `main` through the protected branch with
       the required `Package and coverage` and
       `Official Logisim-evolution 4.1.0 JAR` checks passing. The tag workflow
@@ -174,7 +195,8 @@ Therefore the tag workflow must preserve this order:
 4. Authenticate the official `mcp-publisher` with GitHub OIDC and publish the
    matching `server.json` to the MCP Registry.
 5. Create the GitHub Release from the same tagged commit and attach the
-   verified npm tarball, MCPB bundle, and sanitized 22-tool Inspector evidence.
+   verified npm tarball, MCPB bundle, and sanitized full-surface Inspector
+   evidence.
 
 If npm publication or Registry submission fails, do not create the GitHub
 Release and never move the tag. A workflow rerun may continue from an npm

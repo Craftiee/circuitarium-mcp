@@ -7,7 +7,7 @@ import test from "node:test";
 import { SERVER_VERSION } from "../src/identity.js";
 
 const CONFIG_DIRECTORY = join(process.cwd(), "examples", "client-configs");
-const PACKAGE_SPEC = `circuitarium-mcp@${SERVER_VERSION}`;
+const PUBLISHED_PACKAGE_SPEC = "circuitarium-mcp@0.3.1";
 
 interface StdioConfig {
   args?: unknown;
@@ -22,7 +22,7 @@ async function readExample(name: string): Promise<string> {
 
 function assertNpxStdioConfig(config: StdioConfig, expectedRoot: string): void {
   assert.equal(config.command, "npx");
-  assert.deepEqual(config.args, ["-y", PACKAGE_SPEC]);
+  assert.deepEqual(config.args, ["-y", PUBLISHED_PACKAGE_SPEC]);
   assert.deepEqual(config.env, {
     CIRCUITARIUM_MCP_ROOT: expectedRoot,
   });
@@ -65,7 +65,10 @@ test("Codex TOML example has one version-pinned stdio server definition", async 
   assert.match(toml, /^command = "npx"$/mu);
   const argsMatch = /^args = (\[[^\r\n]+\])$/mu.exec(toml);
   assert.ok(argsMatch?.[1]);
-  assert.deepEqual(JSON.parse(argsMatch[1]), ["-y", PACKAGE_SPEC]);
+  assert.deepEqual(JSON.parse(argsMatch[1]), [
+    "-y",
+    PUBLISHED_PACKAGE_SPEC,
+  ]);
   assert.match(
     toml,
     /^env = \{ CIRCUITARIUM_MCP_ROOT = "\/absolute\/path\/to\/circuit-workspace" \}$/mu,
@@ -83,8 +86,12 @@ test("Claude Code example uses cmd /c for its native-Windows npx launcher", asyn
   )?.body;
   assert.ok(bash);
   assert.ok(powershell);
-  assert.ok(bash.includes(`npx -y ${PACKAGE_SPEC}`));
-  assert.ok(powershell.endsWith(`-- cmd /d /s /c "npx -y ${PACKAGE_SPEC}"`));
+  assert.ok(bash.includes(`npx -y ${PUBLISHED_PACKAGE_SPEC}`));
+  assert.ok(
+    powershell.endsWith(
+      `-- cmd /d /s /c "npx -y ${PUBLISHED_PACKAGE_SPEC}"`,
+    ),
+  );
   const windowsRoot = /--env "CIRCUITARIUM_MCP_ROOT=([A-Za-z]:\\[^"]+)"/u.exec(
     powershell,
   );
@@ -97,7 +104,11 @@ test("Jan setup table pins the package and a bounded workspace", async () => {
   const rows = markdown.split(/\r?\n/u);
   assert.ok(rows.includes("| Transport | `STDIO` |"));
   assert.ok(rows.includes("| Command | `npx` |"));
-  assert.ok(rows.includes(`| Args | \`-y\`, \`${PACKAGE_SPEC}\` |`));
+  assert.ok(
+    rows.includes(
+      `| Args | \`-y\`, \`${PUBLISHED_PACKAGE_SPEC}\` |`,
+    ),
+  );
   assert.ok(
     rows.includes(
       "| Env | `CIRCUITARIUM_MCP_ROOT=/absolute/path/to/circuit-workspace` |",

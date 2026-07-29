@@ -111,6 +111,16 @@ the exact vector reference and digest. Zero-input constant circuits have one
 exhaustive assignment. Failed supporting receipts and `runtimeSafe: false`
 facts fail affected runtime verification paths closed.
 
+The unreleased `electronics_validate_run_record` Tool can preserve that work
+as an `electronics.run-record/0.1` snapshot. Keep the `.circ` and `.vec`
+artifacts as separate raw-byte-digested entries. Static analysis,
+project-load, truth-table, and vector results remain separate evidence kinds;
+a truth table uses `outcome: "observed"`, while a passing vector may use
+`outcome: "pass"` only for its exact expected cases. The Logisim extension
+binds `projectArtifactId`, circuit, optional `vectorArtifactId`, runtime status,
+runtime safety, and the still-self-reported runtime identity. See
+[run-record.md](run-record.md).
+
 Every project operation supports `expectedProjectDigest`. The digest is
 checked against the exact raw bytes before XML parsing. Runtime operations then
 copy those already-read bytes into a newly created private temporary directory

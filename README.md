@@ -19,6 +19,13 @@ LM Studio, Jan, or another local MCP host supplies the model and launches
 Circuitarium over stdio. Circuitarium itself needs no OpenAI, Anthropic, or
 local-model API key.
 
+> [!NOTE]
+> The current `0.4.0-dev.0` source tree exposes 23 tools and ten Resources. It
+> adds the universal `electronics.run-record/0.1` validator, integrity seal,
+> schema Resource, and specification-to-GDS planning template described
+> below. This development identity is not published; npm/MCPB `0.3.1` remains
+> the immutable 22-tool, nine-Resource release until the next version is cut.
+
 ## Quick start
 
 You need:
@@ -126,17 +133,17 @@ and its sanitized evidence report.
 
 | Area | Current capabilities |
 |---|---|
-| General electronics | Discover available backends, validate portable experiment descriptions, and plan what evidence is needed to verify circuit claims |
+| General electronics | Discover backends, validate portable experiments, plan claim-specific evidence, and validate/seal a universal engineering run snapshot |
 | CRUMBLE / CRUMB | Discover, inspect, validate, and compare Unity-era `.cru` saves; build BOMs and netlists; trace conductive nets; query supported IC pinouts; and run static electrical checks |
 | Logisim-evolution | Discover and inspect `.circ` projects, export a deliberately partial neutral netlist, and optionally run component statistics, truth tables, and test vectors |
-| Cross-model work | Preserve workspace-relative project references and raw-byte SHA-256 digests so another model can confirm it is reading the same artifact |
+| Cross-model work | Preserve artifact and run-record digests so another model can confirm both the exact inputs and portable evidence content |
 
 **CRUMBLE**—Circuit Representation & Universal Model Bridge for Laboratory
 Electronics—is the unofficial CRUMB-specific integration inside Circuitarium.
 The simulator-neutral tools keep CRUMB-specific assumptions out of future
 adapters.
 
-The current surface breaks down into three neutral `electronics_*` tools,
+The unreleased source surface breaks down into four neutral `electronics_*` tools,
 thirteen `crumb_*` tools, and six `logisim_*` tools. All tool results use the
 `electronics.mcp/0.2` result contract, independent of the package version.
 
@@ -148,6 +155,7 @@ thirteen `crumb_*` tools, and six `logisim_*` tools. All tool results use the
 | `logisim_list_projects`, `logisim_analyze_design`, `logisim_export_netlist` | No | Saved `.circ` structure and an explicitly partial neutral representation |
 | `logisim_component_stats` | Java 21 and a user-supplied Logisim 4.1.0 all-JAR | The selected project and circuit loaded in one bounded subprocess |
 | `logisim_truth_table`, `logisim_run_test_vector` | Java 21 and a user-supplied Logisim 4.1.0 all-JAR | Bounded behavioral evidence for the exact project digest; not a live GUI session |
+| `electronics_validate_run_record` | No | Validates and SHA-256-seals supplied process data; it does not execute recorded work or authenticate its author |
 | Resources and Prompts | No | Guidance and workflow templates only; they do not read a project or execute a simulator |
 
 ## Compatibility and honest limits
@@ -236,20 +244,43 @@ whether CRUMB is running or how the circuit behaves.
 4. Use `electronics_plan_verification` when a claim needs several kinds of
    evidence or an explicit list of remaining gaps.
 
+### Track a design toward implementation or fabrication
+
+1. Start from the validated
+   [ASIC flow template](examples/run-records/asic-flow-template.json) or the
+   [Logisim plan](examples/run-records/logisim-full-adder-plan.json).
+   The
+   [reported-failure example](examples/run-records/logisim-full-adder-reported-failure.json)
+   shows that a structurally valid closed record can honestly carry a failed
+   engineering claim without pretending Circuitarium ran or authenticated it.
+2. Keep planned activities `not-attempted` and claims `not-assessed`.
+3. As tools run, add immutable input/output artifact digests, activity
+   receipts, correctly classified evidence, open diagnostics, and risks.
+4. Call `electronics_validate_run_record` after each meaningful handoff. Keep
+   both `evidenceDigest` and `recordDigest`.
+5. Treat the seal as `unsigned-unverified`: it is content identity and
+   integrity, not proof of origin, safety, signoff authority, or fabrication
+   readiness.
+
+The complete schema, canonicalization rules, bounds, examples, and
+specification-to-GDS mapping are in the
+[run-record guide](docs/run-record.md).
+
 ### Hand work to another model
 
-Keep `projectRef`, `projectDigest`, `backendId`, `adapterVersion`, and
-`compatibilityProfile` with the handoff. The receiving model should pass the
-recorded digest as `expectedProjectDigest` on its first read. If the bytes have
-changed, Circuitarium returns `PROJECT_STATE_CONFLICT` instead of silently
-reusing stale conclusions.
+Keep `recordDigest` and `evidenceDigest` when available, plus `projectRef`,
+`projectDigest`, `backendId`, `adapterVersion`, and `compatibilityProfile`.
+The receiving model should first revalidate the run record with the expected
+digest, then pass the recorded artifact digest as `expectedProjectDigest` on
+its first read. If bytes changed, Circuitarium returns
+`PROJECT_STATE_CONFLICT` instead of silently reusing stale conclusions.
 
 See the [cross-model handoff example](examples/cross-model/handoff.md).
 
 ## Tool reference
 
 <details>
-<summary><strong>All 22 tools</strong></summary>
+<summary><strong>Current source: all 23 tools (published 0.3.1: 22)</strong></summary>
 
 ### Neutral electronics tools
 
@@ -258,6 +289,7 @@ See the [cross-model handoff example](examples/cross-model/handoff.md).
 | `electronics_capabilities` | Report callable backends, limitations, and recommended workflows |
 | `electronics_validate_experiment` | Validate a portable experiment description without claiming it ran |
 | `electronics_plan_verification` | Build an evidence plan for explicit circuit claims |
+| `electronics_validate_run_record` | Validate, normalize, and integrity-seal an unsigned universal engineering run snapshot |
 
 ### CRUMBLE tools
 
@@ -290,10 +322,10 @@ See the [cross-model handoff example](examples/cross-model/handoff.md).
 
 </details>
 
-The nine Resources provide capability metadata, compatibility profiles,
+The current source's ten Resources provide capability metadata, compatibility profiles,
 synthetic-example metadata, electrical-review and digital-testing guidance, a
-neutral component-profile schema, and version-pinned component catalogs. The
-four user-invoked Prompts are:
+neutral component-profile schema, version-pinned component catalogs, and the
+universal run-record schema. The four user-invoked Prompts are:
 
 - `review-circuit-design`
 - `compare-crumb-designs`
@@ -301,7 +333,8 @@ four user-invoked Prompts are:
 - `handoff-circuit-project`
 
 Resources and Prompts do not read a project or run a simulator by themselves.
-Clients that do not expose those MCP features can still use all 22 tools. The
+Clients that do not expose those MCP features can still use all 23 source
+tools; published `0.3.1` remains the 22-tool surface. The
 [contract reference](docs/contract.md) documents exact resource URIs, Prompt
 arguments, result envelopes, errors, output bounds, and tool schemas.
 
@@ -348,6 +381,7 @@ All contributors must follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 | [Client setup](docs/client-setup.md) | Host-specific installation, subscriptions/APIs, and local models |
 | [CRUMBLE guide](docs/crumble.md) | Current CRUMB scope and evidence profiles |
 | [Logisim guide](docs/logisim.md) | JAR setup, runtime evidence, safety, and Linux notes |
+| [Run-record guide](docs/run-record.md) | Specification-to-GDS process snapshots, evidence, seals, and adapter extensions |
 | [MCP contract](docs/contract.md) | Exact tools, Resources, Prompts, envelopes, and limits |
 | [Architecture](docs/architecture.md) | Adapter boundaries and simulator-neutral design |
 | [Provenance](PROVENANCE.md) | Evidence categories and redistribution rules |

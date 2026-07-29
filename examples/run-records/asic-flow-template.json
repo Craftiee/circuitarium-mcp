@@ -1,0 +1,795 @@
+{
+  "schemaVersion": "electronics.run-record/0.1",
+  "recordId": "example-asic-flow",
+  "recordType": "run",
+  "recordStatus": "open",
+  "content": {
+    "intent": {
+      "title": "Example synchronous arithmetic block",
+      "summary": "Trace a small digital block from explicit requirements through a process-specific fabrication handoff without treating planned stages as executed evidence.",
+      "requirements": [
+        {
+          "id": "arithmetic-function",
+          "category": "functional",
+          "priority": "must",
+          "statement": "The block must produce the specified 32-bit arithmetic result for every accepted request.",
+          "claimIds": [
+            "functional-correctness"
+          ]
+        },
+        {
+          "id": "clock-target",
+          "category": "timing",
+          "priority": "must",
+          "statement": "The implementation must meet the declared clock period in the selected signoff corner.",
+          "claimIds": [
+            "timing-closure"
+          ]
+        },
+        {
+          "id": "physical-cleanliness",
+          "category": "physical",
+          "priority": "must",
+          "statement": "The final layout must satisfy the selected PDK's DRC deck and match the intended netlist under LVS.",
+          "claimIds": [
+            "drc-clean",
+            "lvs-clean"
+          ]
+        }
+      ],
+      "interfaces": [
+        {
+          "id": "request-data",
+          "name": "request_data",
+          "kind": "bus",
+          "direction": "input",
+          "widthBits": 64,
+          "clockDomain": "core-clock",
+          "description": "Two packed 32-bit operands."
+        },
+        {
+          "id": "response-data",
+          "name": "response_data",
+          "kind": "bus",
+          "direction": "output",
+          "widthBits": 32,
+          "clockDomain": "core-clock",
+          "description": "The registered arithmetic result."
+        },
+        {
+          "id": "core-clock",
+          "name": "core_clock",
+          "kind": "clock",
+          "direction": "input",
+          "widthBits": 1,
+          "clockDomain": "core-clock",
+          "description": "Primary synchronous clock."
+        }
+      ],
+      "constraints": [
+        {
+          "id": "clock-period",
+          "category": "timing",
+          "statement": "Target a maximum ten-nanosecond clock period before signoff margin.",
+          "target": {
+            "relation": "maximum",
+            "value": "10",
+            "unit": "ns"
+          },
+          "claimIds": [
+            "timing-closure"
+          ]
+        },
+        {
+          "id": "power-budget",
+          "category": "power",
+          "statement": "Keep analyzed dynamic plus leakage power within the example budget at the selected operating point.",
+          "target": {
+            "relation": "maximum",
+            "value": "100",
+            "unit": "mW"
+          },
+          "claimIds": [
+            "power-budget-met"
+          ]
+        }
+      ],
+      "assumptions": [
+        {
+          "id": "pdk-selection",
+          "statement": "A licensed or open PDK, standard-cell library, corners, and signoff decks will be selected before implementation.",
+          "status": "open"
+        }
+      ]
+    },
+    "stages": [
+      {
+        "id": "intent",
+        "sequence": 1,
+        "kind": "intent-architecture",
+        "title": "Freeze interfaces and measurable requirements",
+        "status": "ready",
+        "requirementIds": [
+          "arithmetic-function",
+          "clock-target",
+          "physical-cleanliness"
+        ]
+      },
+      {
+        "id": "rtl",
+        "sequence": 2,
+        "kind": "rtl-design",
+        "title": "Implement synthesizable RTL",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "intent"
+        ],
+        "requirementIds": [
+          "arithmetic-function",
+          "clock-target"
+        ]
+      },
+      {
+        "id": "behavior",
+        "sequence": 3,
+        "kind": "behavioral-verification",
+        "title": "Run simulation and formal checks",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "rtl"
+        ],
+        "requirementIds": [
+          "arithmetic-function"
+        ]
+      },
+      {
+        "id": "synthesis",
+        "sequence": 4,
+        "kind": "synthesis",
+        "title": "Synthesize and map standard cells",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "behavior"
+        ],
+        "requirementIds": [
+          "clock-target"
+        ]
+      },
+      {
+        "id": "place-route",
+        "sequence": 5,
+        "kind": "place-and-route",
+        "title": "Place, clock, and route",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "synthesis"
+        ],
+        "requirementIds": [
+          "clock-target",
+          "physical-cleanliness"
+        ]
+      },
+      {
+        "id": "extraction",
+        "sequence": 6,
+        "kind": "parasitic-extraction",
+        "title": "Extract parasitics",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "place-route"
+        ]
+      },
+      {
+        "id": "timing",
+        "sequence": 7,
+        "kind": "timing-analysis",
+        "title": "Analyze timing corners",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "extraction"
+        ],
+        "requirementIds": [
+          "clock-target"
+        ]
+      },
+      {
+        "id": "power",
+        "sequence": 8,
+        "kind": "power-analysis",
+        "title": "Analyze dynamic and leakage power",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "extraction"
+        ]
+      },
+      {
+        "id": "layout",
+        "sequence": 9,
+        "kind": "physical-layout",
+        "title": "Freeze process-specific geometry",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "timing",
+          "power"
+        ],
+        "requirementIds": [
+          "physical-cleanliness"
+        ]
+      },
+      {
+        "id": "drc",
+        "sequence": 10,
+        "kind": "drc",
+        "title": "Run design-rule checking",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "layout"
+        ],
+        "requirementIds": [
+          "physical-cleanliness"
+        ]
+      },
+      {
+        "id": "lvs",
+        "sequence": 11,
+        "kind": "lvs",
+        "title": "Run layout-versus-schematic checking",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "layout"
+        ],
+        "requirementIds": [
+          "physical-cleanliness"
+        ]
+      },
+      {
+        "id": "signoff",
+        "sequence": 12,
+        "kind": "signoff",
+        "title": "Review evidence and unresolved risks",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "drc",
+          "lvs"
+        ]
+      },
+      {
+        "id": "handoff",
+        "sequence": 13,
+        "kind": "fabrication-handoff",
+        "title": "Assemble the fabrication handoff",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "signoff"
+        ]
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "requirements",
+        "state": "planned",
+        "role": "requirements",
+        "label": "Frozen requirements and interfaces",
+        "reference": {
+          "kind": "none"
+        }
+      },
+      {
+        "id": "rtl-source",
+        "state": "planned",
+        "role": "hdl",
+        "label": "Synthesizable RTL",
+        "format": "systemverilog",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "write-rtl"
+      },
+      {
+        "id": "test-plan",
+        "state": "planned",
+        "role": "test-plan",
+        "label": "Assertions, vectors, coverage, and formal properties",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "verify-rtl"
+      },
+      {
+        "id": "pdk",
+        "state": "planned",
+        "role": "pdk",
+        "label": "Versioned process design kit",
+        "reference": {
+          "kind": "none"
+        }
+      },
+      {
+        "id": "standard-cells",
+        "state": "planned",
+        "role": "standard-cell-library",
+        "label": "Versioned standard-cell library and corners",
+        "reference": {
+          "kind": "none"
+        },
+        "derivedFromArtifactIds": [
+          "pdk"
+        ]
+      },
+      {
+        "id": "gate-netlist",
+        "state": "planned",
+        "role": "netlist",
+        "label": "Mapped gate netlist",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "synthesize",
+        "derivedFromArtifactIds": [
+          "rtl-source",
+          "standard-cells"
+        ]
+      },
+      {
+        "id": "routed-layout",
+        "state": "planned",
+        "role": "layout",
+        "label": "Placed-and-routed database",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "route",
+        "derivedFromArtifactIds": [
+          "gate-netlist",
+          "pdk",
+          "standard-cells"
+        ]
+      },
+      {
+        "id": "parasitics",
+        "state": "planned",
+        "role": "parasitics",
+        "label": "Extracted parasitics",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "extract",
+        "derivedFromArtifactIds": [
+          "routed-layout",
+          "pdk"
+        ]
+      },
+      {
+        "id": "timing-report",
+        "state": "planned",
+        "role": "timing-report",
+        "label": "Multi-corner timing report",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "analyze-timing",
+        "derivedFromArtifactIds": [
+          "gate-netlist",
+          "parasitics",
+          "standard-cells"
+        ]
+      },
+      {
+        "id": "power-report",
+        "state": "planned",
+        "role": "power-report",
+        "label": "Power analysis report",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "analyze-power",
+        "derivedFromArtifactIds": [
+          "gate-netlist",
+          "parasitics",
+          "standard-cells"
+        ]
+      },
+      {
+        "id": "gds",
+        "state": "planned",
+        "role": "gds",
+        "label": "Final process-specific GDSII",
+        "format": "gdsii",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "freeze-layout",
+        "derivedFromArtifactIds": [
+          "routed-layout",
+          "pdk"
+        ]
+      },
+      {
+        "id": "drc-report",
+        "state": "planned",
+        "role": "drc-report",
+        "label": "DRC report",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "run-drc",
+        "derivedFromArtifactIds": [
+          "gds",
+          "pdk"
+        ]
+      },
+      {
+        "id": "lvs-report",
+        "state": "planned",
+        "role": "lvs-report",
+        "label": "LVS report",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "run-lvs",
+        "derivedFromArtifactIds": [
+          "gds",
+          "gate-netlist",
+          "pdk"
+        ]
+      },
+      {
+        "id": "handoff-manifest",
+        "state": "planned",
+        "role": "handoff-manifest",
+        "label": "Digests, versions, constraints, reports, warnings, and mask-data manifest",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "assemble-handoff",
+        "derivedFromArtifactIds": [
+          "gds",
+          "drc-report",
+          "lvs-report",
+          "timing-report",
+          "power-report"
+        ]
+      }
+    ],
+    "activities": [
+      {
+        "id": "write-rtl",
+        "sequence": 1,
+        "stageId": "rtl",
+        "kind": "transformation",
+        "operation": "implement_rtl",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "inputArtifactIds": [
+          "requirements"
+        ],
+        "outputArtifactIds": [
+          "rtl-source"
+        ]
+      },
+      {
+        "id": "verify-rtl",
+        "sequence": 2,
+        "stageId": "behavior",
+        "kind": "formal-check",
+        "operation": "verify_rtl",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "dependsOnActivityIds": [
+          "write-rtl"
+        ],
+        "inputArtifactIds": [
+          "requirements",
+          "rtl-source"
+        ],
+        "outputArtifactIds": [
+          "test-plan"
+        ]
+      },
+      {
+        "id": "synthesize",
+        "sequence": 3,
+        "stageId": "synthesis",
+        "kind": "subprocess",
+        "operation": "synthesize_and_map",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "dependsOnActivityIds": [
+          "verify-rtl"
+        ],
+        "inputArtifactIds": [
+          "rtl-source",
+          "pdk",
+          "standard-cells"
+        ],
+        "outputArtifactIds": [
+          "gate-netlist"
+        ]
+      },
+      {
+        "id": "route",
+        "sequence": 4,
+        "stageId": "place-route",
+        "kind": "subprocess",
+        "operation": "place_clock_route",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "dependsOnActivityIds": [
+          "synthesize"
+        ],
+        "inputArtifactIds": [
+          "gate-netlist",
+          "pdk",
+          "standard-cells"
+        ],
+        "outputArtifactIds": [
+          "routed-layout"
+        ]
+      },
+      {
+        "id": "extract",
+        "sequence": 5,
+        "stageId": "extraction",
+        "kind": "subprocess",
+        "operation": "extract_parasitics",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "dependsOnActivityIds": [
+          "route"
+        ],
+        "inputArtifactIds": [
+          "routed-layout",
+          "pdk"
+        ],
+        "outputArtifactIds": [
+          "parasitics"
+        ]
+      },
+      {
+        "id": "analyze-timing",
+        "sequence": 6,
+        "stageId": "timing",
+        "kind": "subprocess",
+        "operation": "analyze_timing",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "dependsOnActivityIds": [
+          "extract"
+        ],
+        "inputArtifactIds": [
+          "gate-netlist",
+          "parasitics",
+          "standard-cells"
+        ],
+        "outputArtifactIds": [
+          "timing-report"
+        ]
+      },
+      {
+        "id": "analyze-power",
+        "sequence": 7,
+        "stageId": "power",
+        "kind": "subprocess",
+        "operation": "analyze_power",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "dependsOnActivityIds": [
+          "extract"
+        ],
+        "inputArtifactIds": [
+          "gate-netlist",
+          "parasitics",
+          "standard-cells"
+        ],
+        "outputArtifactIds": [
+          "power-report"
+        ]
+      },
+      {
+        "id": "freeze-layout",
+        "sequence": 8,
+        "stageId": "layout",
+        "kind": "transformation",
+        "operation": "generate_mask_geometry",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "dependsOnActivityIds": [
+          "analyze-timing",
+          "analyze-power"
+        ],
+        "inputArtifactIds": [
+          "routed-layout",
+          "pdk"
+        ],
+        "outputArtifactIds": [
+          "gds"
+        ]
+      },
+      {
+        "id": "run-drc",
+        "sequence": 9,
+        "stageId": "drc",
+        "kind": "subprocess",
+        "operation": "run_drc",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "dependsOnActivityIds": [
+          "freeze-layout"
+        ],
+        "inputArtifactIds": [
+          "gds",
+          "pdk"
+        ],
+        "outputArtifactIds": [
+          "drc-report"
+        ]
+      },
+      {
+        "id": "run-lvs",
+        "sequence": 10,
+        "stageId": "lvs",
+        "kind": "subprocess",
+        "operation": "run_lvs",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "dependsOnActivityIds": [
+          "freeze-layout"
+        ],
+        "inputArtifactIds": [
+          "gds",
+          "gate-netlist",
+          "pdk"
+        ],
+        "outputArtifactIds": [
+          "lvs-report"
+        ]
+      },
+      {
+        "id": "assemble-handoff",
+        "sequence": 11,
+        "stageId": "handoff",
+        "kind": "transformation",
+        "operation": "assemble_fabrication_handoff",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "dependsOnActivityIds": [
+          "run-drc",
+          "run-lvs",
+          "analyze-timing",
+          "analyze-power"
+        ],
+        "inputArtifactIds": [
+          "gds",
+          "drc-report",
+          "lvs-report",
+          "timing-report",
+          "power-report"
+        ],
+        "outputArtifactIds": [
+          "handoff-manifest"
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "id": "functional-correctness",
+        "class": "functional",
+        "statement": "The RTL and implementation satisfy the frozen arithmetic specification.",
+        "verdict": "not-assessed",
+        "basis": "none",
+        "stageIds": [
+          "behavior"
+        ],
+        "artifactIds": [
+          "rtl-source",
+          "test-plan"
+        ]
+      },
+      {
+        "id": "timing-closure",
+        "class": "timing",
+        "statement": "The extracted implementation meets the declared clock constraint in every required signoff corner.",
+        "verdict": "not-assessed",
+        "basis": "none",
+        "stageIds": [
+          "timing",
+          "signoff"
+        ],
+        "artifactIds": [
+          "timing-report"
+        ]
+      },
+      {
+        "id": "power-budget-met",
+        "class": "power",
+        "statement": "The analyzed design stays within the declared power budget at the selected activity and operating point.",
+        "verdict": "not-assessed",
+        "basis": "none",
+        "stageIds": [
+          "power",
+          "signoff"
+        ],
+        "artifactIds": [
+          "power-report"
+        ]
+      },
+      {
+        "id": "drc-clean",
+        "class": "drc",
+        "statement": "The exact final GDS passes the exact selected PDK design-rule deck.",
+        "verdict": "not-assessed",
+        "basis": "none",
+        "stageIds": [
+          "drc",
+          "signoff"
+        ],
+        "artifactIds": [
+          "gds",
+          "drc-report",
+          "pdk"
+        ]
+      },
+      {
+        "id": "lvs-clean",
+        "class": "lvs",
+        "statement": "The exact final GDS matches the intended gate-level connectivity under the selected LVS deck.",
+        "verdict": "not-assessed",
+        "basis": "none",
+        "stageIds": [
+          "lvs",
+          "signoff"
+        ],
+        "artifactIds": [
+          "gds",
+          "gate-netlist",
+          "lvs-report",
+          "pdk"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "id": "no-pdk-selected",
+        "severity": "critical",
+        "statement": "No process, PDK revision, standard-cell library, corner set, or signoff deck is selected in this reusable template.",
+        "status": "open",
+        "evidenceIds": []
+      }
+    ],
+    "disclosure": {
+      "rawCommandsIncluded": false,
+      "environmentValuesIncluded": false,
+      "absolutePathsIncluded": false,
+      "rawPayloadsIncluded": false,
+      "userAuthoredTextMayContainSensitiveData": true,
+      "notes": [
+        "This template records intended dependencies only. Every activity is not-attempted and every claim is not-assessed.",
+        "Fabrication requires a lawful process agreement, exact PDK and library revisions, qualified review, and foundry-specific handoff requirements."
+      ]
+    },
+    "completeness": {
+      "status": "partial",
+      "omittedSections": [
+        "toolchain",
+        "evidence",
+        "signoffs",
+        "provenance",
+        "extensions"
+      ],
+      "reasons": [
+        "This is a simulator- and process-neutral planning template, not an executed implementation."
+      ]
+    }
+  }
+}

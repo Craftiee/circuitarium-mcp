@@ -37,6 +37,7 @@ const EXPECTED_TOOL_NAMES = [
   "electronics_capabilities",
   "electronics_validate_experiment",
   "electronics_plan_verification",
+  "electronics_validate_run_record",
   "crumb_component_catalog",
   "crumb_analyze_design",
   "crumb_compare_designs",
@@ -57,6 +58,41 @@ const EXPECTED_TOOL_NAMES = [
   "logisim_truth_table",
   "logisim_run_test_vector",
 ];
+
+function minimalRunRecord(recordId = "mcp-minimal-run") {
+  return {
+    schemaVersion: "electronics.run-record/0.1",
+    recordId,
+    recordType: "run",
+    recordStatus: "open",
+    content: {
+      intent: {
+        title: "MCP minimal engineering run",
+        summary: "Capture intent before any execution occurs.",
+      },
+      stages: [
+        {
+          id: "intent",
+          sequence: 1,
+          kind: "intent-architecture",
+          title: "Define intent",
+          status: "planned",
+        },
+      ],
+      disclosure: {
+        rawCommandsIncluded: false,
+        environmentValuesIncluded: false,
+        absolutePathsIncluded: false,
+        rawPayloadsIncluded: false,
+        userAuthoredTextMayContainSensitiveData: true,
+      },
+      completeness: {
+        status: "partial",
+        reasons: ["No execution evidence has been recorded yet."],
+      },
+    },
+  };
+}
 
 function envelopeOf(result: unknown): Envelope {
   const record = result as { structuredContent?: unknown };
@@ -359,6 +395,22 @@ test("resources expose bounded static knowledge without workspace data", async (
   assert.equal(catalogPayload.componentDefinitions.length, 18);
   assert.equal(catalogPayload.icVariants.length, 21);
   assert.match(catalogPayload.redistributionBoundary, /no CRUMB executable/u);
+
+  const runRecordSchema = await client.readResource({
+    uri: "circuitarium://schemas/run-record/0.1",
+  });
+  const runRecordText =
+    "text" in runRecordSchema.contents[0]!
+      ? runRecordSchema.contents[0]!.text
+      : "";
+  const runRecordPayload = JSON.parse(runRecordText) as {
+    recordVersion: string;
+    parserBoundary: string;
+    trustBoundary: string;
+  };
+  assert.equal(runRecordPayload.recordVersion, "electronics.run-record/0.1");
+  assert.match(runRecordPayload.parserBoundary, /duplicate keys/iu);
+  assert.match(runRecordPayload.trustBoundary, /unsigned-unverified/u);
 });
 
 test("prompts package safe adapter workflows for explicit user invocation", async () => {
@@ -561,6 +613,14 @@ test("electronics_capabilities orients a model without leaking paths", async () 
     resourcesAreStatic: true,
     liveAvailabilityTool: "electronics_capabilities",
   });
+  assert.deepEqual(capabilities.portableRunRecord, {
+    schemaVersion: "electronics.run-record/0.1",
+    validationTool: "electronics_validate_run_record",
+    schemaResource: "circuitarium://schemas/run-record/0.1",
+    authenticity: "unsigned-unverified",
+    evidenceDigestScope: "content",
+    recordDigestScope: "record-excluding-seal",
+  });
   const callableBackends = capabilities.callableBackends as Array<{
     backendId: string;
     dataLeavesMachine: boolean | "depends";
@@ -757,6 +817,95 @@ test("verification planning is deterministic, bounded, and non-certifying", asyn
     ),
   );
   assert.equal("valid" in firstData, false);
+});
+
+test("run-record validation seals a snapshot without claiming execution or authenticity", async () => {
+  const missing = await client.callTool({
+    name: "electronics_validate_run_record",
+  });
+  const missingEnvelope = envelopeOf(missing);
+  assert.equal(missing.isError, true);
+  assert.equal(missingEnvelope.ok, false);
+  assert.equal(missingEnvelope.error?.code, "INVALID_ARGUMENT");
+  assert.equal(missingEnvelope.error?.argumentPath, "record");
+
+  const scalar = await client.callTool({
+    name: "electronics_validate_run_record",
+    arguments: { record: 42 },
+  });
+  assert.equal(scalar.isError ?? false, false);
+  assert.equal(envelopeOf(scalar).ok, true);
+  assert.equal(envelopeOf(scalar).data?.valid, false);
+
+  const duplicateSerialized = await client.callTool({
+    name: "electronics_validate_run_record",
+    arguments: {
+      serializedRecord:
+        '{"schemaVersion":"electronics.run-record/0.1","schemaVersion":"electronics.run-record/0.1"}',
+    },
+  });
+  const duplicateEnvelope = envelopeOf(duplicateSerialized);
+  assert.equal(duplicateSerialized.isError ?? false, false);
+  assert.equal(duplicateEnvelope.ok, true);
+  assert.equal(duplicateEnvelope.data?.valid, false);
+  assert.equal(
+    duplicateEnvelope.diagnostics[0]?.code,
+    "duplicate-json-key",
+  );
+
+  const first = await client.callTool({
+    name: "electronics_validate_run_record",
+    arguments: { record: minimalRunRecord() },
+  });
+  const firstEnvelope = envelopeOf(first);
+  const firstData = dataOf(first);
+  assert.equal(first.isError ?? false, false);
+  assert.equal(firstData.valid, true);
+  assert.equal(firstData.schemaVersion, "electronics.run-record/0.1");
+  assert.equal(firstData.authenticity, "unsigned-unverified");
+  assert.match(String(firstData.recordDigest), /^sha256:[0-9a-f]{64}$/u);
+  assert.match(String(firstData.evidenceDigest), /^sha256:[0-9a-f]{64}$/u);
+  assert.equal(
+    (firstData.sealedRecord as { seal: { evidenceDigestScope: string } }).seal
+      .evidenceDigestScope,
+    "content",
+  );
+  assert.match(firstEnvelope.summary, /integrity-sealed/u);
+  assert.match(firstEnvelope.summary, /unsigned-unverified/u);
+  assert.equal(JSON.stringify(first).includes(process.cwd()), false);
+
+  const sameContentNewExecution = minimalRunRecord("mcp-minimal-run-02") as {
+    metadata?: Record<string, unknown>;
+  };
+  sameContentNewExecution.metadata = {
+    executionId: "execution-02",
+    capturedAt: "2026-07-30T18:00:00Z",
+  };
+  const second = dataOf(
+    await client.callTool({
+      name: "electronics_validate_run_record",
+      arguments: { record: sameContentNewExecution },
+    }),
+  );
+  assert.equal(second.evidenceDigest, firstData.evidenceDigest);
+  assert.notEqual(second.recordDigest, firstData.recordDigest);
+
+  const conflict = await client.callTool({
+    name: "electronics_validate_run_record",
+    arguments: {
+      record: minimalRunRecord(),
+      expectedRecordDigest: `sha256:${"f".repeat(64)}`,
+    },
+  });
+  const conflictEnvelope = envelopeOf(conflict);
+  assert.equal(conflict.isError ?? false, false);
+  assert.equal(conflictEnvelope.ok, true);
+  assert.equal(conflictEnvelope.data?.valid, false);
+  assert.ok(
+    conflictEnvelope.diagnostics.some(
+      (item) => item.code === "expected-record-digest-conflict",
+    ),
+  );
 });
 
 test("malformed arguments return typed INVALID_ARGUMENT envelopes", async () => {

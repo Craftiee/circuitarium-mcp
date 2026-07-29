@@ -5,8 +5,10 @@ attached to each GitHub Release. The bundle contains the compiled server and
 all production Node.js dependencies; it does not contain CRUMB,
 Logisim-evolution, Java, simulator assets, or user circuit files.
 
-The current source manifest identifies the published 0.3.1 bundle and its
-22-tool, nine-Resource, four-Prompt Logisim-capable server.
+The current `0.4.0-dev.0` source manifest identifies the next bundle candidate
+and its 23-tool, ten-Resource, four-Prompt Logisim-capable server. That
+development identity is not published. The existing 0.3.1 bundle remains the
+tagged 22-tool, nine-Resource artifact.
 
 Build and verify it with:
 
@@ -16,9 +18,10 @@ npm run mcpb:check
 
 The default check creates the bundle in a guarded temporary directory,
 validates and unpacks it with the pinned MCPB CLI, starts the unpacked server,
-lists all 22 tools, lists all nine knowledge Resources and reads representative
-capability, component-profile, and Logisim-catalog Resources, lists and gets a
-workflow Prompt, plans verification, runs `crumb_trace_net` and
+lists all 23 tools, lists all ten knowledge Resources and reads representative
+capability, component-profile, Logisim-catalog, and run-record Resources,
+lists and gets a workflow Prompt, plans verification, validates and seals a
+minimal unsigned run record, runs `crumb_trace_net` and
 `crumb_check_design` against the independently authored synthetic LED fixture,
 and runs `logisim_analyze_design` against the full-adder copied from the
 unpacked bundle before removing the temporary artifact.

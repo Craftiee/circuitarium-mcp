@@ -19,6 +19,36 @@ an independent local process. The upstream official v4.1.0 all-JAR is the
 recommended download, but the runtime does not authenticate a configured JAR
 as that asset.
 
+## Universal run-record provenance
+
+`electronics.run-record/0.1` preserves provenance labels without turning them
+into authenticated origin. Artifact digests identify raw bytes or canonical
+JSON. Tool identities can be local-computed, self-reported, caller-reported,
+or external-unverified. Activities identify whether the host, a tool, the
+caller, or an external source reported the observation. Claims separately name
+their verdict and evidence basis.
+
+The seal is always `unsigned-unverified`. `evidenceDigest` identifies
+normalized portable content; `recordDigest` identifies the normalized record
+except its seal. Neither is a signature, trusted timestamp, proof that a named
+tool ran, proof that an external report is true, or evidence that an asserted
+person or system authorized signoff.
+
+Within a structurally valid record, an activity-produced evidence item repeats
+the producing activity's exact result-receipt digest. Output artifact digests
+have a different scope: they identify each artifact's raw bytes or canonical
+value and may therefore differ from the operation receipt. Known Logisim
+runtime records reconcile the adapter's reported runtime version and
+authenticity with the simulator identity used by the activity. These
+consistency checks bind assertions together; they do not authenticate any
+assertion.
+
+External physical measurements, qualified reviews, PDK reports, foundry
+receipts, and signoffs remain caller-reported unless a future separate
+signature/provenance layer verifies them. Circuitarium does not redistribute
+PDKs or standard-cell libraries and does not infer a fabrication right from a
+record that names them.
+
 ## Repository boundary
 
 This repository includes:

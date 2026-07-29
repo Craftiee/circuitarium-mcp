@@ -1,0 +1,287 @@
+{
+  "schemaVersion": "electronics.run-record/0.1",
+  "recordId": "logisim-full-adder-plan",
+  "recordType": "run",
+  "recordStatus": "open",
+  "content": {
+    "intent": {
+      "title": "Verify the synthetic one-bit full adder",
+      "summary": "Plan an exhaustive comparison of the selected Logisim circuit against an independently authored expected specification.",
+      "requirements": [
+        {
+          "id": "full-adder-function",
+          "category": "functional",
+          "priority": "must",
+          "statement": "Sum and carry-out must implement a one-bit full adder for all eight input combinations.",
+          "claimIds": [
+            "full-adder-correct"
+          ]
+        }
+      ],
+      "interfaces": [
+        {
+          "id": "full-adder-inputs",
+          "name": "A, B, Cin",
+          "kind": "bus",
+          "direction": "input",
+          "widthBits": 3,
+          "description": "Two one-bit operands and one carry input."
+        },
+        {
+          "id": "full-adder-outputs",
+          "name": "Sum, Cout",
+          "kind": "bus",
+          "direction": "output",
+          "widthBits": 2,
+          "description": "One-bit sum and carry output."
+        }
+      ]
+    },
+    "stages": [
+      {
+        "id": "intent",
+        "sequence": 1,
+        "kind": "intent-architecture",
+        "title": "Define expected behavior",
+        "status": "ready",
+        "requirementIds": [
+          "full-adder-function"
+        ]
+      },
+      {
+        "id": "construction",
+        "sequence": 2,
+        "kind": "circuit-construction",
+        "title": "Inspect the saved project",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "intent"
+        ],
+        "requirementIds": [
+          "full-adder-function"
+        ]
+      },
+      {
+        "id": "verification",
+        "sequence": 3,
+        "kind": "behavioral-verification",
+        "title": "Run truth-table and vector checks",
+        "status": "planned",
+        "dependsOnStageIds": [
+          "construction"
+        ],
+        "requirementIds": [
+          "full-adder-function"
+        ]
+      }
+    ],
+    "toolchain": [
+      {
+        "id": "circuitarium",
+        "kind": "mcp-server",
+        "name": "circuitarium-mcp",
+        "version": "0.4.0-dev.0",
+        "authenticity": "local-computed-unsigned"
+      },
+      {
+        "id": "logisim",
+        "kind": "simulator",
+        "name": "Logisim-evolution",
+        "version": "4.1.0",
+        "authenticity": "external-unverified"
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "project",
+        "state": "materialized",
+        "role": "logic-circuit",
+        "label": "Synthetic Logisim full adder",
+        "format": "logisim-circ",
+        "mediaType": "application/xml",
+        "reference": {
+          "kind": "workspace-relative",
+          "value": "examples/logisim/full-adder.circ"
+        },
+        "digest": {
+          "value": "sha256:120998f05029f717cb81572233258f41707c460522659fb9f2a85e294d4fd08b",
+          "basis": "raw-bytes",
+          "verification": "computed"
+        }
+      },
+      {
+        "id": "vectors",
+        "state": "materialized",
+        "role": "test-vector",
+        "label": "Eight full-adder vectors",
+        "format": "logisim-vec",
+        "reference": {
+          "kind": "workspace-relative",
+          "value": "examples/logisim/full-adder.vec"
+        },
+        "digest": {
+          "value": "sha256:cc00e77f53c430ce80940d7404ac62271f18d7f324fd42c6fd4f162b828e5054",
+          "basis": "raw-bytes",
+          "verification": "computed"
+        }
+      },
+      {
+        "id": "truth-table-report",
+        "state": "planned",
+        "role": "truth-table",
+        "label": "Bounded truth-table result",
+        "format": "json",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "truth-table",
+        "derivedFromArtifactIds": [
+          "project"
+        ]
+      },
+      {
+        "id": "vector-report",
+        "state": "planned",
+        "role": "other",
+        "label": "Exact-vector comparison result",
+        "format": "json",
+        "reference": {
+          "kind": "none"
+        },
+        "producedByActivityId": "vector-check",
+        "derivedFromArtifactIds": [
+          "project",
+          "vectors"
+        ]
+      }
+    ],
+    "activities": [
+      {
+        "id": "static-analysis",
+        "sequence": 1,
+        "stageId": "construction",
+        "kind": "mcp-tool-call",
+        "operation": "logisim_analyze_design",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "toolIdentityId": "circuitarium",
+        "inputArtifactIds": [
+          "project"
+        ]
+      },
+      {
+        "id": "truth-table",
+        "sequence": 2,
+        "stageId": "verification",
+        "kind": "simulation",
+        "operation": "logisim_truth_table",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "toolIdentityId": "logisim",
+        "dependsOnActivityIds": [
+          "static-analysis"
+        ],
+        "inputArtifactIds": [
+          "project"
+        ],
+        "outputArtifactIds": [
+          "truth-table-report"
+        ]
+      },
+      {
+        "id": "vector-check",
+        "sequence": 3,
+        "stageId": "verification",
+        "kind": "simulation",
+        "operation": "logisim_run_test_vector",
+        "executionStatus": "not-attempted",
+        "outcome": "not-applicable",
+        "observationBasis": "none",
+        "toolIdentityId": "logisim",
+        "dependsOnActivityIds": [
+          "static-analysis"
+        ],
+        "inputArtifactIds": [
+          "project",
+          "vectors"
+        ],
+        "outputArtifactIds": [
+          "vector-report"
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "id": "full-adder-correct",
+        "class": "functional",
+        "statement": "The selected circuit matches an independent full-adder specification for all eight input assignments.",
+        "verdict": "not-assessed",
+        "basis": "none",
+        "stageIds": [
+          "verification"
+        ],
+        "artifactIds": [
+          "project",
+          "vectors"
+        ]
+      }
+    ],
+    "extensions": [
+      {
+        "extensionId": "io.github.craftiee.circuitarium/logisim-evolution/0.1",
+        "schemaVersion": "0.1",
+        "critical": true,
+        "appliesTo": {
+          "stageIds": [
+            "construction",
+            "verification"
+          ],
+          "activityIds": [
+            "static-analysis",
+            "truth-table",
+            "vector-check"
+          ],
+          "artifactIds": [
+            "project",
+            "vectors"
+          ],
+          "claimIds": [
+            "full-adder-correct"
+          ]
+        },
+        "payload": {
+          "backendId": "logisim.evolution",
+          "adapterVersion": "logisim.evolution/0.1",
+          "compatibilityProfile": "logisim-evolution/4.1.0",
+          "projectArtifactId": "project",
+          "circuit": "Main",
+          "vectorArtifactId": "vectors",
+          "runtimeStatus": "unknown",
+          "runtimeSafety": "unknown"
+        }
+      }
+    ],
+    "disclosure": {
+      "rawCommandsIncluded": false,
+      "environmentValuesIncluded": false,
+      "absolutePathsIncluded": false,
+      "rawPayloadsIncluded": false,
+      "userAuthoredTextMayContainSensitiveData": true,
+      "notes": [
+        "This is a plan. No simulator activity or claim verdict is recorded."
+      ]
+    },
+    "completeness": {
+      "status": "partial",
+      "omittedSections": [
+        "evidence",
+        "signoffs"
+      ],
+      "reasons": [
+        "Execution evidence and signoff do not exist yet."
+      ]
+    }
+  }
+}

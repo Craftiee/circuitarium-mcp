@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -134,6 +134,11 @@ import {
   MAX_RESULT_DIAGNOSTICS_RETURNED,
 } from "./domain/bounds.js";
 import {
+  canonicalJson,
+  sha256Bytes,
+  sha256Text,
+} from "./domain/canonical.js";
+import {
   CONTRACT_VERSION,
   SERVER_VERSION,
   type ContractContext,
@@ -179,6 +184,15 @@ import {
   VerificationPlanInputSchema,
   planVerification,
 } from "./domain/verification.js";
+import {
+  RUN_RECORD_AUTHENTICITY,
+  RUN_RECORD_RESOURCE_URI,
+  RUN_RECORD_VERSION,
+  RunRecordValidationDataSchema,
+  RunRecordValidationInputSchema,
+  validateAndSealRunRecord,
+  validateAndSealSerializedRunRecord,
+} from "./domain/runRecord.js";
 import { runDoctor } from "./doctor.js";
 import { SERVER_NAME } from "./identity.js";
 import {
@@ -517,41 +531,13 @@ const server = new McpServer(
   },
   {
     instructions:
-      "Call electronics_capabilities first when the workflow is unclear. Read circuitarium://capabilities or a narrower Circuitarium resource for static reference knowledge, and use the registered prompts only when the user explicitly chooses a reusable workflow. Component profiles and catalogs are source-cited planning knowledge: identity-only entries assert no ports or behavior, and semantic concepts never imply cross-simulator equivalence. electronics_plan_verification only organizes caller-reported, digest- and locus-bound evidence; it does not read files, run tools, authenticate receipts, approve hardware, or certify a design. Bind Logisim receipts to the exact circuit, test-vector receipts to the exact vector reference/digest pair, and CRUMB topology receipts to the exact topology/switch options. Invalid claim/scope pairs are rejected; failed supporting receipts and unsafe-runtime facts fail affected runtime claims closed. If Logisim runtime status is unknown, inspect electronics_capabilities, record the exact status, and replan before requesting a JAR step. Exhaustive vector receipts must report the full declared case count and distinct input assignments. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation or simulation ran and found a failing design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. Static parsing, netlists, and crumb_trace_net connectivity witnesses are not simulation evidence. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability; it does not control a live simulation. The Logisim-evolution adapter distinguishes static .circ evidence, JAR project-load evidence, and bounded truth-table/test-vector simulation evidence. Logisim runtime tools require a separately installed official 4.1.0 all-JAR and Java 21; test-vector execution also requires X11 or Xvfb on Linux. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
+      "Call electronics_capabilities first when the workflow is unclear. Read circuitarium://capabilities or a narrower Circuitarium resource for static reference knowledge, and use the registered prompts only when the user explicitly chooses a reusable workflow. Component profiles and catalogs are source-cited planning knowledge: identity-only entries assert no ports or behavior, and semantic concepts never imply cross-simulator equivalence. electronics_plan_verification only organizes caller-reported, digest- and locus-bound evidence; it does not read files, run tools, authenticate receipts, approve hardware, or certify a design. electronics_validate_run_record validates, normalizes, and integrity-seals a caller-supplied process snapshot; it executes no recorded activity, authenticates no author, grants no permission, and certifies no design or hardware. Its evidenceDigest excludes volatile record metadata, while recordDigest covers the normalized record except its seal. Both are unsigned SHA-256 identities, not signatures. Bind Logisim receipts to the exact circuit, test-vector receipts to the exact vector reference/digest pair, and CRUMB topology receipts to the exact topology/switch options. Invalid claim/scope pairs are rejected; failed supporting receipts and unsafe-runtime facts fail affected runtime claims closed. If Logisim runtime status is unknown, inspect electronics_capabilities, record the exact status, and replan before requesting a JAR step. Exhaustive vector receipts must report the full declared case count and distinct input assignments. All tools use electronics.mcp/0.2 envelopes: ok=false means the tool call failed, while ok=true with data.valid=false means validation or simulation ran and found a failing design. Use workspace-relative project refs, SHA-256 digests, and compatibilityProfile for handoff between ChatGPT, Claude, and local models. Static parsing, netlists, and crumb_trace_net connectivity witnesses are not simulation evidence. CRUMBLE is Circuitarium MCP's experimental integration family for CRUMB-specific rulesets and file interoperability; it does not control a live simulation. The Logisim-evolution adapter distinguishes static .circ evidence, JAR project-load evidence, and bounded truth-table/test-vector simulation evidence. Logisim runtime tools require a separately installed official 4.1.0 all-JAR and Java 21; test-vector execution also requires X11 or Xvfb on Linux. CRUMB topology is version-pinned to the observed CRUMB 1.3.5 Unity save format and is not a claim of compatibility with newer Godot builds.",
   },
 );
 registerKnowledgeSurfaces(server);
 
 function sha256(value: string | Buffer): string {
-  const hash = createHash("sha256");
-  if (typeof value === "string") {
-    hash.update(value, "utf8");
-  } else {
-    hash.update(value);
-  }
-  return `sha256:${hash.digest("hex")}`;
-}
-
-function canonicalJson(value: unknown): string {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean" ||
-    typeof value === "number"
-  ) {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`;
-  }
-  throw new Error("Only JSON values can be digested");
+  return typeof value === "string" ? sha256Text(value) : sha256Bytes(value);
 }
 
 function makeContext(
@@ -1564,6 +1550,14 @@ const electronicsCapabilitiesTool = server.registerTool(
           validationTool: "electronics_validate_experiment",
           planningTool: "electronics_plan_verification",
         },
+        portableRunRecord: {
+          schemaVersion: RUN_RECORD_VERSION,
+          validationTool: "electronics_validate_run_record",
+          schemaResource: RUN_RECORD_RESOURCE_URI,
+          authenticity: RUN_RECORD_AUTHENTICITY,
+          evidenceDigestScope: "content",
+          recordDigestScope: "record-excluding-seal",
+        },
         callableBackends,
         roadmapBackends: ROADMAP_BACKENDS,
         workflows: WORKFLOWS,
@@ -1633,6 +1627,46 @@ const electronicsCapabilitiesTool = server.registerTool(
               execution: {
                 fidelity: "behavioral",
                 pacing: "as-fast-as-possible",
+              },
+            },
+          },
+        },
+        {
+          tool: "electronics_validate_run_record",
+          reason:
+            "Validate, normalize, and integrity-seal a simulator-neutral engineering run snapshot without executing it.",
+          arguments: {
+            record: {
+              schemaVersion: RUN_RECORD_VERSION,
+              recordId: "minimal-run",
+              recordType: "run",
+              recordStatus: "open",
+              content: {
+                intent: {
+                  title: "Minimal engineering run",
+                  summary:
+                    "Capture intent before any construction or execution occurs.",
+                },
+                stages: [
+                  {
+                    id: "intent",
+                    sequence: 1,
+                    kind: "intent-architecture",
+                    title: "Define intent",
+                    status: "planned",
+                  },
+                ],
+                disclosure: {
+                  rawCommandsIncluded: false,
+                  environmentValuesIncluded: false,
+                  absolutePathsIncluded: false,
+                  rawPayloadsIncluded: false,
+                  userAuthoredTextMayContainSensitiveData: true,
+                },
+                completeness: {
+                  status: "partial",
+                  reasons: ["No execution evidence has been recorded yet."],
+                },
               },
             },
           },
@@ -1773,6 +1807,83 @@ envelopeTools.set("electronics_plan_verification", {
   inputSchema: VerificationPlanInputSchema,
   outputSchema: ElectronicsVerificationPlanOutputSchema,
   registeredTool: electronicsVerificationPlanTool,
+  context: makeContext,
+});
+
+const ElectronicsRunRecordOutputSchema = envelopeSchema(
+  RunRecordValidationDataSchema,
+);
+const electronicsRunRecordTool = server.registerTool(
+  "electronics_validate_run_record",
+  {
+    title: "Validate and seal an electronics run record",
+    description:
+      "Validates, normalizes, and deterministically SHA-256-seals a bounded simulator-neutral engineering run snapshot. Provide exactly one of record or serializedRecord; use serializedRecord for external JSON so duplicate keys can be rejected. Expected digests authenticate nothing unless obtained separately. The Tool executes no activity, authenticates no author, grants no permission, and never certifies a design, hardware, signoff, or fabrication handoff.",
+    inputSchema: RunRecordValidationInputSchema,
+    outputSchema: ElectronicsRunRecordOutputSchema,
+    annotations: {
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({
+    record,
+    serializedRecord,
+    expectedRecordDigest,
+    expectedEvidenceDigest,
+  }) => {
+    const expected = {
+      ...(expectedRecordDigest === undefined
+        ? {}
+        : { recordDigest: expectedRecordDigest }),
+      ...(expectedEvidenceDigest === undefined
+        ? {}
+        : { evidenceDigest: expectedEvidenceDigest }),
+    };
+    const validation =
+      serializedRecord === undefined
+        ? validateAndSealRunRecord(record, expected)
+        : validateAndSealSerializedRunRecord(serializedRecord, expected);
+    const errorCount = validation.diagnostics.filter(
+      (item) => item.severity === "error",
+    ).length;
+    const sealed = validation.record;
+    return successResult({
+      summary: validation.valid
+        ? "The universal electronics run record is valid, normalized, and integrity-sealed as unsigned-unverified."
+        : `Run-record validation completed and found ${errorCount} error${errorCount === 1 ? "" : "s"}.`,
+      data: {
+        valid: validation.valid,
+        ...(sealed === undefined
+          ? {}
+          : {
+              schemaVersion: sealed.schemaVersion,
+              recordDigest: sealed.seal.recordDigest,
+              evidenceDigest: sealed.seal.evidenceDigest,
+              authenticity: sealed.seal.authenticity,
+              sealedRecord: sealed,
+              counts: sealed.seal.collectionBounds,
+            }),
+      },
+      diagnostics: validation.diagnostics,
+      nextActions: validation.valid
+        ? []
+        : [
+            {
+              tool: "electronics_capabilities",
+              reason:
+                "Review the run-record schema Resource and neutral evidence boundaries before correcting the record.",
+              arguments: {},
+            },
+          ],
+    });
+  },
+);
+envelopeTools.set("electronics_validate_run_record", {
+  inputSchema: RunRecordValidationInputSchema,
+  outputSchema: ElectronicsRunRecordOutputSchema,
+  registeredTool: electronicsRunRecordTool,
   context: makeContext,
 });
 

@@ -4,7 +4,7 @@ Circuitarium includes a reproducible host-side exercise for its complete MCP
 tool surface. The harness launches the
 [official MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector)
 CLI at the exact version `2.0.0`, connects to Circuitarium over stdio, checks
-`tools/list`, and calls all 22 registered tools.
+`tools/list`, and calls all 23 registered tools in the current source tree.
 
 This is release evidence, not a circuit certification. The exercise confirms
 that an independent MCP client can discover and call the advertised surface
@@ -18,8 +18,9 @@ The recording uses only the same synthetic CRUMB LED and Logisim full-adder
 fixtures. It shows a clean CRUMB ERC result with two floating-terminal warnings
 and a Logisim vector result with all eight independently authored cases passing.
 The accompanying
-[`inspector-tool-evidence.json`](https://github.com/Craftiee/circuitarium-mcp/blob/v0.3.1/docs/assets/inspector-tool-evidence.json) is the
-sanitized 22-of-22 CLI exercise; it contains no user path or raw host session.
+[`inspector-tool-evidence.json`](assets/inspector-tool-evidence.json) is the
+sanitized current-source CLI exercise; it contains no user path or raw host
+session. The immutable v0.3.1 tag retains its original 22-of-22 report.
 
 ## What the harness uses
 
@@ -51,7 +52,7 @@ npm run build
 npx tsx scripts/verify-inspector-tools.ts --output inspector-evidence.json
 ```
 
-Without `CIRCUITARIUM_LOGISIM_JAR`, the harness still calls every tool. The 19
+Without `CIRCUITARIUM_LOGISIM_JAR`, the harness still calls every tool. The 20
 neutral, CRUMB, and static Logisim calls must pass. The three Logisim runtime
 calls must return the typed `BACKEND_UNAVAILABLE` envelope, and the sanitized
 report records them as `skipped-runtime-unconfigured`. Any other result fails
@@ -61,8 +62,8 @@ Expected totals:
 
 ```json
 {
-  "called": 22,
-  "passed": 19,
+  "called": 23,
+  "passed": 20,
   "skipped": 3,
   "failed": 0
 }
@@ -135,8 +136,8 @@ run has these totals:
 
 ```json
 {
-  "called": 22,
-  "passed": 22,
+  "called": 23,
+  "passed": 23,
   "skipped": 0,
   "failed": 0
 }
@@ -146,7 +147,7 @@ run has these totals:
 
 | Evidence layer | Tools | Expected evidence |
 |---|---|---|
-| Neutral | `electronics_capabilities`, `electronics_validate_experiment`, `electronics_plan_verification` | Capability, schema-validation, and non-certifying planning results |
+| Neutral | `electronics_capabilities`, `electronics_validate_experiment`, `electronics_plan_verification`, `electronics_validate_run_record` | Capability, schema-validation, non-certifying planning, and unsigned run-record sealing results |
 | CRUMB static | `crumb_component_catalog`, `crumb_analyze_design`, `crumb_compare_designs`, `crumb_inspect_design`, `crumb_validate_design`, `crumb_list_projects`, `crumb_get_component`, `crumb_bom`, `crumb_ic_reference`, `crumb_export_netlist`, `crumb_trace_net`, `crumb_check_design` | Static Unity-era CRUMB 1.3.5 save evidence; no live game control or simulation |
 | CRUMB bounded write | `crumb_generate_fixture` | One non-overwriting synthetic file inside the temporary workspace |
 | Logisim static | `logisim_list_projects`, `logisim_analyze_design`, `logisim_export_netlist` | Saved `.circ` structure and an explicitly partial neutral representation |
