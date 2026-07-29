@@ -180,7 +180,7 @@ jobs:
       - name: Build the stdio server for Inspector
         run: npm run build
 
-      - name: Exercise all 22 tools through official MCP Inspector
+      - name: Exercise all 23 tools through official MCP Inspector
         env:
           CIRCUITARIUM_LOGISIM_JAR: ${{ runner.temp }}/logisim-evolution-4.1.0-all.jar
         run: >-

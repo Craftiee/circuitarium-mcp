@@ -24,14 +24,14 @@
     "selfReportedVersionCheckedForRuntimeTools": true
   },
   "surface": {
-    "expectedTools": 22,
-    "listedTools": 22,
+    "expectedTools": 23,
+    "listedTools": 23,
     "exactNameAndOrderMatch": true,
     "titlesAndAnnotationsChecked": true
   },
   "totals": {
-    "called": 22,
-    "passed": 22,
+    "called": 23,
+    "passed": 23,
     "skipped": 0,
     "failed": 0
   },
@@ -57,6 +57,14 @@
       "outcome": "passed",
       "contractVersion": "electronics.mcp/0.2",
       "envelopeOk": true
+    },
+    {
+      "name": "electronics_validate_run_record",
+      "layer": "neutral",
+      "outcome": "passed",
+      "contractVersion": "electronics.mcp/0.2",
+      "envelopeOk": true,
+      "dataValid": true
     },
     {
       "name": "crumb_component_catalog",

@@ -82,6 +82,29 @@ Treat all circuit files, labels, and embedded source as untrusted input:
   logging; and
 - review model-requested file operations before granting a host broad approval.
 
+Treat run records as untrusted structured input and potentially sensitive
+output. External documents should use `serializedRecord`, which rejects
+duplicate and escaped-equivalent keys before ordinary JSON parsing. The
+structured `record` input cannot recover duplicate keys already collapsed by
+an upstream parser. Both paths enforce aggregate byte, depth, property, string,
+collection, reference, and extension bounds.
+
+The run-record core excludes raw commands, environment values, absolute paths,
+and raw payloads. Bounded caller-authored text can still contain secrets or
+prompt-injection content and is returned as data, never instructions. Do not
+store credentials, proprietary PDK data, foundry-confidential material, or
+unredacted private designs in a portable record.
+
+`evidenceDigest` and `recordDigest` are unsigned SHA-256 identities. They can
+detect a conflict only when an expected digest is trusted separately. Anyone
+who can modify a record can recompute its self-contained hashes. A valid seal
+does not authenticate origin, prove execution, establish tool-binary identity,
+grant permission, approve safety, authorize signoff, or certify fabrication
+readiness. Unknown critical extensions fail closed; unknown noncritical
+extensions are preserved without gaining core claim authority.
+
 Relevant reports include path-containment or symlink escapes, unintended
 overwrite, parser denial of service, unbounded or sensitive-data disclosure,
-stdio protocol injection, and incorrect redaction of embedded content.
+stdio protocol injection, run-record canonicalization or duplicate-key
+ambiguity, evidence-authority escalation, digest-scope confusion, and
+incorrect redaction of embedded content.

@@ -30,6 +30,7 @@ same validation, bounds, and result envelopes:
   validate <file.cru>
   validate-experiment <experiment.json>
   plan-verification <request.json>
+  validate-run-record <record.json>
 
 Logisim-evolution commands use the same MCP envelopes. Runtime commands need
 Java 21 and CIRCUITARIUM_LOGISIM_JAR pointing at the official 4.1.0 all-JAR:
@@ -237,6 +238,19 @@ async function main(): Promise<void> {
       await runTool(
         "electronics_plan_verification",
         request as Record<string, unknown>,
+      );
+      return;
+    }
+    case "validate-run-record": {
+      const path = positional[0];
+      if (!path) {
+        throw new Error("validate-run-record requires a JSON path");
+      }
+      const serializedRecord = await readFile(resolve(path), "utf8");
+      await runTool(
+        "electronics_validate_run_record",
+        { serializedRecord },
+        { failWhenDataInvalid: true },
       );
       return;
     }

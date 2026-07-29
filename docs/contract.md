@@ -12,6 +12,8 @@ or a running circuit simulation.
 
 > Release scope: this document describes the published 0.3.1 npm package and
 > MCPB, including all 22 tools across CRUMBLE and Logisim-evolution.
+> The unpublished `0.4.0-dev.0` source tree adds
+> `electronics_validate_run_record` and the tenth Resource described below.
 
 ## Vocabulary
 
@@ -300,7 +302,8 @@ shared GUI or simulator session.
 
 ## Knowledge resources and workflow prompts
 
-The 0.3.1 server also publishes nine deterministic JSON Resources:
+The published 0.3.1 server exposes nine deterministic JSON Resources. The
+unreleased source exposes ten:
 
 - `circuitarium://capabilities`
 - `circuitarium://profiles/crumb.unity/1.3.5`
@@ -311,6 +314,7 @@ The 0.3.1 server also publishes nine deterministic JSON Resources:
 - `circuitarium://knowledge/digital-logic-testing/0.1`
 - `circuitarium://schemas/component-profile/0.1`
 - `circuitarium://catalogs/logisim-evolution/4.1.0/standard-library`
+- `circuitarium://schemas/run-record/0.1` (unreleased source)
 
 These are static reference context, not `electronics.mcp/0.2` tool envelopes.
 They do not read the configured workspace or report whether a JAR is currently
@@ -328,6 +332,12 @@ libraries and 169 exact project component identities from official source at
 commit `632d66dca880ac089e2c6c2c383ea20d9c707ee2`. Identity-only entries expose
 no inferred ports or behavior, and catalog presence never authorizes runtime
 execution.
+
+The run-record Resource publishes the structural Draft 2020-12 JSON Schema,
+semantic reference/evidence constraints, versioned canonicalization, two
+digest scopes, explicit bounds, known adapter-extension IDs, duplicate-key
+parser boundary, and unsigned trust boundary. Reading the Resource neither
+creates a record nor executes any stage.
 
 The synthetic-example Resource catalogs independently authored assets; it does
 not materialize files in the configured workspace. A source checkout, npm
@@ -465,6 +475,72 @@ independent expected-output oracle. Verification uses separately authored
 vector expectations; finite vectors cover only their listed cases/sequences.
 Physical measurements and qualified review remain reported evidence and never
 become Circuitarium safety approval or certification.
+
+### `electronics_validate_run_record` (`0.4.0-dev.0` source)
+
+Accepts exactly one of:
+
+- `record`, an already parsed JSON value; or
+- `serializedRecord`, a raw JSON string that is checked for duplicate and
+  escaped-equivalent keys, BOMs, trailing content, excessive nesting, and
+  encoded size before ordinary parsing. Unsafe integers and other invalid
+  numeric values fail bounded validation after parsing.
+
+Optional `expectedRecordDigest` and `expectedEvidenceDigest` values verify a
+digest supplied through a separately trusted handoff. Domain-invalid input
+returns `ok: true` and `data.valid: false`; malformed MCP arguments still
+return the normal typed `INVALID_ARGUMENT` envelope.
+
+A valid result materializes defaults, normalizes identifier-based sets,
+preserves ordered stage/activity arrays, verifies every typed reference,
+checks artifact derivation and activity dependencies, and enforces the
+machine-readable claim/evidence, activity/evidence, known-operation, adapter
+locus, authenticity, subject-role, and oracle-independence rules published by
+the schema Resource. It then returns a sealed
+`electronics.run-record/0.1`.
+
+Operation names are stable identifiers. The `electronics_`, `crumb_`, and
+`logisim_` prefixes are reserved for exact lowercase names registered by this
+schema version; casing changes and unknown names fail closed. A non-planned
+produced artifact requires a completed or explicitly reported-only producer.
+Activity-produced evidence must repeat the activity's exact `resultDigest`;
+verdict evidence must agree with the activity outcome, with failures taking
+precedence; and activity dependencies/produced inputs cannot flow backward
+across stage order. Expected specifications and verdict-bearing test vectors
+cannot derive from the implementation under test, including through a
+producer's inputs or provenance sources, and the comparison activity must
+consume both sides. Every claim-scoped subject requires outcome-matching
+evidence explicitly bound to that exact subject.
+Output artifact digests separately identify the artifact bytes or canonical
+value and may differ from the operation receipt. Logisim test-vector evidence
+also requires an exact materialized vector artifact and a simulator identity
+whose version/authenticity agrees with the adapter runtime locus.
+
+The seal uses `circuitarium.canonical-json/0.1`:
+
+- `evidenceDigest` covers normalized `content`;
+- `recordDigest` covers the normalized record except `seal`;
+- `authenticity` is always `unsigned-unverified`; and
+- collection counts report `truncated: false` because oversized input is
+  rejected rather than silently cut.
+
+Changing record ID, timestamps, execution ID, server instance ID, or lineage
+changes `recordDigest` but not `evidenceDigest`. Changing normalized intent,
+artifacts, activities, claims, evidence, risks, signoffs, or extensions changes
+both.
+
+The Tool executes no activity. Process completion, engineering outcome, claim
+verdict, evidence basis, and signoff status are separate fields. A completed
+activity needs an observation basis and receipt. A passing/failing claim needs
+compatible evidence whose outcome supports that verdict. A truth table plus an
+expected specification remains observational until an explicit
+comparison/check receipt passes. Accepted signoff is a scoped caller-reported
+external attestation and cannot hide an open high/critical risk.
+
+The two SHA-256 values are portable identities, not signatures. They do not
+prove origin, authorship, execution, tool-binary authenticity, timestamp
+trust, permission, safety, physical correctness, signoff authority, or
+fabrication readiness. See [run-record.md](run-record.md).
 
 ### `crumb_component_catalog`
 

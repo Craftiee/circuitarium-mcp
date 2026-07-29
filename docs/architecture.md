@@ -2,6 +2,8 @@
 
 > This document describes the published 0.3.1 release: 22 tools across the
 > CRUMBLE and Logisim-evolution backends, nine Resources, and four Prompts.
+> The unpublished `0.4.0-dev.0` source tree adds a twenty-third Tool and tenth
+> Resource for the universal `electronics.run-record/0.1` foundation.
 
 ## Decision
 
@@ -21,7 +23,7 @@ ChatGPT / Codex / Claude / local agent host
                    local MCP stdio
                          |
           Circuitarium MCP contract v0.2
-       | tools | resources | prompts | validation |
+ | tools | resources | prompts | validation | run records |
                          |
           +--------------+------------------+
           |                                 |
@@ -32,6 +34,8 @@ ChatGPT / Codex / Claude / local agent host
           +--------------+------------------+
                          |
        workspace-relative artifact + immutable SHA-256 digest
+                         |
+      electronics.run-record/0.1 sealed process snapshot
 ```
 
 `crumb.file` and `logisim.evolution` are callable through this server. No tool
@@ -119,6 +123,13 @@ Portable project / experiments / artifacts
     `electronics_plan_verification` is deterministic and side-effect free. It
     reads no artifact, calls no Tool, launches no simulator, authenticates no
     caller receipt, and provides no physical certification.
+13. **A run record separates process, evidence, verdict, and signoff.**
+    `electronics_validate_run_record` validates and seals caller-supplied
+    intent, stages, immutable artifacts, activities, claims, evidence, risks,
+    and scoped signoffs. It executes none of them. `evidenceDigest` covers
+    normalized portable content; `recordDigest` covers the normalized record
+    except its seal. Both remain `unsigned-unverified`, not signatures,
+    permissions, safety approvals, or fabrication certification.
 
 ## Current neutral knowledge and planning layer
 
@@ -147,6 +158,45 @@ Failed supporting receipts and caller-reported unsafe-runtime facts fail
 affected runtime verification paths closed. A zero-input combinational
 interface has one exhaustive assignment and can use one Logisim truth-table
 row.
+
+## Universal engineering run records
+
+The neutral process handoff is a sealed snapshot rather than a mutable shared
+session or append-only event stream. Its ordered stages can span intent,
+circuit construction, behavioral/formal verification, RTL, synthesis,
+technology mapping, place and route, extraction, timing/power analysis,
+physical layout, DRC, LVS, signoff, and fabrication handoff. Immutable
+artifacts connect those stages by exact digest and derivation.
+
+Process `executionStatus`, activity `outcome`, claim `verdict`, evidence
+`basis`, and signoff `status` are independent. A completed command does not
+pass an engineering claim. A truth table does not become its own expected
+oracle; even with an independent specification, a separate comparison/check
+receipt must explicitly pass. Expected specifications and verdict-bearing
+vectors cannot derive from the implementation under test, including through a
+producer activity's inputs or provenance sources. Every subject named by a
+verdict must have outcome-matching evidence bound to that exact subject. A
+non-planned artifact cannot predate an unattempted producer; activity
+dependencies cannot flow backward across stage order; and activity-produced
+evidence shares the activity's exact result digest and verdict outcome.
+Output-artifact digests remain distinct identities for the actual bytes or
+canonical values. An accepted signoff remains a scoped caller-reported
+external attestation and cannot hide an open high or critical risk.
+
+The core stays simulator-neutral. CRUMB topology/switch identity and Logisim
+circuit/vector/runtime identity use bounded reverse-domain extensions. Unknown
+noncritical extensions are retained and digest-bound without interpretation;
+unknown critical extensions fail closed. Known adapter activities, evidence,
+claims, project/vector artifacts, runtime state, and toolchain identity must
+share one exact locus. Circuitarium operation namespaces accept only exact
+registered lowercase names. The raw `serializedRecord` input is scanned for
+duplicate keys before JSON parsing, while structured `record` input is
+explicitly unable to recover keys already collapsed upstream.
+
+The architectural decision, alternatives, and deferred signing/event-log work
+are in [ADR 0001](adr/0001-universal-run-record.md). The schema, canonical
+digest rules, examples, and trust boundary are in
+[run-record.md](run-record.md).
 
 ## Current Logisim-evolution backend
 
@@ -304,8 +354,9 @@ every backend. A future canonical project model should instead store:
 - explicit fidelity and deterministic execution settings;
 - adapter provenance and loss reports during conversion.
 
-The present neutral experiment validator is a footing for that design. A
-general project editor and converters are not implemented yet.
+The present neutral experiment validator and universal run record are the
+footing for that design. A general project editor, automatic receipt capture,
+and converters are not implemented yet.
 
 ## Cross-model and process behavior
 
@@ -316,13 +367,15 @@ portable collaboration ID.
 
 For a safe handoff:
 
-1. retain the workspace-relative `projectRef`;
-2. retain `context.projectDigest`;
-3. retain backend `crumb.file` and adapter version `crumb.file/0.2`;
-4. retain compatibility profile `crumb.unity/1.3.5`;
-5. state whether connection inference used `direct-only` or
+1. retain the sealed `recordDigest` and `evidenceDigest` when a run record is
+   available;
+2. retain the workspace-relative `projectRef`;
+3. retain `context.projectDigest`;
+4. retain backend `crumb.file` and adapter version `crumb.file/0.2`;
+5. retain compatibility profile `crumb.unity/1.3.5`;
+6. state whether connection inference used `direct-only` or
    `known-board-v1.3.5`;
-6. have the receiving model pass the recorded digest as
+7. have the receiving model pass the recorded digest as
    `expectedProjectDigest` on `crumb_analyze_design`,
    `crumb_inspect_design`, `crumb_validate_design`, `crumb_get_component`,
    `crumb_bom`, `crumb_export_netlist`, or `crumb_check_design`.

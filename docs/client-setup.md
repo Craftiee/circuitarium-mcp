@@ -78,6 +78,11 @@ A tagged source checkout and its same-version package launch the same stdio
 server. Version 0.3.1 registers 22 tools, nine Resources, and four Prompts.
 Prefer the immutable package release unless you are contributing to the source:
 
+The current unpublished `0.4.0-dev.0` source checkout registers 23 tools and
+ten Resources. Its added `electronics_validate_run_record` Tool and
+`circuitarium://schemas/run-record/0.1` Resource are source-only until the next
+version is published.
+
 ```text
 Command: npx
 Arguments: -y circuitarium-mcp@0.3.1
@@ -232,6 +237,19 @@ Logisim-evolution.
 
 The host uses the Claude access already configured there. The electronics
 server itself does not need an Anthropic API key.
+
+## Run-record handoff between hosts
+
+For multi-stage work, keep the sealed record returned by
+`electronics_validate_run_record` together with its exact `recordDigest` and
+`evidenceDigest`. A second Codex, Claude, VS Code, LM Studio, Jan, or other MCP
+process can revalidate the serialized record with those expected digests
+without sharing process memory.
+
+The record remains `unsigned-unverified`. Revalidation confirms normalized
+content identity, not the sender, model, timestamp, tool binary, or truth of an
+external report. The receiving host must also re-read current circuit files
+with their recorded `expectedProjectDigest`.
 
 ## Important stdio process rule
 

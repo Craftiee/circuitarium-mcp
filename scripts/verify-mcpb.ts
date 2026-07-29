@@ -57,8 +57,11 @@ interface Envelope {
 		projectDigest?: string;
 	};
 	data?: {
+		authenticity?: string;
 		circuitName?: string;
+		evidenceDigest?: string;
 		planVersion?: string;
+		recordDigest?: string;
 		project?: {
 			ref?: string;
 		};
@@ -92,7 +95,7 @@ interface Envelope {
 }
 
 const MCPB_PACKAGE = "@anthropic-ai/mcpb@2.1.2";
-const EXPECTED_TOOL_COUNT = 22;
+const EXPECTED_TOOL_COUNT = 23;
 const PRIVACY_POLICY_URL =
 	"https://github.com/Craftiee/circuitarium-mcp/blob/main/PRIVACY.md";
 const DOCUMENTATION_URL =
@@ -633,6 +636,33 @@ try {
 			componentProfileSchemaPayload.validationBoundary ?? "",
 			/also enforce semanticConstraints/u,
 		);
+		const runRecordSchema = await withTimeout(
+			client.readResource({
+				uri: "circuitarium://schemas/run-record/0.1",
+			}),
+			10_000,
+			"MCPB run-record schema resource read",
+		);
+		const runRecordSchemaContent = runRecordSchema.contents[0];
+		assert.ok(
+			runRecordSchemaContent !== undefined &&
+				"text" in runRecordSchemaContent,
+			"run-record schema resource must contain JSON text",
+		);
+		const runRecordSchemaPayload = JSON.parse(
+			runRecordSchemaContent.text,
+		) as {
+			recordVersion?: string;
+			trustBoundary?: string;
+		};
+		assert.equal(
+			runRecordSchemaPayload.recordVersion,
+			"electronics.run-record/0.1",
+		);
+		assert.match(
+			runRecordSchemaPayload.trustBoundary ?? "",
+			/unsigned-unverified/u,
+		);
 		const reviewPrompt = await withTimeout(
 			client.getPrompt({
 				name: "review-circuit-design",
@@ -676,6 +706,94 @@ try {
 			envelopeOf(planResult).data?.planVersion,
 			"electronics.verification-plan/0.1",
 		);
+
+		const runRecordResult = await withTimeout(
+			client.callTool({
+				name: "electronics_validate_run_record",
+				arguments: {
+					record: {
+						schemaVersion: "electronics.run-record/0.1",
+						recordId: "mcpb-minimal-run",
+						recordType: "run",
+						recordStatus: "open",
+						content: {
+							intent: {
+								title: "MCPB engineering run",
+								summary: "Capture intent before any execution occurs.",
+							},
+							stages: [
+								{
+									id: "intent",
+									sequence: 1,
+									kind: "intent-architecture",
+									title: "Define intent",
+									status: "planned",
+								},
+							],
+							disclosure: {
+								rawCommandsIncluded: false,
+								environmentValuesIncluded: false,
+								absolutePathsIncluded: false,
+								rawPayloadsIncluded: false,
+								userAuthoredTextMayContainSensitiveData: true,
+							},
+							completeness: {
+								status: "partial",
+								reasons: ["No execution evidence has been recorded yet."],
+							},
+						},
+					},
+				},
+			}),
+			10_000,
+			"MCPB electronics_validate_run_record",
+		);
+		assert.equal(runRecordResult.isError ?? false, false);
+		assert.equal(envelopeOf(runRecordResult).data?.valid, true);
+		assert.equal(
+			envelopeOf(runRecordResult).data?.authenticity,
+			"unsigned-unverified",
+		);
+		for (const examplePath of [
+			"examples/run-records/logisim-full-adder-plan.json",
+			"examples/run-records/asic-flow-template.json",
+			"examples/run-records/logisim-full-adder-reported-failure.json",
+		]) {
+			const serializedRecord: string = await readFile(
+				resolve(
+					unpackDirectory,
+					"server",
+					...examplePath.split("/"),
+				),
+				"utf8",
+			);
+			const exampleResult: unknown = await withTimeout(
+				client.callTool({
+					name: "electronics_validate_run_record",
+					arguments: { serializedRecord },
+				}),
+				10_000,
+				`MCPB serialized run-record example ${examplePath}`,
+			);
+			const exampleEnvelope = envelopeOf(exampleResult);
+			assert.equal(
+				(exampleResult as { isError?: boolean }).isError ?? false,
+				false,
+			);
+			assert.equal(
+				exampleEnvelope.data?.valid,
+				true,
+				`${examplePath} must validate from bundled raw JSON`,
+			);
+			assert.match(
+				String(exampleEnvelope.data?.recordDigest ?? ""),
+				/^sha256:[0-9a-f]{64}$/u,
+			);
+			assert.match(
+				String(exampleEnvelope.data?.evidenceDigest ?? ""),
+				/^sha256:[0-9a-f]{64}$/u,
+			);
+		}
 
 		const traceResult = await withTimeout(
 			client.callTool({

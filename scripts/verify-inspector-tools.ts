@@ -23,6 +23,7 @@ const EXPECTED_TOOL_NAMES = [
 	"electronics_capabilities",
 	"electronics_validate_experiment",
 	"electronics_plan_verification",
+	"electronics_validate_run_record",
 	"crumb_component_catalog",
 	"crumb_analyze_design",
 	"crumb_compare_designs",
@@ -392,6 +393,40 @@ function toolCases(): ToolCase[] {
 				],
 			},
 		},
+		electronics_validate_run_record: {
+			record: {
+				schemaVersion: "electronics.run-record/0.1",
+				recordId: "inspector-minimal-run",
+				recordType: "run",
+				recordStatus: "open",
+				content: {
+					intent: {
+						title: "Inspector minimal engineering run",
+						summary: "Capture intent before any execution occurs.",
+					},
+					stages: [
+						{
+							id: "intent",
+							sequence: 1,
+							kind: "intent-architecture",
+							title: "Define intent",
+							status: "planned",
+						},
+					],
+					disclosure: {
+						rawCommandsIncluded: false,
+						environmentValuesIncluded: false,
+						absolutePathsIncluded: false,
+						rawPayloadsIncluded: false,
+						userAuthoredTextMayContainSensitiveData: true,
+					},
+					completeness: {
+						status: "partial",
+						reasons: ["No execution evidence has been recorded yet."],
+					},
+				},
+			},
+		},
 		crumb_component_catalog: { toolId: 6 },
 		crumb_analyze_design: { path: crumbLed, view: "summary" },
 		crumb_compare_designs: {
@@ -477,7 +512,7 @@ async function verifyToolList(workspaceRoot: string): Promise<void> {
 	assert.deepEqual(
 		tools.map((tool) => tool.name),
 		EXPECTED_TOOL_NAMES,
-		"Inspector sees the exact 22-tool surface",
+		"Inspector sees the exact 23-tool surface",
 	);
 	for (const tool of tools) {
 		assert.ok(tool.title?.trim(), `${tool.name} has a human-readable title`);

@@ -1,6 +1,10 @@
-import { createHash } from "node:crypto";
-
 import { z } from "zod";
+
+import {
+  compareCodeUnits,
+  digestCanonicalJson,
+  sha256Text,
+} from "./canonical.js";
 
 export const MAX_VERIFICATION_CLAIMS = 32;
 export const MAX_VERIFICATION_EVIDENCE_ITEMS = 64;
@@ -920,42 +924,6 @@ function sourceSupportsEvidenceBinding(
       }
       return binding.locus === "artifact";
   }
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === null) {
-    return "null";
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
-  }
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .filter((key) => record[key] !== undefined)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`;
-  }
-  const serialized = JSON.stringify(value);
-  if (serialized === undefined) {
-    throw new TypeError("Verification plans cannot digest undefined values");
-  }
-  return serialized;
-}
-
-function digestCanonical(value: unknown): string {
-  return `sha256:${createHash("sha256")
-    .update(canonicalJson(value), "utf8")
-    .digest("hex")}`;
-}
-
-function digestText(value: string): string {
-  return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
-}
-
-function compareCodeUnits(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function normalizedInput(input: VerificationPlanInput): VerificationPlanInput {
@@ -2239,7 +2207,7 @@ function statementInfo(statement: string) {
   const preview = statement.slice(0, MAX_CLAIM_STATEMENT_PREVIEW_CHARACTERS);
   return {
     characters: statement.length,
-    sha256: digestText(statement),
+    sha256: sha256Text(statement),
     preview,
     previewTruncated: preview.length < statement.length,
     trust: "untrusted-caller-authored" as const,
@@ -2254,7 +2222,7 @@ function statementInfo(statement: string) {
 export function planVerification(input: unknown): VerificationPlanData {
   const parsed = VerificationPlanInputSchema.parse(input);
   const normalized = normalizedInput(parsed);
-  const requestDigest = digestCanonical(normalized);
+  const requestDigest = digestCanonicalJson(normalized);
   const assessments = normalized.claims.map((claim) =>
     assessClaim(
       normalized.target,
@@ -2340,6 +2308,6 @@ export function planVerification(input: unknown): VerificationPlanData {
   };
   return VerificationPlanDataSchema.parse({
     ...core,
-    planDigest: digestCanonical(core),
+    planDigest: digestCanonicalJson(core),
   });
 }

@@ -1,0 +1,259 @@
+{
+  "schemaVersion": "electronics.run-record/0.1",
+  "recordId": "logisim-full-adder-reported-failure",
+  "recordType": "run",
+  "recordStatus": "closed",
+  "metadata": {
+    "capturedAt": "2026-07-29T20:00:00Z"
+  },
+  "lineage": {
+    "parents": []
+  },
+  "content": {
+    "intent": {
+      "title": "Illustrate a failing engineering verdict",
+      "summary": "Record one caller-reported vector mismatch without presenting it as authenticated execution.",
+      "requirements": [
+        {
+          "id": "full-adder-function",
+          "category": "functional",
+          "priority": "must",
+          "statement": "The full adder must match the expected vector outputs.",
+          "claimIds": [
+            "full-adder-correct"
+          ]
+        }
+      ],
+      "interfaces": [],
+      "constraints": [],
+      "assumptions": []
+    },
+    "stages": [
+      {
+        "id": "intent",
+        "sequence": 1,
+        "kind": "intent-architecture",
+        "title": "Define the expected behavior",
+        "status": "completed",
+        "requirementIds": [
+          "full-adder-function"
+        ]
+      },
+      {
+        "id": "verification",
+        "sequence": 2,
+        "kind": "behavioral-verification",
+        "title": "Record a reported vector mismatch",
+        "status": "completed",
+        "dependsOnStageIds": [
+          "intent"
+        ],
+        "requirementIds": [
+          "full-adder-function"
+        ]
+      }
+    ],
+    "toolchain": [
+      {
+        "id": "reported-logisim",
+        "kind": "simulator",
+        "name": "Logisim-evolution",
+        "version": "4.1.0",
+        "authenticity": "self-reported-unverified"
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "project",
+        "state": "materialized",
+        "role": "logic-circuit",
+        "label": "Synthetic Logisim full adder",
+        "format": "logisim-circ",
+        "mediaType": "application/xml",
+        "reference": {
+          "kind": "workspace-relative",
+          "value": "examples/logisim/full-adder.circ"
+        },
+        "digest": {
+          "value": "sha256:120998f05029f717cb81572233258f41707c460522659fb9f2a85e294d4fd08b",
+          "basis": "raw-bytes",
+          "verification": "computed"
+        }
+      },
+      {
+        "id": "vectors",
+        "state": "materialized",
+        "role": "test-vector",
+        "label": "Eight full-adder vectors",
+        "format": "logisim-vec",
+        "reference": {
+          "kind": "workspace-relative",
+          "value": "examples/logisim/full-adder.vec"
+        },
+        "digest": {
+          "value": "sha256:cc00e77f53c430ce80940d7404ac62271f18d7f324fd42c6fd4f162b828e5054",
+          "basis": "raw-bytes",
+          "verification": "computed"
+        }
+      },
+      {
+        "id": "reported-vector-result",
+        "state": "externally-reported",
+        "role": "other",
+        "label": "Illustrative reported mismatch receipt",
+        "format": "json",
+        "reference": {
+          "kind": "none"
+        },
+        "digest": {
+          "value": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "basis": "canonical-json",
+          "verification": "reported"
+        },
+        "producedByActivityId": "reported-vector-check",
+        "derivedFromArtifactIds": [
+          "project",
+          "vectors"
+        ]
+      }
+    ],
+    "activities": [
+      {
+        "id": "reported-vector-check",
+        "sequence": 1,
+        "stageId": "verification",
+        "kind": "simulation",
+        "operation": "logisim_run_test_vector",
+        "executionStatus": "reported-only",
+        "outcome": "fail",
+        "observationBasis": "caller-reported",
+        "toolIdentityId": "reported-logisim",
+        "inputArtifactIds": [
+          "project",
+          "vectors"
+        ],
+        "outputArtifactIds": [
+          "reported-vector-result"
+        ],
+        "resultDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "evidenceIds": [
+          "reported-vector-failure"
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "id": "full-adder-correct",
+        "class": "functional",
+        "statement": "The exact project matches the expected outputs in the exercised vector case.",
+        "verdict": "fail",
+        "basis": "reported-evidence",
+        "stageIds": [
+          "verification"
+        ],
+        "artifactIds": [
+          "project",
+          "vectors"
+        ],
+        "evidenceIds": [
+          "reported-vector-failure"
+        ]
+      }
+    ],
+    "evidence": [
+      {
+        "id": "reported-vector-failure",
+        "kind": "test-vector",
+        "source": "caller-supplied-illustrative-receipt",
+        "outcome": "fail",
+        "authenticity": "caller-reported-unverified",
+        "activityId": "reported-vector-check",
+        "artifactIds": [
+          "project",
+          "vectors",
+          "reported-vector-result"
+        ],
+        "resultDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "coverage": {
+          "mode": "sampled",
+          "casesPlanned": 1,
+          "casesExecuted": 1,
+          "truncated": false
+        },
+        "summary": "The caller reports one exercised case with an expected-output mismatch; Circuitarium did not execute or authenticate it."
+      }
+    ],
+    "diagnostics": [],
+    "risks": [],
+    "signoffs": [],
+    "provenance": [
+      {
+        "id": "reported-receipt-provenance",
+        "kind": "reported",
+        "subjectType": "evidence",
+        "subjectId": "reported-vector-failure",
+        "sourceArtifactIds": [
+          "project",
+          "vectors"
+        ],
+        "sourceRecordDigests": [],
+        "authenticity": "caller-reported-unverified",
+        "statement": "This is a teaching fixture for record semantics, not a captured simulator receipt."
+      }
+    ],
+    "extensions": [
+      {
+        "extensionId": "io.github.craftiee.circuitarium/logisim-evolution/0.1",
+        "schemaVersion": "0.1",
+        "critical": true,
+        "appliesTo": {
+          "stageIds": [
+            "verification"
+          ],
+          "activityIds": [
+            "reported-vector-check"
+          ],
+          "artifactIds": [
+            "project",
+            "vectors",
+            "reported-vector-result"
+          ],
+          "evidenceIds": [
+            "reported-vector-failure"
+          ],
+          "claimIds": [
+            "full-adder-correct"
+          ]
+        },
+        "payload": {
+          "backendId": "logisim.evolution",
+          "adapterVersion": "logisim.evolution/0.1",
+          "compatibilityProfile": "logisim-evolution/4.1.0",
+          "projectArtifactId": "project",
+          "circuit": "Main",
+          "vectorArtifactId": "vectors",
+          "runtimeStatus": "available",
+          "runtimeVersion": "4.1.0",
+          "runtimeAuthenticity": "self-reported-unverified",
+          "runtimeSafety": "safe"
+        }
+      }
+    ],
+    "disclosure": {
+      "rawCommandsIncluded": false,
+      "environmentValuesIncluded": false,
+      "absolutePathsIncluded": false,
+      "rawPayloadsIncluded": false,
+      "userAuthoredTextMayContainSensitiveData": true,
+      "notes": [
+        "The failing result is deliberately caller-reported and illustrative.",
+        "Schema validity does not mean the design passed or that the simulator ran."
+      ]
+    },
+    "completeness": {
+      "status": "complete",
+      "omittedSections": [],
+      "reasons": []
+    }
+  }
+}

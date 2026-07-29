@@ -4,6 +4,61 @@ All notable changes will be recorded here. The project follows
 [Semantic Versioning](https://semver.org/) for its public interfaces while it
 remains experimental.
 
+## [Unreleased]
+
+### Added
+
+- Added `electronics.run-record/0.1`, a strict, bounded, simulator-neutral
+  engineering snapshot for intent, ordered stages, exact tool identities,
+  immutable artifacts, activities, claims, evidence, diagnostics, risks,
+  scoped signoffs, provenance, disclosure, completeness, and namespaced
+  adapter extensions.
+- Added `electronics_validate_run_record`, the twenty-third Tool. It validates,
+  normalizes, and integrity-seals caller-supplied records without executing
+  them. `evidenceDigest` covers portable normalized content;
+  `recordDigest` covers the normalized record except its seal; authenticity
+  remains explicitly `unsigned-unverified`.
+- Added a duplicate-aware `serializedRecord` input and source CLI command that
+  reject duplicate and escaped-equivalent JSON keys, BOMs, trailing documents,
+  over-depth values, unsafe numbers, and oversized records before sealing.
+- Added the tenth read-only Resource,
+  `circuitarium://schemas/run-record/0.1`, with JSON Schema, semantic
+  constraints, canonicalization, digest scopes, bounds, extension policy, and
+  trust boundaries.
+- Added validated Logisim full-adder and process-neutral ASIC-flow planning
+  examples, an honest caller-reported failing-record example, the run-record
+  guide, and an architectural decision record.
+
+### Changed
+
+- Unified the verification planner, portable experiment validator, and new run
+  record on one versioned canonical JSON/SHA-256 implementation.
+- Extended capability discovery, Inspector, installed-package, MCPB, doctor,
+  and contract tests for the 23-Tool, ten-Resource source surface.
+- Published machine-readable claim/evidence, activity/evidence,
+  known-operation/evidence, observation/authenticity, and claim-basis
+  compatibility maps plus verdict-subject roles and oracle-independence rules
+  in the schema Resource.
+- Assigned the unpublished 23-Tool source the distinct `0.4.0-dev.0`
+  package/server/bundle identity so it cannot masquerade as immutable public
+  `0.3.1`.
+
+### Security
+
+- Run records exclude raw command strings, environment values, absolute paths,
+  and raw payloads from the v0.1 core. Unknown critical extensions fail closed;
+  unknown noncritical extensions are retained and digest-bound without gaining
+  claim authority.
+- Added duplicate-aware raw-document bounds, strict canonical JSON value
+  handling, full producer/dependency/result-receipt causality, reserved
+  operation namespace checks, oracle independence, cross-stage process-order
+  validation, verdict/outcome agreement, and exact Logisim
+  project/vector/runtime/tool identity reconciliation.
+- Documented that self-contained SHA-256 seals provide integrity only when an
+  expected digest is trusted separately. They are not signatures, trusted
+  timestamps, proof of execution or origin, safety approval, signoff authority,
+  or fabrication certification.
+
 ## [0.3.1] - 2026-07-28
 
 ### Added

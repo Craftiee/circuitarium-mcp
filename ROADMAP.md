@@ -46,6 +46,39 @@ The current server does not provide a live simulator session, arbitrary circuit
 editing, or CRUMB 2.x/Godot compatibility. Logisim runtime calls are bounded
 one-shot subprocesses.
 
+## Unreleased source: universal run-record foundation
+
+- Implemented `electronics.run-record/0.1`, a bounded simulator-neutral snapshot for
+  intent, ordered stages, exact tool identities, immutable artifacts,
+  activities, claims, evidence, diagnostics, risks, scoped signoffs,
+  provenance, completeness, and adapter extensions.
+- Implemented `electronics_validate_run_record`, which validates, normalizes, and
+  integrity-seals a supplied snapshot without executing or authenticating its
+  contents.
+- Kept portable evidence identity separate from volatile execution identity:
+  `evidenceDigest` covers normalized content and `recordDigest` covers the
+  normalized record except its seal.
+- Rejected ambiguous external JSON through a duplicate-aware
+  `serializedRecord` path; preserve unknown noncritical extensions and fail
+  closed on unknown critical extensions.
+- Exposed the schema as
+  `circuitarium://schemas/run-record/0.1` and ship validated Logisim and
+  specification-to-GDS planning examples plus an honest reported failure.
+
+Next work on this arc:
+
+- Add guarded constructors that convert selected Circuitarium Tool envelopes
+  into correctly classified activity/evidence receipts.
+- Add child and aggregate record workflows for hierarchical designs.
+- Add HDL, formal, synthesis, place-and-route, extraction, timing, power, DRC,
+  and LVS adapters only with exact artifact/version and execution boundaries.
+- Add optional signatures, trusted provenance, and timestamps as a separate
+  layer. The v0.1 SHA-256 seal will remain `unsigned-unverified`.
+
+Explicit non-goals for v0.1 are automatic execution, a mutable event log,
+remote attestation, physical certification, foundry permission, universal
+simulator coverage, and PDK redistribution.
+
 ## Next: CRUMBLE adapter boundary and CRUMB format coverage
 
 - Make format/profile detection explicit so Unity- and Godot-era evidence

@@ -86,6 +86,29 @@ describe("release readiness", () => {
     });
   });
 
+  it("accepts a coherent development identity when no release tag exists", () => {
+    assert.deepEqual(
+      verifyReleaseReadiness(
+        readyInput({
+          manifest: {
+            name: "circuitarium-mcp",
+            version: "0.4.0-dev.0",
+          },
+          serverVersion: "0.4.0-dev.0",
+          releaseTag: undefined,
+          changelog: "## [Unreleased]\n\n- Development work.\n",
+          readme:
+            "Published install: npx -y circuitarium-mcp@0.3.1\n",
+        }),
+      ),
+      {
+        npmTag: "next",
+        prerelease: true,
+        version: "0.4.0-dev.0",
+      },
+    );
+  });
+
   it("classifies prerelease identifiers without confusing build metadata", () => {
     const stableWithBuild = readyInput({
       manifest: {

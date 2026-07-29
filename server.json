@@ -2,17 +2,17 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Craftiee/circuitarium",
   "title": "Circuitarium MCP",
-  "description": "MCP tools for CRUMB artifacts and Logisim-evolution analysis and non-interactive simulation.",
+  "description": "Portable run records and MCP tools for CRUMB and Logisim-evolution circuit projects.",
   "repository": {
     "url": "https://github.com/Craftiee/circuitarium-mcp",
     "source": "github"
   },
-  "version": "0.3.1",
+  "version": "0.4.0-dev.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "circuitarium-mcp",
-      "version": "0.3.1",
+      "version": "0.4.0-dev.0",
       "transport": {
         "type": "stdio"
       }

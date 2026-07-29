@@ -58,3 +58,10 @@ integration family.
 16. Never treat static analysis, ERC, simulation, or model prose as physical
     safety approval. High-consequence hardware requires authoritative
     manufacturer documentation, physical measurements, and qualified review.
+17. If electronics_capabilities advertises electronics_validate_run_record,
+    use it for multi-stage process handoff. Prefer serializedRecord for
+    external JSON, preserve both recordDigest and evidenceDigest, and remember
+    that expected digests detect meaningful tampering only when obtained
+    separately. Every seal is unsigned-unverified; validation does not execute
+    a stage, authenticate a sender, approve hardware, or certify fabrication.
+    Published 0.3.1 does not yet expose this source-candidate Tool.

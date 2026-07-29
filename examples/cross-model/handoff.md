@@ -73,18 +73,55 @@ persisted-session token:
 Never fill the digest with a guessed value. Copy the exact value returned by the
 tool.
 
+## Prefer a sealed run record for multi-stage work
+
+This section requires the unreleased source checkout's twenty-third Tool;
+published npm/MCPB `0.3.1` exposes only the artifact handoff above.
+
+The coordination note above remains useful for one artifact read. When work
+spans several tools, artifacts, models, or engineering stages, put the same
+identity in an `electronics.run-record/0.1` artifact and call
+`electronics_validate_run_record`.
+
+Keep both returned values:
+
+```json
+{
+  "recordDigest": "sha256:<exact whole-record digest>",
+  "evidenceDigest": "sha256:<exact portable-content digest>",
+  "authenticity": "unsigned-unverified"
+}
+```
+
+The receiving model should pass the serialized record back through
+`electronics_validate_run_record` with both values as
+`expectedRecordDigest` and `expectedEvidenceDigest` before relying on it. It
+must still re-read current workspace artifacts with `expectedProjectDigest`;
+the record seal does not prove that local bytes have remained unchanged.
+Meaningful tamper checking requires the expected digest to arrive through a
+separately trusted channel, such as a signed commit, immutable release note, or
+independent message. A record and hashes copied together establish only
+self-consistency and accidental-corruption detection.
+
+`evidenceDigest` survives a new record ID, timestamp, execution ID, or server
+process when normalized engineering content is the same. `recordDigest`
+changes with that volatile metadata. Neither digest authenticates the sender
+or proves execution.
+
 ## Model B: verify before relying
 
 The receiving model should:
 
 1. call `electronics_capabilities` in its own process;
-2. call `crumb_analyze_design` with the same project reference, summary view,
+2. when a run record is supplied, validate it against the copied run/evidence
+   digests and stop on any conflict;
+3. call `crumb_analyze_design` with the same project reference, summary view,
    topology mode, and the handoff digest as `expectedProjectDigest`;
-3. stop and report a changed artifact if the result has `ok: false` and
+4. stop and report a changed artifact if the result has `ok: false` and
    `error.code: "PROJECT_STATE_CONFLICT"`;
-4. otherwise confirm the returned context still records the expected digest
+5. otherwise confirm the returned context still records the expected digest
    and compatibility profile;
-5. request the bounded connection view and continue the stated goal.
+6. request the bounded connection view and continue the stated goal.
 
 The guarded first call is:
 
